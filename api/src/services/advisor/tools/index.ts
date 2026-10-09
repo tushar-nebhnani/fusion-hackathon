@@ -186,7 +186,8 @@ export const TOOLS: ToolDefinition<unknown>[] = [
       // Six hours before the window, or now if that has passed
       const prepareBy = new Date(Math.max(ctx.now.getTime(), start - 6 * HOUR_MS)).toISOString();
       return {
-        event,
+        // An alert lists every loan it covers; other businesses' stay out
+        event: { ...event, loanIds: event.loanIds.filter((loanId) => loanId === ctx.loan?.loanId) },
         hazard: hazardFromAlert(event.hazard),
         severity: event.severity,
         hoursUntilWindowStart: Math.round((start - ctx.now.getTime()) / HOUR_MS),

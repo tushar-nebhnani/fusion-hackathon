@@ -20,8 +20,8 @@ export function advisorRouter(
   router.post("/loans/:loanId/disburse", requireBank, controller.disburse);
   router.post("/loans/:loanId/close-recovery", requireBank, controller.closeRecovery);
 
-  // Never mounted in production (see loadAdvisorConfig). They act on any loan
-  // without an ownership check and can queue real emails, so bank officers only.
+  // Never mounted in production (see loadAdvisorConfig). Bank officers only:
+  // they act on any loan by its id, without the ownership check above.
   if (options.devRoutes) {
     router.post("/dev/fake-alert", requireBank, controller.fakeAlert);
     router.post("/dev/verify-alert", requireBank, controller.verifyAlert);

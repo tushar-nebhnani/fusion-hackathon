@@ -129,7 +129,7 @@ export function advisorController(advisor: Advisor, assertAccess: AdvisorAccess,
     res.json({ businesses: all.filter((_, i) => allowed[i]) });
   };
 
-  // ── Dev only: mounted when ADVISOR_ENABLE_DEV_ROUTES is on ────────────────
+  // ── Dev only: mounted when ADVISOR_ENABLE_DEV_ROUTES is on, bank officers only ──
 
   const fakeAlert: RequestHandler = async (req, res) => {
     const event = buildFakeAlert(parse(fakeAlertOptionsSchema, req.body, "body"));

@@ -18,3 +18,10 @@ export interface Sender {
   readonly provider: string;
   send(message: OutboundMessage): Promise<SendResult>;
 }
+
+// ALERTS_REDIRECT_TO: every message goes to one address instead of its
+// contacts. Whether a message goes out is still decided before it gets here.
+export function redirected(sender: Sender, to: string | undefined): Sender {
+  if (!to) return sender;
+  return { provider: sender.provider, send: (message) => sender.send({ ...message, to }) };
+}

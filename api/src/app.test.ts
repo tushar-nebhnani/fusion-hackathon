@@ -89,6 +89,18 @@ describe("rate limiting", () => {
   });
 });
 
+describe("rate limiting per user", () => {
+  it("counts a route's limit per signed-in user, not per address", async () => {
+    const server = app({ climateRateLimit: 1 });
+    const call = (user: typeof OWNER) => signedIn(server, user).post("/climate/profile").send({});
+
+    expect((await call(OWNER)).status).toBe(400);
+    expect((await call(OWNER)).status).toBe(429);
+    // Same address, another account: its own count
+    expect((await call(OTHER_OWNER)).status).toBe(400);
+  });
+});
+
 describe("idempotency", () => {
   it("replays POST /climate/profile for a repeated Idempotency-Key", async () => {
     const getProfile = vi.fn(() => Promise.resolve({ grade: "C" } as never));
@@ -148,6 +160,16 @@ describe("authentication", () => {
     }
     expect(getProfile).not.toHaveBeenCalled();
     expect(list).not.toHaveBeenCalled();
+  });
+
+  it("refuses to switch sign-in off in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      expect(() => app({ auth: { service: fakeAuth(), devUser: OWNER } })).toThrow(/production/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(() => app({ auth: { service: fakeAuth(), devUser: OWNER } })).not.toThrow();
   });
 
   it("leaves /health, /demo and /auth/config open", async () => {

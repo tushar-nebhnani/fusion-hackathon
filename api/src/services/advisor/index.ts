@@ -774,9 +774,9 @@ export function createAdvisor(deps: AdvisorDeps) {
     // Which business a loan belongs to, so the caller can check access first
     businessOfLoan: async (loanId: string) => (await requireLoan(loanId)).business.id,
     // Same for a proposal, through its loan
-    businessOfProposal: async (proposalId: string) => {
-      const proposal = await repo.getProposal(proposalId);
-      if (!proposal) throw new NotFoundError(`Proposal ${proposalId} not found`);
+    businessOfProposal: async (id: string) => {
+      const proposal = await repo.getProposal(id);
+      if (!proposal) throw new NotFoundError(`Proposal ${id} not found`);
       return (await requireLoan(proposal.loanId)).business.id;
     },
     listBusinesses: async () =>

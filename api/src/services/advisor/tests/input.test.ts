@@ -137,7 +137,8 @@ describe("input directory", () => {
       contacts: {
         ownerEmail: "ravi@example.com",
         ownerPhone: "+919876543210",
-        bankEmail: "meera@examplebank.in",
+        // The bank officer the owner typed is never a recipient
+        bankEmail: null,
         consent: true,
       },
       finance: { variableCostShare: 0, fixedMonthlyCosts: 60_000, otherDebtMonthly: 10_000 },

@@ -189,6 +189,44 @@ describe("/advisor routes", () => {
     expect(later.status).toBe(200);
   });
 
+  it("lets the bank decide only proposals of businesses it may see", async () => {
+    let hidden = false;
+    const access: AdvisorAccess = () =>
+      hidden ? Promise.reject(new NotFoundError("Business not found")) : Promise.resolve();
+    const server = app(true, access);
+    const bank = () => signedIn(server, BANK);
+    await bank().post("/advisor/loans/LN-0101/disburse").send({});
+    await bank().post("/advisor/dev/fake-alert").send({ loanIds: ["LN-0101"] });
+    const damage = await signedIn(server).post("/advisor/damage-report").send({
+      loanId: "LN-0101",
+      daysClosed: 6,
+      stockLossInr: 40_000,
+      equipmentDamageInr: 0,
+      expectedReopenDate: "2026-10-09",
+      insuranceClaim: { status: "none" },
+    });
+    const { proposal } = body<ChatBody>(damage);
+
+    hidden = true;
+    const decision = await bank().post(`/advisor/proposals/${proposal.id}/decision`).send({ decision: "accept" });
+    expect(decision.status).toBe(404);
+    hidden = false;
+    expect((await bank().get("/advisor/loans/LN-0101/state")).body).toMatchObject({ state: "IMPACTED" });
+  });
+
+  it("keeps the dev routes to bank officers", async () => {
+    const server = app();
+    const owner = () => signedIn(server);
+    const statuses = [
+      await owner().post("/advisor/dev/fake-alert").send({ loanIds: ["LN-0142"] }),
+      await owner().post("/advisor/dev/verify-alert").send({ alertId: "fake-1", label: "hit" }),
+      await owner().post("/advisor/dev/sweep-alerts").send({}),
+    ].map((res) => res.status);
+    expect(statuses).toEqual([403, 403, 403]);
+    // Nothing moved: LN-0142 starts ACTIVE in smes.json
+    expect((await signedIn(server, BANK).get("/advisor/loans/LN-0142/state")).body).toMatchObject({ state: "ACTIVE" });
+  });
+
   it("does not mount dev routes when they are off", async () => {
     const res = await signedIn(app(false)).post("/advisor/dev/fake-alert").send({});
     expect(res.status).toBe(404);

@@ -33,7 +33,7 @@ import {
 //   its EMI implies. An active loan's disbursal date is the day it was last
 //   changed, which is the day it was marked active.
 // - Contacts: an owner address only for a channel they chose, and only when
-//   they agreed to alerts (consent.alerts).
+//   they agreed to alerts (consent.alerts). No bank address: see below.
 
 const ACTIVE_LOAN_STATES: Record<string, LoanStateName> = {
   applied: "PRE_LOAN",
@@ -148,7 +148,9 @@ export function toBusinessRecord(row: Row): BusinessRecord {
     contacts: {
       ownerEmail: channels.includes("email") ? (contacts.owner?.email ?? null) : null,
       ownerPhone: channels.includes("sms") ? (contacts.owner?.phone ?? null) : null,
-      bankEmail: consent.share_with_bank ? (contacts.bank_officer?.email ?? null) : null,
+      // Never contacts.bank_officer: the owner types it, so it could send the
+      // bank's copy anywhere. The bank is reached through alert_contacts only.
+      bankEmail: null,
       consent: consent.alerts === true,
     },
     finance: {
