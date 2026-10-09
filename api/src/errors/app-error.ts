@@ -2,18 +2,22 @@ export class AppError extends Error {
   readonly statusCode: number;
   readonly code: string;
   readonly details?: unknown;
+  // Pipeline step that failed, e.g. "input_validation"
+  readonly step?: string;
 
   constructor(
     message: string,
     statusCode = 500,
     code = "INTERNAL_ERROR",
     details?: unknown,
+    step?: string,
   ) {
     super(message);
     this.name = new.target.name;
     this.statusCode = statusCode;
     this.code = code;
     this.details = details;
+    this.step = step;
   }
 }
 

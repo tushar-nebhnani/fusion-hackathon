@@ -21,7 +21,12 @@ function isHttpError(err: unknown): err is Error & { status: number } {
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof AppError) {
     res.status(err.statusCode).json({
-      error: { code: err.code, message: err.message, details: err.details },
+      error: {
+        code: err.code,
+        message: err.message,
+        step: err.step,
+        details: err.details,
+      },
     });
     return;
   }

@@ -6,3 +6,244 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum Relevance {
+  primary
+  secondary
+  dormant
+}
+
+enum RelevanceMethod {
+  static
+  agent_raised
+}
+
+enum Confidence {
+  low
+  med
+  high
+}
+
+enum MetricKind {
+  observed
+  forecast
+  projection
+}
+
+enum ResponseStatus {
+  fresh
+  stale
+  error
+}
+
+enum EventSeverity {
+  watch
+  warning
+  severe
+}
+
+enum EventStatus {
+  open
+  escalated
+  closed
+}
+
+enum CacheResult {
+  complete_hit
+  partial_hit
+  miss
+}
+
+model HazardCatalog {
+  hazard             String @id
+  apis               Json
+  screeningVariables Json   @map("screening_variables")
+  currentVariables   Json   @map("current_variables")
+  indicatorRule      Json   @map("indicator_rule")
+  primaryThreshold   Float  @map("primary_threshold")
+  dormantThreshold   Float  @map("dormant_threshold")
+  tripwireVariables  Json   @map("tripwire_variables")
+
+  relevance CellHazardRelevance[]
+  scores    HazardScore[]
+  events    CellEvent[]
+
+  @@map("hazard_catalog")
+}
+
+// One row per snapped cell. Sources that share a resolution (historical,
+// climate, forecast at 0.1 deg) share the same cell id, so there is no
+// `source` column; the layer is identified by `climate_responses.api`.
+model GridCell {
+  id            String @id
+  resolutionDeg Float  @map("resolution_deg")
+  latCenter     Float  @map("lat_center")
+  lonCenter     Float  @map("lon_center")
+
+  relevance CellHazardRelevance[]
+  responses ClimateResponse[]
+  metrics   ClimateMetric[]
+  events    CellEvent[]
+
+  pointsHistorical Point[] @relation("PointHistoricalCell")
+  pointsClimate    Point[] @relation("PointClimateCell")
+  pointsFlood      Point[] @relation("PointFloodCell")
+  pointsForecast   Point[] @relation("PointForecastCell")
+
+  @@map("grid_cells")
+}
+
+model Point {
+  id             Int      @id @default(autoincrement())
+  lat            Float
+  lon            Float
+  cellHistorical String   @map("cell_historical")
+  cellClimate    String   @map("cell_climate")
+  cellFlood      String   @map("cell_flood")
+  cellForecast   String   @map("cell_forecast")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  historicalCell GridCell @relation("PointHistoricalCell", fields: [cellHistorical], references: [id])
+  climateCell    GridCell @relation("PointClimateCell", fields: [cellClimate], references: [id])
+  floodCell      GridCell @relation("PointFloodCell", fields: [cellFlood], references: [id])
+  forecastCell   GridCell @relation("PointForecastCell", fields: [cellForecast], references: [id])
+
+  staticFeatures PointStaticFeatures?
+  scores         HazardScore[]
+  requests       RequestLog[]
+
+  @@unique([lat, lon])
+  @@index([cellFlood])
+  @@index([cellForecast])
+  @@map("points")
+}
+
+model PointStaticFeatures {
+  pointId            Int      @id @map("point_id")
+  elevationM         Float?   @map("elevation_m")
+  relativeElevationM Float?   @map("relative_elevation_m")
+  floodExposureShare Float?   @map("flood_exposure_share")
+  sourceVersion      String   @map("source_version")
+  computedAt         DateTime @map("computed_at") @db.Timestamptz
+
+  point Point @relation(fields: [pointId], references: [id])
+
+  @@map("point_static_features")
+}
+
+model CellHazardRelevance {
+  cellId         String          @map("cell_id")
+  hazard         String
+  relevance      Relevance
+  indicatorValue Float?          @map("indicator_value")
+  indicators     Json
+  method         RelevanceMethod @default(static)
+  rationale      String?
+  evidenceUrls   Json?           @map("evidence_urls")
+  confidence     Confidence
+  decidedAt      DateTime        @map("decided_at") @db.Timestamptz
+  reviewAfter    DateTime        @map("review_after") @db.Timestamptz
+  ruleVersion    String          @map("rule_version")
+  agentVersion   String?         @map("agent_version")
+
+  cell    GridCell      @relation(fields: [cellId], references: [id])
+  catalog HazardCatalog @relation(fields: [hazard], references: [hazard])
+
+  @@id([cellId, hazard])
+  @@map("cell_hazard_relevance")
+}
+
+// Raw upstream payloads. This table is the cache.
+model ClimateResponse {
+  id                 Int            @id @default(autoincrement())
+  cellId             String         @map("cell_id")
+  api                String
+  variablesRequested Json           @map("variables_requested")
+  paramsHash         String         @map("params_hash")
+  response           Json
+  fetchedAt          DateTime       @map("fetched_at") @db.Timestamptz
+  staleAfter         DateTime?      @map("stale_after") @db.Timestamptz
+  status             ResponseStatus @default(fresh)
+
+  cell    GridCell        @relation(fields: [cellId], references: [id])
+  metrics ClimateMetric[]
+  events  CellEvent[]
+
+  @@unique([cellId, api, paramsHash])
+  @@index([cellId, api, staleAfter])
+  @@map("climate_responses")
+}
+
+// Normalized, long format. Observed and projection rows use the epoch as
+// `issued_at` so re-fetching history never duplicates a day.
+model ClimateMetric {
+  cellId     String     @map("cell_id")
+  date       DateTime   @db.Date
+  variable   String
+  value      Float
+  kind       MetricKind
+  issuedAt   DateTime   @map("issued_at") @db.Timestamptz
+  responseId Int?       @map("response_id")
+
+  cell     GridCell         @relation(fields: [cellId], references: [id])
+  response ClimateResponse? @relation(fields: [responseId], references: [id], onDelete: SetNull)
+
+  @@id([cellId, date, variable, kind, issuedAt])
+  @@index([cellId, variable, date])
+  @@map("climate_metrics")
+}
+
+model HazardScore {
+  id           Int       @id @default(autoincrement())
+  pointId      Int       @map("point_id")
+  hazard       String
+  relevance    Relevance
+  structural   Float?
+  historical   Float
+  forecast     Float
+  score        Float
+  computedAt   DateTime  @map("computed_at") @db.Timestamptz
+  modelVersion String    @map("model_version")
+
+  point   Point         @relation(fields: [pointId], references: [id])
+  catalog HazardCatalog @relation(fields: [hazard], references: [hazard])
+
+  @@index([pointId, computedAt])
+  @@map("hazard_scores")
+}
+
+model CellEvent {
+  id               Int           @id @default(autoincrement())
+  cellId           String        @map("cell_id")
+  hazard           String
+  severity         EventSeverity
+  windowStart      DateTime      @map("window_start") @db.Date
+  windowEnd        DateTime      @map("window_end") @db.Date
+  confidence       Float
+  sourceResponseId Int?          @map("source_response_id")
+  status           EventStatus   @default(open)
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  cell           GridCell         @relation(fields: [cellId], references: [id])
+  catalog        HazardCatalog    @relation(fields: [hazard], references: [hazard])
+  sourceResponse ClimateResponse? @relation(fields: [sourceResponseId], references: [id], onDelete: SetNull)
+
+  @@index([status, windowStart])
+  @@index([cellId, hazard, status])
+  @@map("cell_events")
+}
+
+model RequestLog {
+  id          Int         @id @default(autoincrement())
+  requesterId String?     @map("requester_id")
+  pointId     Int         @map("point_id")
+  cacheResult CacheResult @map("cache_result")
+  latencyMs   Int         @map("latency_ms")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  point Point @relation(fields: [pointId], references: [id])
+
+  @@index([pointId, createdAt])
+  @@map("request_log")
+}
