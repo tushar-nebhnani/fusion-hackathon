@@ -58,6 +58,8 @@ curl -X POST http://localhost:4000/climate/profile \
   -d '{"lat": 26.1445, "lon": 91.7362}'
 ```
 
+Or open the demo page at http://localhost:4000/demo/. Opened straight from disk (`api/public/index.html`) it cannot reach the API and shows captured sample responses instead.
+
 The first request for a new location downloads about 30 years of daily history from Open-Meteo and can take up to a minute. Later requests are served from Postgres.
 
 ### Environment variables (`api/.env`)
@@ -100,6 +102,7 @@ All weather data comes from [Open-Meteo](https://open-meteo.com). Postgres store
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| `GET` | `/demo/` | MVP demo page (`api/public/index.html`) that calls the endpoints below |
 | `GET` | `/health` | Service, database and upstream status |
 | `POST` | `/climate/profile` | Full risk profile. Body: `{"lat": number, "lon": number}` |
 | `GET` | `/climate/events?lat=..&lon=..` | Same pipeline, returning only location, active events, freshness, cache and warnings |
@@ -219,7 +222,7 @@ Screening also fetches the elevation of the exact point and its eight neighbours
 
 ### 3. Fetch the current forecast (fast, cached for hours)
 
-The weather forecast is refetched when older than 6 hours, the river forecast when older than 24 hours. Dormant hazards cost almost nothing:
+The weather forecast and the river forecast are each cached for 6 hours and refetched once older than that. Dormant hazards cost almost nothing:
 
 - only the two tripwire variables, `precipitation_sum` and `temperature_2m_max`, are always requested; other variables are added only for primary and secondary hazards;
 - the river forecast is skipped entirely while `river_flood` is dormant.
@@ -260,15 +263,13 @@ Stored events are kept in step with the forecast: opened, updated, marked `escal
 
 | What failed | What happens |
 | --- | --- |
-| Weather history, nothing cached | 503 `UPSTREAM_UNAVAILABLE` |
-| Weather or river history, expired profile cached | The expired profile is served, confidence `low` |
-| River history, nothing cached | `river_flood` is treated as secondary, confidence `low`, retried after 1 day |
-| A forecast refresh, older copy cached | The older copy is served, confidence `low` |
-| A forecast, nothing cached | That forecast signal is left out, confidence `low` |
+| Weather history | 503 `UPSTREAM_UNAVAILABLE` |
+| River history | `river_flood` is treated as secondary, confidence `low`, retried after 1 day |
+| A forecast | That forecast signal is left out, confidence `low` |
 | Climate projections, elevation or exposure | No adjustment or structural score, confidence `med` |
 | A database write | Retried once, then logged. The response is still sent with a `persistence_failed` warning |
 
-Each case adds an entry to `warnings`. Upstream calls are retried up to 3 times with backoff for timeouts, 429 and 5xx; other 4xx responses are not retried.
+Stale data is never served: an expired screening profile or a forecast past its 6 hours is refetched or left out, not reused. Each case adds an entry to `warnings`. Upstream calls are retried up to 3 times with backoff for timeouts, 429 and 5xx; other 4xx responses are not retried.
 
 ## Code map (`api/`)
 

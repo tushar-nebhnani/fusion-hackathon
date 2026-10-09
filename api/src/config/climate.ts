@@ -12,13 +12,26 @@ export const CLIMATE = {
   climateModels: ["EC_Earth3P_HR", "MRI_AGCM3_2_S"],
   projectionBaseline: { start: "1995-01-01", end: "2014-12-31" },
   projectionFuture: { start: "2026-01-01", end: "2045-12-31" },
+  // Fetched forecasts are cached this long; past it they are refetched,
+  // never served
   staleForecastHours: 6,
-  staleFloodHours: 24,
+  staleFloodHours: 6,
+  // Background job: forecast layers of every known location are refetched
+  refreshHours: 6,
   rescreenDays: 90,
   // A profile screened with a source missing is retried sooner
   degradedRescreenDays: 1,
   // Wait before asking again for projections that could not be fetched
   projectionRetryMinutes: 5,
+  agent: {
+    // Part of `agent_version`; bump when a prompt in src/prompts/climate.ts changes
+    promptVersion: "agent-1",
+    maxTokens: 16_000,
+    timeoutMs: 90_000,
+    maxRetries: 2,
+    // After a failed call the agent is left alone for this long
+    retryMinutes: 5,
+  },
   scoreWeights: { structural: 0.3, historical: 0.5, forecast: 0.2 },
   relevanceWeights: { primary: 1, secondary: 0.5, dormant: 0.1 },
   maxProjectionAdjustment: 0.1,

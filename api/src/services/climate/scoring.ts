@@ -154,14 +154,12 @@ export function grade(risk: number): Grade {
 }
 
 export interface DataQuality {
-  // Served from stale cache after an upstream failure
-  staleServed: boolean;
   primaryMissing: boolean;
   secondaryMissing: boolean;
 }
 
 export function confidenceLevel(quality: DataQuality): ConfidenceLevel {
-  if (quality.staleServed || quality.primaryMissing) return "low";
+  if (quality.primaryMissing) return "low";
   if (quality.secondaryMissing) return "med";
   return "high";
 }

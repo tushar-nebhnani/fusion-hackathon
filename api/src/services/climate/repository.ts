@@ -108,6 +108,7 @@ export function createRepository(prisma: PrismaClient) {
             indicators: profile.indicators as Prisma.InputJsonValue,
             method: profile.method,
             rationale: profile.reason,
+            agentVersion: profile.agentVersion ?? null,
             confidence: meta.confidence,
             decidedAt: meta.decidedAt,
             reviewAfter: meta.reviewAfter,
@@ -148,13 +149,6 @@ export function createRepository(prisma: PrismaClient) {
     getResponse(cellId: string, api: string, paramsHash: string) {
       return prisma.climateResponse.findUnique({
         where: { cellId_api_paramsHash: { cellId, api, paramsHash } },
-      });
-    },
-
-    async markStale(responseId: number): Promise<void> {
-      await prisma.climateResponse.update({
-        where: { id: responseId },
-        data: { status: "stale" },
       });
     },
 
@@ -252,6 +246,11 @@ export function createRepository(prisma: PrismaClient) {
           data: { ...data, status: escalated ? "escalated" : active.status },
         });
       }
+    },
+
+    // Every location the tool has been asked about
+    listPoints(): Promise<LatLon[]> {
+      return prisma.point.findMany({ select: { lat: true, lon: true }, orderBy: { id: "asc" } });
     },
 
     async logRequest(entry: {

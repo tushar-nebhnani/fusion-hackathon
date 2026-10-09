@@ -2,9 +2,12 @@ import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
 import { connectDb, disconnectDb, prisma } from "../config/db.js";
+import type { ClimateAgent } from "../services/climate/agent.js";
 import { createClimateService } from "../services/climate/profile.service.js";
 import { climateProfileSchema, type ClimateProfile } from "../services/climate/schema.js";
+import { fakeAgent } from "../services/climate/testing/fake-agent.js";
 import { fakeOpenMeteo, type FakeClimate } from "../services/climate/testing/fake-open-meteo.js";
+import { memoryCache } from "../services/climate/testing/memory-cache.js";
 
 // Integration tests: real Express app and Postgres, synthetic Open-Meteo data
 const START = new Date("2026-10-09T06:00:00Z");
@@ -13,11 +16,14 @@ const GUWAHATI = { lat: 26.1445, lon: 91.7362 };
 const silent = { error: vi.fn(), warn: vi.fn() };
 let clock = START;
 
-function setup(climate: Partial<FakeClimate> = {}, rateLimit = 1000) {
+function setup(climate: Partial<FakeClimate> = {}, rateLimit = 1000, agent?: ClimateAgent) {
   const om = fakeOpenMeteo(() => clock, climate);
+  const cache = memoryCache();
   const service = createClimateService({
     prisma,
     openMeteo: om,
+    cache,
+    agent,
     now: () => clock,
     logger: silent,
   });
@@ -31,7 +37,7 @@ function setup(climate: Partial<FakeClimate> = {}, rateLimit = 1000) {
     const res = await request(app).post("/climate/profile").send(point);
     return { res, body: res.body as ClimateProfile };
   };
-  return { app, om, profile };
+  return { app, om, cache, profile, service };
 }
 
 const hazard = (body: ClimateProfile, name: string) =>
@@ -133,6 +139,54 @@ describe("POST /climate/profile", () => {
     expect(await prisma.hazardScore.count()).toBe(6);
   });
 
+  it("serves screening results and forecasts from the cache, not Postgres", async () => {
+    const { om, cache, profile } = setup();
+    const first = await profile();
+    expect([...cache.store.keys()].sort()).toEqual([
+      expect.stringMatching(/^climate:relevance:0\.05:/),
+      expect.stringMatching(/^climate:relevance:0\.1:/),
+      expect.stringMatching(/^climate:response:flood_forecast:/),
+      expect.stringMatching(/^climate:response:forecast:/),
+    ]);
+    // With the Postgres copies gone, only the cache can answer
+    await prisma.cellHazardRelevance.deleteMany();
+    await prisma.climateResponse.deleteMany();
+    om.calls.length = 0;
+
+    const second = await profile();
+
+    expect(second.body.cache).toBe("complete_hit");
+    expect(om.calls).toEqual([]);
+    expect(second.body.hazards).toEqual(first.body.hazards);
+    expect(second.body.data_freshness).toEqual(first.body.data_freshness);
+  });
+
+  it("falls back to Postgres and refills the cache when the cache is empty", async () => {
+    const { om, cache, profile } = setup();
+    await profile();
+    cache.store.clear();
+    om.calls.length = 0;
+
+    const { body } = await profile();
+
+    expect(body.cache).toBe("complete_hit");
+    expect(om.calls).toEqual([]);
+    expect(cache.store.size).toBe(4);
+  });
+
+  it("expires cache entries when the data does: 6h forecasts, 90d screening", async () => {
+    const { cache, profile } = setup();
+    await profile();
+
+    const ttlHours = (prefix: string) =>
+      [...cache.store.entries()]
+        .filter(([key]) => key.startsWith(prefix))
+        .map(([, entry]) => entry.ttlMs / HOUR_MS);
+    expect(ttlHours("climate:response:forecast:")).toEqual([6]);
+    expect(ttlHours("climate:response:flood_forecast:")).toEqual([6]);
+    expect(ttlHours("climate:relevance:")).toEqual([90 * 24, 90 * 24]);
+  });
+
   it("shares cached cell data with a nearby point, fetching only its elevation", async () => {
     const { om, profile } = setup();
     await profile();
@@ -154,11 +208,6 @@ describe("POST /climate/profile", () => {
     clock = new Date(START.getTime() + 7 * HOUR_MS);
     const afterSevenHours = await profile();
     expect(afterSevenHours.body.cache).toBe("partial_hit");
-    expect(om.calls).toEqual(["forecast"]);
-
-    om.calls.length = 0;
-    clock = new Date(START.getTime() + 25 * HOUR_MS);
-    await profile();
     expect([...om.calls].sort()).toEqual(["flood_forecast", "forecast"]);
   });
 
@@ -313,7 +362,7 @@ describe("POST /climate/profile", () => {
     expect(await prisma.cellHazardRelevance.count()).toBe(0);
   });
 
-  it("serves stale cache with low confidence when a forecast refresh fails", async () => {
+  it("leaves a forecast out rather than serving it stale", async () => {
     const { om, profile } = setup();
     await profile();
     om.climateOf.failing = ["forecast"];
@@ -323,13 +372,37 @@ describe("POST /climate/profile", () => {
 
     expect(res.status).toBe(200);
     expect(body.confidence).toBe("low");
+    expect(body.warnings.join()).toContain("forecast_unavailable: forecast signal left out");
+    expect(body.warnings.join()).not.toContain("serving cached data");
+    expect(body.data_freshness.forecast_issued_at).toBeNull();
+  });
+
+  it("returns 503 rather than an expired screening when the history cannot be refetched", async () => {
+    const { om, profile } = setup();
+    await profile();
+    om.climateOf.failing = ["archive"];
+    clock = new Date(START.getTime() + 91 * 24 * HOUR_MS);
+
+    const { res } = await profile();
+
+    expect(res.status).toBe(503);
+    expect(res.body).toMatchObject({ error: { code: "UPSTREAM_UNAVAILABLE" } });
+  });
+
+  it("re-screens the river as unknown rather than serving its expired profile", async () => {
+    const { om, profile } = setup();
+    await profile();
+    om.climateOf.failing = ["flood_history"];
+    clock = new Date(START.getTime() + 91 * 24 * HOUR_MS);
+
+    const { res, body } = await profile();
+
+    expect(res.status).toBe(200);
     expect(body.warnings.join()).toContain(
-      "forecast_unavailable: serving cached data from 2026-10-09T11:30:00+05:30",
+      "river_discharge_history_unavailable: river flood treated as secondary",
     );
-    expect(body.data_freshness.forecast_issued_at).toBe("2026-10-09T11:30:00+05:30");
-    expect(await prisma.climateResponse.findFirst({ where: { api: "forecast" } })).toMatchObject({
-      status: "stale",
-    });
+    expect(body.warnings.join()).not.toContain("expired");
+    expect(hazard(body, "river_flood")?.relevance).toBe("secondary");
   });
 
   it("returns a partial response when secondary sources fail", async () => {
@@ -422,6 +495,285 @@ describe("POST /climate/profile", () => {
     const third = await bad();
     expect(third.status).toBe(429);
     expect(third.body).toMatchObject({ error: { code: "RATE_LIMITED" } });
+  });
+});
+
+describe("scheduled refresh", () => {
+  const AN_HOUR_LATER = new Date(START.getTime() + HOUR_MS);
+
+  it("refetches the forecast layers of a known location even while they are fresh", async () => {
+    const { om, cache, profile, service } = setup();
+    await profile();
+    om.calls.length = 0;
+    clock = AN_HOUR_LATER;
+
+    const summary = await service.refreshAll();
+
+    expect(summary).toEqual({ points: 1, failed: 0 });
+    expect([...om.calls].sort()).toEqual(["flood_forecast", "forecast"]);
+
+    // Postgres holds the new payloads
+    const stored = await prisma.climateResponse.findMany({
+      where: { api: { in: ["forecast", "flood_forecast"] } },
+    });
+    expect(stored.map((row) => row.fetchedAt)).toEqual([AN_HOUR_LATER, AN_HOUR_LATER]);
+    expect(stored.every((row) => row.status === "fresh")).toBe(true);
+
+    // So does the cache
+    const cached = [...cache.store.entries()]
+      .filter(([key]) => key.startsWith("climate:response:"))
+      .map(([, entry]) => (JSON.parse(entry.value) as { fetchedAt: string }).fetchedAt);
+    expect(cached).toEqual([AN_HOUR_LATER.toISOString(), AN_HOUR_LATER.toISOString()]);
+
+    // Scores are recomputed, but a refresh is not logged as a client request
+    expect(await prisma.hazardScore.count()).toBe(12);
+    expect(await prisma.requestLog.count()).toBe(1);
+  });
+
+  it("leaves the next request a complete hit on the refreshed data", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    clock = AN_HOUR_LATER;
+    await service.refreshAll();
+    om.calls.length = 0;
+
+    const { body } = await profile();
+
+    expect(body.cache).toBe("complete_hit");
+    expect(om.calls).toEqual([]);
+    expect(body.data_freshness.forecast_issued_at).toBe("2026-10-09T12:30:00+05:30");
+  });
+
+  it("does not refetch history, projections or elevation", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    om.calls.length = 0;
+    clock = AN_HOUR_LATER;
+
+    await service.refreshAll();
+
+    expect(om.calls).not.toContain("archive");
+    expect(om.calls).not.toContain("climate");
+    expect(om.calls).not.toContain("flood_history");
+    expect(om.calls).not.toContain("elevation");
+  });
+
+  it("fetches each cell once, however many locations share it", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    await profile({ lat: 26.1451, lon: 91.737 });
+    om.calls.length = 0;
+    clock = AN_HOUR_LATER;
+
+    const summary = await service.refreshAll();
+
+    expect(summary).toEqual({ points: 2, failed: 0 });
+    expect([...om.calls].sort()).toEqual(["flood_forecast", "forecast"]);
+  });
+
+  it("opens an event when a refreshed forecast turns dangerous, with no request needed", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    expect(await prisma.cellEvent.count()).toBe(0);
+
+    om.climateOf.forecastRain = [0, 150, 150, 150];
+    clock = new Date(START.getTime() + 6 * HOUR_MS);
+    await service.refreshAll();
+
+    expect(await prisma.cellEvent.findMany()).toMatchObject([
+      { hazard: "flash_flood", severity: "warning", status: "open", cellId: "0.1:26.1:91.7" },
+    ]);
+  });
+
+  it("keeps still-valid data untouched when the refresh cannot reach Open-Meteo", async () => {
+    const { om, profile, service } = setup();
+    const before = await profile();
+    om.climateOf.failing = ["forecast", "flood_forecast"];
+    clock = AN_HOUR_LATER;
+
+    const summary = await service.refreshAll();
+
+    expect(summary).toEqual({ points: 1, failed: 0 });
+    expect(
+      await prisma.climateResponse.findFirstOrThrow({ where: { api: "forecast" } }),
+    ).toMatchObject({ fetchedAt: START, status: "fresh" });
+
+    om.climateOf.failing = [];
+    om.calls.length = 0;
+    const after = await profile();
+    expect(after.body.cache).toBe("complete_hit");
+    expect(after.body.confidence).toBe(before.body.confidence);
+    expect(after.body.warnings).toEqual(before.body.warnings);
+  });
+
+  it("skips a location that fails and still refreshes the rest", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    await profile({ lat: 26.1451, lon: 91.737 });
+    om.calls.length = 0;
+    clock = AN_HOUR_LATER;
+    const spy = vi.spyOn(prisma.point, "upsert").mockRejectedValueOnce(new Error("deadlock"));
+
+    const summary = await service.refreshAll();
+    spy.mockRestore();
+
+    expect(summary).toEqual({ points: 2, failed: 1 });
+    expect([...om.calls].sort()).toEqual(["flood_forecast", "forecast"]);
+    expect(silent.warn).toHaveBeenCalled();
+  });
+
+  it("does nothing when no location is known yet", async () => {
+    const { om, service } = setup();
+
+    expect(await service.refreshAll()).toEqual({ points: 0, failed: 0 });
+    expect(om.calls).toEqual([]);
+  });
+});
+
+describe("climate agent", () => {
+  const MINUTE_MS = 60_000;
+
+  it("raises a hazard category in fetch 1 and records why", async () => {
+    const { agent, reviews } = fakeAgent({ categories: { cold_wave: "secondary" } });
+    const { body } = await setup({}, 1000, agent).profile();
+
+    expect(hazard(body, "cold_wave")).toMatchObject({
+      relevance: "secondary",
+      relevance_method: "agent_raised",
+    });
+    expect(hazard(body, "cold_wave")?.reason).toContain("Agent review: fake rationale for cold_wave");
+    // Weather hazards and the river are reviewed separately, as they are screened
+    expect(reviews.map((r) => r.hazards.map((h) => h.hazard).sort())).toEqual(
+      expect.arrayContaining([
+        ["cold_wave", "drought", "flash_flood", "heat", "storm"],
+        ["river_flood"],
+      ]),
+    );
+    expect(
+      await prisma.cellHazardRelevance.findFirst({ where: { hazard: "cold_wave" } }),
+    ).toMatchObject({ relevance: "secondary", method: "agent_raised", agentVersion: "fake-agent/1" });
+  });
+
+  it("never lowers a category the rules measured, but marks it as reviewed", async () => {
+    const { agent } = fakeAgent({ categories: { heat: "dormant" } });
+    const { body } = await setup({}, 1000, agent).profile();
+
+    expect(hazard(body, "heat")).toMatchObject({ relevance: "primary", relevance_method: "static" });
+    expect(hazard(body, "heat")?.reason).not.toContain("Agent review");
+    expect(await prisma.cellHazardRelevance.findFirst({ where: { hazard: "heat" } })).toMatchObject({
+      method: "static",
+      agentVersion: "fake-agent/1",
+    });
+  });
+
+  it("uses the agent's score as the forecast component in fetch 2", async () => {
+    const { agent, scored } = fakeAgent({ scores: { storm: 0.9 } });
+
+    const { body } = await setup({}, 1000, agent).profile();
+
+    expect(hazard(body, "storm")).toMatchObject({
+      components: { forecast: 0.9 },
+      forecast_source: "agent",
+      forecast_note: "fake note for storm",
+    });
+    expect(climateProfileSchema.safeParse(body).success).toBe(true);
+    // The agent is given the rule score and the forecast window it is judging
+    expect(scored[0]).toMatchObject({ window: { start: "2026-10-09", end: "2026-10-15" } });
+    expect(scored[0]?.hazards).toHaveLength(6);
+    expect(scored[0]?.weather?.time).toHaveLength(7);
+    expect(await prisma.hazardScore.findFirst({ where: { hazard: "storm" } })).toMatchObject({
+      forecast: 0.9,
+    });
+  });
+
+  it("adds no agent fields when there is no agent", async () => {
+    const { body } = await setup().profile();
+
+    expect(hazard(body, "storm")).not.toHaveProperty("forecast_source");
+    expect(hazard(body, "storm")).not.toHaveProperty("forecast_note");
+    expect(await prisma.cellHazardRelevance.count({ where: { agentVersion: null } })).toBe(6);
+  });
+
+  it("is not called again on a complete hit", async () => {
+    const { agent, calls } = fakeAgent({ scores: { storm: 0.9 } });
+    const { om, profile } = setup({}, 1000, agent);
+    const first = await profile();
+    calls.length = 0;
+    om.calls.length = 0;
+
+    const second = await profile();
+
+    expect(second.body.cache).toBe("complete_hit");
+    expect(calls).toEqual([]);
+    expect(om.calls).toEqual([]);
+    expect(second.body.hazards).toEqual(first.body.hazards);
+  });
+
+  it("scores again when the forecast is refreshed", async () => {
+    const { agent, calls } = fakeAgent();
+    const { profile } = setup({}, 1000, agent);
+    await profile();
+    calls.length = 0;
+    clock = new Date(START.getTime() + 7 * HOUR_MS);
+
+    await profile();
+
+    expect(calls).toEqual(["score"]);
+  });
+
+  it("falls back to the rules, with a warning, when the agent fails", async () => {
+    const fake = fakeAgent({ categories: { cold_wave: "secondary" }, scores: { storm: 0.9 } });
+    fake.state.failing = true;
+
+    const { res, body } = await setup({}, 1000, fake.agent).profile();
+
+    expect(res.status).toBe(200);
+    expect(hazard(body, "cold_wave")).toMatchObject({ relevance: "dormant", relevance_method: "static" });
+    expect(hazard(body, "storm")).not.toHaveProperty("forecast_source");
+    expect(hazard(body, "storm")?.components.forecast).not.toBe(0.9);
+    expect(body.warnings.join()).toContain("agent_unavailable: hazard categories are rule-based only");
+    expect(body.warnings.join()).toContain("agent_unavailable: forecast scores are rule-based only");
+    expect(await prisma.cellHazardRelevance.count({ where: { agentVersion: null } })).toBe(6);
+  });
+
+  it("leaves a failing agent alone for 5 minutes, then reviews what it missed", async () => {
+    const fake = fakeAgent({ categories: { cold_wave: "secondary" } });
+    fake.state.failing = true;
+    const { om, profile } = setup({}, 1000, fake.agent);
+    await profile();
+    const attempts = fake.calls.length;
+    fake.state.failing = false;
+
+    clock = new Date(START.getTime() + 2 * MINUTE_MS);
+    await profile();
+    expect(fake.calls).toHaveLength(attempts);
+
+    om.calls.length = 0;
+    clock = new Date(START.getTime() + 6 * MINUTE_MS);
+    const { body } = await profile();
+
+    // The stored screening is reviewed in place: no history is fetched again.
+    // Only the forecast is, because the raised hazard now needs its variables.
+    expect(om.calls).toEqual(["forecast"]);
+    expect(hazard(body, "cold_wave")).toMatchObject({ relevance_method: "agent_raised" });
+    expect(hazard(body, "storm")).toMatchObject({ forecast_source: "agent" });
+    expect(await prisma.cellHazardRelevance.count({ where: { agentVersion: null } })).toBe(0);
+  });
+
+  it("reviews cells that were screened before the agent was switched on", async () => {
+    await setup().profile();
+    const { agent, calls } = fakeAgent({ categories: { cold_wave: "secondary" } });
+    const { om, profile } = setup({}, 1000, agent);
+
+    const { body } = await profile();
+
+    // No history is fetched again; the raised hazard adds a forecast variable
+    expect(om.calls).toEqual(["forecast"]);
+    expect(calls.filter((c) => c === "review")).toHaveLength(2);
+    expect(hazard(body, "cold_wave")).toMatchObject({ relevance_method: "agent_raised" });
+    // The original 90-day review date is kept
+    const row = await prisma.cellHazardRelevance.findFirst({ where: { hazard: "cold_wave" } });
+    expect(row?.reviewAfter.toISOString()).toBe("2027-01-07T06:00:00.000Z");
   });
 });
 

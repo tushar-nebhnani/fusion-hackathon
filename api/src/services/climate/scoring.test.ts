@@ -167,10 +167,10 @@ describe("scores", () => {
   });
 
   it("derives confidence from data quality", () => {
-    const good = { staleServed: false, primaryMissing: false, secondaryMissing: false };
+    const good = { primaryMissing: false, secondaryMissing: false };
     expect(confidenceLevel(good)).toBe("high");
     expect(confidenceLevel({ ...good, secondaryMissing: true })).toBe("med");
-    expect(confidenceLevel({ ...good, secondaryMissing: true, staleServed: true })).toBe("low");
+    expect(confidenceLevel({ ...good, secondaryMissing: true, primaryMissing: true })).toBe("low");
     expect(confidenceLevel({ ...good, primaryMissing: true })).toBe("low");
   });
 

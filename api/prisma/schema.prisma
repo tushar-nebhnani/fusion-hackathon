@@ -247,3 +247,19 @@ model RequestLog {
   @@index([pointId, createdAt])
   @@map("request_log")
 }
+
+// Idempotency-Key records. A row with no response is a request in flight;
+// `expires_at` is the lock timeout until the response is stored, then its TTL.
+model IdempotencyKey {
+  scope          String
+  key            String
+  fingerprint    String
+  responseStatus Int?     @map("response_status")
+  responseBody   String?  @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz
+
+  @@id([scope, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}

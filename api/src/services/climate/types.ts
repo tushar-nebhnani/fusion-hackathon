@@ -88,6 +88,8 @@ export interface HazardProfile {
   indicatorValue: number | null;
   reason: string;
   indicators: StoredIndicators;
+  // Set once the agent has reviewed this category; absent means rules only
+  agentVersion?: string | null;
 }
 
 export interface StaticFeatures {

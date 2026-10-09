@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Climate Risk Profile · Fusion</title>
+<style>
+  :root {
+    --paper: #f4f2ec;
+    --card: #fffdf8;
+    --ink: #1b2422;
+    --muted: #5d6965;
+    --line: #dcd8cc;
+    --track: #e7e3d7;
+    --accent: #0f6b5c;
+    --accent-ink: #ffffff;
+    --focus: #1a8f7b;
+    --grade-a: #2c8f62;
+    --grade-b: #6f9a2a;
+    --grade-c: #b9861a;
+    --grade-d: #c9622a;
+    --grade-e: #b8383b;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #121716;
+      --card: #1a2120;
+      --ink: #e9ede9;
+      --muted: #9aa7a2;
+      --line: #2c3634;
+      --track: #263030;
+      --accent: #3fb39d;
+      --accent-ink: #0c1413;
+      --focus: #5fd0ba;
+      --grade-a: #47b885;
+      --grade-b: #9bc24a;
+      --grade-c: #dfae3d;
+      --grade-d: #e98a4d;
+      --grade-e: #e76468;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 15px/1.5 var(--sans);
+  }
+  h1, h2, h3, p { margin: 0; }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  .page { max-width: 1180px; margin: 0 auto; padding: 20px 16px 48px; }
+
+  .top {
+    display: flex; flex-wrap: wrap; gap: 12px 24px;
+    align-items: flex-end; justify-content: space-between;
+    padding-bottom: 18px; border-bottom: 1px solid var(--line);
+  }
+  .eyebrow {
+    font-size: 12px; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .top h1 { font-size: 26px; line-height: 1.2; letter-spacing: -0.02em; text-wrap: balance; }
+  .top p { color: var(--muted); max-width: 56ch; margin-top: 4px; }
+  .mode {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--card); font-size: 13px; white-space: nowrap;
+  }
+  .mode::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted);
+  }
+  .mode[data-mode="live"]::before { background: var(--grade-a); }
+  .mode[data-mode="sample"]::before { background: var(--grade-c); }
+
+  .layout { display: grid; gap: 20px; margin-top: 20px; }
+  @media (min-width: 900px) {
+    .layout { grid-template-columns: 330px minmax(0, 1fr); align-items: start; }
+    .picker { position: sticky; top: 16px; }
+  }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px;
+  }
+  .card > h2, .section-title {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.09em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
+  }
+
+  /* Location picker */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    border: 1px solid var(--line); background: transparent; border-radius: 999px;
+    padding: 4px 11px; font-size: 13px; cursor: pointer;
+  }
+  .chip:hover { border-color: var(--accent); }
+  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .chip.outside { border-style: dashed; color: var(--muted); }
+
+  .map { margin: 14px 0 6px; }
+  .map svg { display: block; width: 100%; height: auto; cursor: crosshair; border-radius: 6px; background: var(--paper); }
+  .map .grid { stroke: var(--line); stroke-width: 0.06; }
+  .map .tick { fill: var(--muted); font: 0.95px var(--mono); }
+  .map .city { fill: var(--muted); }
+  .map .city-label { fill: var(--muted); font: 1px var(--sans); }
+  .map .pin { fill: var(--accent); stroke: var(--card); stroke-width: 0.18; }
+  .map .cross { stroke: var(--accent); stroke-width: 0.08; stroke-dasharray: 0.3 0.3; }
+  .hint { font-size: 12.5px; color: var(--muted); }
+
+  .coords { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .coords label { display: block; font-size: 12.5px; color: var(--muted); }
+  .coords input {
+    width: 100%; margin-top: 3px; padding: 8px 10px;
+    background: var(--paper); border: 1px solid var(--line); border-radius: 6px;
+    font-family: var(--mono);
+  }
+  .go {
+    width: 100%; margin-top: 12px; padding: 10px 14px; border: 0; border-radius: 6px;
+    background: var(--accent); color: var(--accent-ink); font-weight: 600; cursor: pointer;
+  }
+  .go:disabled { opacity: 0.6; cursor: progress; }
+
+  /* Results */
+  .results { display: grid; gap: 20px; min-width: 0; }
+  .notice {
+    padding: 12px 14px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--card); border-left: 4px solid var(--grade-c);
+  }
+  .notice.error { border-left-color: var(--grade-e); }
+  .notice strong { display: block; }
+  .notice code { font-family: var(--mono); font-size: 13px; }
+  .loading { color: var(--muted); }
+  .loading .bar {
+    height: 3px; margin-top: 10px; border-radius: 2px; background: var(--track); overflow: hidden;
+  }
+  .loading .bar::after {
+    content: ""; display: block; width: 35%; height: 100%; background: var(--accent);
+    animation: slide 1.3s ease-in-out infinite;
+  }
+  @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+  @media (prefers-reduced-motion: reduce) {
+    .loading .bar::after { animation: none; width: 100%; opacity: 0.5; }
+    .bar-fill, .scale-marker { transition: none !important; }
+  }
+
+  .summary { display: grid; gap: 18px 24px; }
+  @media (min-width: 620px) { .summary { grid-template-columns: auto minmax(0, 1fr); align-items: center; } }
+  .grade {
+    --g: var(--muted);
+    display: flex; align-items: center; gap: 14px;
+  }
+  .grade-letter {
+    width: 96px; height: 96px; border-radius: 12px; display: grid; place-items: center;
+    font-size: 60px; font-weight: 700; line-height: 1; letter-spacing: -0.03em;
+    color: var(--g); border: 3px solid var(--g);
+  }
+  .grade-meta .big { font-size: 30px; font-weight: 650; line-height: 1.1; }
+  .grade-meta .big small { font-size: 14px; font-weight: 400; color: var(--muted); }
+  .grade-meta div + div { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+
+  .scale { position: relative; padding-top: 16px; }
+  .scale-track { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; }
+  .scale-track span { display: block; height: 100%; opacity: 0.85; }
+  .scale-marker {
+    position: absolute; top: 6px; width: 2px; height: 30px; margin-left: -1px;
+    background: var(--ink); transition: left 0.5s ease;
+  }
+  .scale-labels { display: flex; gap: 2px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+  .scale-labels span { text-align: center; }
+  .facts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 14px; font-size: 13.5px; color: var(--muted); }
+  .facts b { color: var(--ink); font-weight: 600; }
+
+  .hazards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); }
+  .hazard { --g: var(--muted); padding: 14px; }
+  .hazard[data-relevance="dormant"] { background: transparent; }
+  .hazard-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .hazard h3 { font-size: 16px; }
+  .tag {
+    font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted);
+    white-space: nowrap;
+  }
+  .tag[data-kind="primary"] { background: var(--ink); border-color: var(--ink); color: var(--card); }
+  .tag[data-kind="secondary"] { border-color: var(--ink); color: var(--ink); }
+  .tag[data-kind="severe"], .tag[data-kind="warning"] { background: var(--grade-e); border-color: var(--grade-e); color: #fff; }
+  .tag[data-kind="watch"] { border-color: var(--grade-d); color: var(--grade-d); }
+  .hazard-score { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; }
+  .hazard-score .num { font-size: 22px; font-weight: 600; min-width: 4ch; }
+  .bar { flex: 1; height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; background: var(--g); transition: width 0.5s ease; }
+  .reason { font-size: 13.5px; min-height: 2.9em; }
+  .parts { margin: 10px 0 0; padding: 10px 0 0; border-top: 1px solid var(--line); display: grid; gap: 5px; }
+  .part { display: grid; grid-template-columns: 76px 1fr 4ch; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); }
+  .part .bar { height: 4px; }
+  .part .bar-fill { background: var(--muted); }
+  .part .num { text-align: right; }
+  .extra { margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+
+  .events { display: grid; gap: 8px; }
+  .event { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+  .event + .event { padding-top: 8px; border-top: 1px solid var(--line); }
+  .event .when { color: var(--muted); font-size: 13.5px; }
+  .quiet { color: var(--muted); }
+  .warnings { margin: 12px 0 0; padding: 12px 0 0 18px; border-top: 1px solid var(--line); font-size: 13.5px; color: var(--muted); }
+  .warnings li + li { margin-top: 4px; }
+
+  .hood dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px 18px; margin: 0; }
+  .hood dt { font-size: 12px; color: var(--muted); }
+  .hood dd { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+  .hood-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 14px; }
+  .ghost {
+    border: 1px solid var(--line); background: transparent; border-radius: 6px;
+    padding: 6px 12px; cursor: pointer; font-size: 13.5px;
+  }
+  .ghost:hover { border-color: var(--accent); }
+  .ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+  details { margin-top: 14px; }
+  summary { cursor: pointer; font-size: 13.5px; color: var(--muted); }
+  pre {
+    margin: 10px 0 0; padding: 12px; border-radius: 6px; background: var(--paper);
+    border: 1px solid var(--line); font: 12px/1.5 var(--mono); overflow-x: auto; max-height: 360px;
+  }
+
+  .method { font-size: 13.5px; color: var(--muted); }
+  .method code { font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
+  .method p + p { margin-top: 6px; }
+  footer { margin-top: 28px; font-size: 12.5px; color: var(--muted); }
+  footer a { color: inherit; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Fusion 2026 · MVP demo</div>
+      <h1>Climate risk profile for a business location</h1>
+      <p>Pick a point in India. The API screens about 30 years of weather and river history, adds the 7-day forecast, and returns one grade plus a score for six hazards.</p>
+    </div>
+    <span class="mode" id="mode" data-mode="checking" role="status">Checking API…</span>
+  </header>
+
+  <div class="layout">
+    <aside class="card picker">
+      <h2>Location</h2>
+      <div class="chips" id="chips"></div>
+      <div class="map">
+        <svg id="map" viewBox="66 4.5 34 34" role="img" aria-label="Coverage area: latitude 6 to 37, longitude 68 to 98. Click to choose a point."></svg>
+      </div>
+      <p class="hint">Click anywhere in the coverage box, or type coordinates.</p>
+      <form id="form" novalidate>
+        <div class="coords">
+          <label>Latitude<input id="lat" inputmode="decimal" autocomplete="off" value="26.1445"></label>
+          <label>Longitude<input id="lon" inputmode="decimal" autocomplete="off" value="91.7362"></label>
+        </div>
+        <button class="go" id="go" type="submit">Score this location</button>
+      </form>
+    </aside>
+
+    <main class="results" id="results" aria-live="polite"></main>
+  </div>
+
+  <footer>
+    Weather, climate and river data: <a href="https://open-meteo.com">Open-Meteo</a>. Scores are a screening signal for a hackathon MVP, not a hazard forecast or financial advice.
+  </footer>
+</div>
+
+<script>
+"use strict";
+
+// Real responses captured from the API, used when it cannot be reached
+const SAMPLES = /*__SAMPLES__*/{"guwahati":{"location":{"lat":26.1445,"lon":91.7362,"cells":{"historical":"0.1:26.1:91.7","climate":"0.1:26.1:91.7","flood":"0.05:26.15:91.75","forecast":"0.1:26.1:91.7"}},"overall_climate_risk":0.459,"grade":"C","confidence":"med","hazards":[{"hazard":"river_flood","relevance":"secondary","relevance_method":"static","score":0.322,"components":{"structural":1,"historical":0.022,"forecast":0.055},"reason":"99th-percentile river discharge of 45 m³/s"},{"hazard":"flash_flood","relevance":"primary","relevance_method":"static","score":0.824,"components":{"structural":1,"historical":1,"forecast":0},"reason":"Rain of 50 mm or more on 11.6 days per year"},{"hazard":"heat","relevance":"dormant","relevance_method":"static","score":0,"components":{"historical":0,"forecast":0},"reason":"Max temperature above 40°C on 0.0 days per year"},{"hazard":"drought","relevance":"dormant","relevance_method":"static","score":0.1,"components":{"historical":0.125,"forecast":0},"reason":"Weak monsoon (below 75% of normal) in about 1 in 16 years"},{"hazard":"storm","relevance":"secondary","relevance_method":"static","score":0.12,"components":{"historical":0.113,"forecast":0.148},"reason":"Gusts above 60 km/h on 1.1 days per year"},{"hazard":"cold_wave","relevance":"dormant","relevance_method":"static","score":0,"components":{"historical":0,"forecast":0},"reason":"Min temperature below 4°C on 0.0 days per year"}],"active_events":[],"data_freshness":{"forecast_issued_at":"2026-10-09T11:58:01+05:30","history_until":"2026-10-03"},"cache":"complete_hit","warnings":["flood_exposure_unavailable: World Bank exposure raster is not loaded"]},"mumbai":{"location":{"lat":19.076,"lon":72.8777,"cells":{"historical":"0.1:19.1:72.9","climate":"0.1:19.1:72.9","flood":"0.05:19.10:72.90","forecast":"0.1:19.1:72.9"}},"overall_climate_risk":0.428,"grade":"C","confidence":"med","hazards":[{"hazard":"river_flood","relevance":"dormant","relevance_method":"static","score":0.198,"components":{"structural":0.65,"historical":0.006,"forecast":0},"reason":"99th-percentile river discharge of 13 m³/s"},{"hazard":"flash_flood","relevance":"primary","relevance_method":"static","score":0.759,"components":{"structural":0.65,"historical":1,"forecast":0},"reason":"Rain of 50 mm or more on 7.8 days per year"},{"hazard":"heat","relevance":"dormant","relevance_method":"static","score":0.078,"components":{"historical":0,"forecast":0.39},"reason":"Max temperature above 40°C on 0.0 days per year"},{"hazard":"drought","relevance":"secondary","relevance_method":"static","score":0.2,"components":{"historical":0.25,"forecast":0},"reason":"Weak monsoon (below 75% of normal) in about 1 in 8 years"},{"hazard":"storm","relevance":"secondary","relevance_method":"static","score":0.196,"components":{"historical":0.239,"forecast":0.022},"reason":"Gusts above 60 km/h on 2.4 days per year"},{"hazard":"cold_wave","relevance":"dormant","relevance_method":"static","score":0,"components":{"historical":0,"forecast":0},"reason":"Min temperature below 4°C on 0.0 days per year"}],"active_events":[],"data_freshness":{"forecast_issued_at":"2026-10-09T12:19:35+05:30","history_until":"2026-10-03"},"cache":"complete_hit","warnings":["flood_exposure_unavailable: World Bank exposure raster is not loaded"]},"delhi":{"location":{"lat":28.6139,"lon":77.209,"cells":{"historical":"0.1:28.6:77.2","climate":"0.1:28.6:77.2","flood":"0.05:28.60:77.20","forecast":"0.1:28.6:77.2"}},"overall_climate_risk":0.339,"grade":"B","confidence":"med","hazards":[{"hazard":"river_flood","relevance":"dormant","relevance_method":"static","score":0.241,"components":{"structural":0.788,"historical":0.009,"forecast":0},"reason":"99th-percentile river discharge of 19 m³/s"},{"hazard":"flash_flood","relevance":"secondary","relevance_method":"static","score":0.397,"components":{"structural":0.788,"historical":0.163,"forecast":0},"reason":"Rain of 50 mm or more on 1.0 days per year"},{"hazard":"heat","relevance":"primary","relevance_method":"static","score":0.59,"components":{"historical":0.738,"forecast":0},"reason":"Max temperature above 40°C on 29.5 days per year"},{"hazard":"drought","relevance":"secondary","relevance_method":"static","score":0.25,"components":{"historical":0.313,"forecast":0},"reason":"Weak monsoon (below 75% of normal) in about 1 in 6 years"},{"hazard":"storm","relevance":"secondary","relevance_method":"static","score":0.136,"components":{"historical":0.082,"forecast":0.352},"reason":"Gusts above 60 km/h on 0.8 days per year"},{"hazard":"cold_wave","relevance":"secondary","relevance_method":"static","score":0.091,"components":{"historical":0.113,"forecast":0},"reason":"Min temperature below 4°C on 1.1 days per year"}],"active_events":[],"data_freshness":{"forecast_issued_at":"2026-10-09T12:24:21+05:30","history_until":"2026-10-03"},"cache":"partial_hit","warnings":["flood_exposure_unavailable: World Bank exposure raster is not loaded"]},"chennai":{"location":{"lat":13.0827,"lon":80.2707,"cells":{"historical":"0.1:13.1:80.3","climate":"0.1:13.1:80.3","flood":"0.05:13.10:80.25","forecast":"0.1:13.1:80.3"}},"overall_climate_risk":0.375,"grade":"C","confidence":"med","hazards":[{"hazard":"river_flood","relevance":"dormant","relevance_method":"static","score":0.118,"components":{"structural":0.394,"historical":0,"forecast":0},"reason":"No river discharge modelled for this cell"},{"hazard":"flash_flood","relevance":"secondary","relevance_method":"static","score":0.291,"components":{"structural":0.394,"historical":0.315,"forecast":0},"reason":"Rain of 50 mm or more on 1.9 days per year"},{"hazard":"heat","relevance":"dormant","relevance_method":"static","score":0.036,"components":{"historical":0.028,"forecast":0},"reason":"Max temperature above 40°C on 1.1 days per year"},{"hazard":"drought","relevance":"primary","relevance_method":"static","score":0.64,"components":{"historical":0.625,"forecast":0.699},"reason":"Weak monsoon (below 75% of normal) in about 1 in 3 years"},{"hazard":"storm","relevance":"secondary","relevance_method":"static","score":0.124,"components":{"historical":0.091,"forecast":0.257},"reason":"Gusts above 60 km/h on 0.9 days per year"},{"hazard":"cold_wave","relevance":"dormant","relevance_method":"static","score":0,"components":{"historical":0,"forecast":0},"reason":"Min temperature below 4°C on 0.0 days per year"}],"active_events":[],"data_freshness":{"forecast_issued_at":"2026-10-09T12:26:56+05:30","history_until":"2026-10-03"},"cache":"complete_hit","warnings":["flood_exposure_unavailable: World Bank exposure raster is not loaded"]},"jaisalmer":{"location":{"lat":26.9157,"lon":70.9083,"cells":{"historical":"0.1:26.9:70.9","climate":"0.1:26.9:70.9","flood":"0.05:26.90:70.90","forecast":"0.1:26.9:70.9"}},"overall_climate_risk":0.696,"grade":"D","confidence":"med","hazards":[{"hazard":"river_flood","relevance":"dormant","relevance_method":"static","score":0.223,"components":{"structural":0.744,"historical":0,"forecast":0},"reason":"99th-percentile river discharge of 1 m³/s"},{"hazard":"flash_flood","relevance":"dormant","relevance_method":"static","score":0.244,"components":{"structural":0.744,"historical":0.042,"forecast":0},"reason":"Rain of 50 mm or more on 0.3 days per year"},{"hazard":"heat","relevance":"primary","relevance_method":"static","score":0.85,"components":{"historical":1,"forecast":0.25},"reason":"Max temperature above 40°C on 47.5 days per year"},{"hazard":"drought","relevance":"primary","relevance_method":"static","score":0.734,"components":{"historical":0.875,"forecast":0.172},"reason":"Weak monsoon (below 75% of normal) in about 1 in 2 years"},{"hazard":"storm","relevance":"primary","relevance_method":"static","score":0.664,"components":{"historical":0.724,"forecast":0.423},"reason":"Gusts above 60 km/h on 7.2 days per year"},{"hazard":"cold_wave","relevance":"dormant","relevance_method":"static","score":0.013,"components":{"historical":0.016,"forecast":0},"reason":"Min temperature below 4°C on 0.2 days per year"}],"active_events":[],"data_freshness":{"forecast_issued_at":"2026-10-09T12:28:09+05:30","history_until":"2026-10-03"},"cache":"partial_hit","warnings":["climate_projections_unavailable: no projection adjustment applied yet","flood_exposure_unavailable: World Bank exposure raster is not loaded"]},"srinagar":{"location":{"lat":34.0837,"lon":74.7973,"cells":{"historical":"0.1:34.1:74.8","climate":"0.1:34.1:74.8","flood":"0.05:34.10:74.80","forecast":"0.1:34.1:74.8"}},"overall_climate_risk":0.647,"grade":"D","confidence":"med","hazards":[{"hazard":"river_flood","relevance":"dormant","relevance_method":"static","score":0.148,"components":{"structural":0.481,"historical":0.007,"forecast":0},"reason":"99th-percentile river discharge of 13 m³/s"},{"hazard":"flash_flood","relevance":"primary","relevance_method":"static","score":0.779,"components":{"structural":0.481,"historical":1,"forecast":0.173},"reason":"Rain of 50 mm or more on 8.4 days per year"},{"hazard":"heat","relevance":"dormant","relevance_method":"static","score":0,"components":{"historical":0,"forecast":0},"reason":"Max temperature above 40°C on 0.0 days per year"},{"hazard":"drought","relevance":"secondary","relevance_method":"static","score":0.355,"components":{"historical":0.313,"forecast":0.526},"reason":"Weak monsoon (below 75% of normal) in about 1 in 6 years"},{"hazard":"storm","relevance":"dormant","relevance_method":"static","score":0,"components":{"historical":0,"forecast":0},"reason":"Gusts above 60 km/h on 0.0 days per year"},{"hazard":"cold_wave","relevance":"primary","relevance_method":"static","score":0.84,"components":{"historical":1,"forecast":0.2},"reason":"Min temperature below 4°C on 136.3 days per year"}],"active_events":[],"data_freshness":{"forecast_issued_at":"2026-10-09T12:30:29+05:30","history_until":"2026-10-03"},"cache":"complete_hit","warnings":["flood_exposure_unavailable: World Bank exposure raster is not loaded"]},"puri":{"location":{"lat":19.8135,"lon":85.8312,"cells":{"historical":"0.1:19.8:85.8","climate":"0.1:19.8:85.8","flood":"0.05:19.80:85.85","forecast":"0.1:19.8:85.8"}},"overall_climate_risk":0.261,"grade":"B","confidence":"med","hazards":[{"hazard":"river_flood","relevance":"dormant","relevance_method":"static","score":0.133,"components":{"structural":0.444,"historical":0,"forecast":0},"reason":"No river discharge modelled for this cell"},{"hazard":"flash_flood","relevance":"primary","relevance_method":"static","score":0.396,"components":{"structural":0.444,"historical":0.525,"forecast":0},"reason":"Rain of 50 mm or more on 3.1 days per year"},{"hazard":"heat","relevance":"dormant","relevance_method":"static","score":0.005,"components":{"historical":0.006,"forecast":0},"reason":"Max temperature above 40°C on 0.3 days per year"},{"hazard":"drought","relevance":"dormant","relevance_method":"static","score":0.05,"components":{"historical":0.063,"forecast":0},"reason":"Weak monsoon (below 75% of normal) in about 1 in 32 years"},{"hazard":"storm","relevance":"secondary","relevance_method":"static","score":0.161,"components":{"historical":0.151,"forecast":0.202},"reason":"Gusts above 60 km/h on 1.5 days per year"},{"hazard":"cold_wave","relevance":"dormant","relevance_method":"static","score":0,"components":{"historical":0,"forecast":0},"reason":"Min temperature below 4°C on 0.0 days per year"}],"active_events":[],"data_freshness":{"forecast_issued_at":"2026-10-09T12:33:17+05:30","history_until":"2026-10-03"},"cache":"complete_hit","warnings":["climate_projections_unavailable: no projection adjustment applied yet","flood_exposure_unavailable: World Bank exposure raster is not loaded"]},"bengaluru":{"location":{"lat":12.9716,"lon":77.5946,"cells":{"historical":"0.1:13.0:77.6","climate":"0.1:13.0:77.6","flood":"0.05:12.95:77.60","forecast":"0.1:13.0:77.6"}},"overall_climate_risk":0.473,"grade":"C","confidence":"med","hazards":[{"hazard":"river_flood","relevance":"secondary","relevance_method":"static","score":0.281,"components":{"structural":0.856,"historical":0.013,"forecast":0.088},"reason":"99th-percentile river discharge of 27 m³/s"},{"hazard":"flash_flood","relevance":"dormant","relevance_method":"static","score":0.275,"components":{"structural":0.856,"historical":0.037,"forecast":0},"reason":"Rain of 50 mm or more on 0.2 days per year"},{"hazard":"heat","relevance":"dormant","relevance_method":"static","score":0,"components":{"historical":0,"forecast":0},"reason":"Max temperature above 40°C on 0.0 days per year"},{"hazard":"drought","relevance":"secondary","relevance_method":"static","score":0.25,"components":{"historical":0.313,"forecast":0},"reason":"Weak monsoon (below 75% of normal) in about 1 in 6 years"},{"hazard":"storm","relevance":"primary","relevance_method":"static","score":0.794,"components":{"historical":0.945,"forecast":0.19},"reason":"Gusts above 60 km/h on 9.4 days per year"},{"hazard":"cold_wave","relevance":"dormant","relevance_method":"static","score":0,"components":{"historical":0,"forecast":0},"reason":"Min temperature below 4°C on 0.0 days per year"}],"active_events":[],"data_freshness":{"forecast_issued_at":"2026-10-09T12:35:49+05:30","history_until":"2026-10-03"},"cache":"complete_hit","warnings":["climate_projections_unavailable: no projection adjustment applied yet","flood_exposure_unavailable: World Bank exposure raster is not loaded"]}};
+const SAMPLES_CAPTURED = "9 Oct 2026";
+
+const PRESETS = [
+  { id: "guwahati", name: "Guwahati", lat: 26.1445, lon: 91.7362 },
+  { id: "mumbai", name: "Mumbai", lat: 19.076, lon: 72.8777 },
+  { id: "delhi", name: "Delhi", lat: 28.6139, lon: 77.209 },
+  { id: "chennai", name: "Chennai", lat: 13.0827, lon: 80.2707 },
+  { id: "jaisalmer", name: "Jaisalmer", lat: 26.9157, lon: 70.9083 },
+  { id: "srinagar", name: "Srinagar", lat: 34.0837, lon: 74.7973 },
+  { id: "puri", name: "Puri", lat: 19.8135, lon: 85.8312 },
+  { id: "bengaluru", name: "Bengaluru", lat: 12.9716, lon: 77.5946, labelLeft: true },
+  { id: "singapore", name: "Singapore", lat: 1.3521, lon: 103.8198, outside: true },
+];
+
+const HAZARDS = {
+  river_flood: "River flood",
+  flash_flood: "Flash flood",
+  heat: "Extreme heat",
+  drought: "Drought",
+  storm: "Storm and wind",
+  cold_wave: "Cold wave",
+};
+const GRADES = [
+  { grade: "A", upTo: 0.2, label: "Very low" },
+  { grade: "B", upTo: 0.35, label: "Low" },
+  { grade: "C", upTo: 0.5, label: "Moderate" },
+  { grade: "D", upTo: 0.7, label: "High" },
+  { grade: "E", upTo: 1, label: "Very high" },
+];
+const RELEVANCE_ORDER = { primary: 0, secondary: 1, dormant: 2 };
+const CACHE_TEXT = {
+  complete_hit: "Served from cache, no upstream call",
+  partial_hit: "Forecast refreshed, history from cache",
+  miss: "Freshly screened from 30 years of history",
+};
+const BOX = { latMin: 6, latMax: 37, lonMin: 68, lonMax: 98 };
+
+// Served by the API at /demo, so calls are same-origin. Opened as a file,
+// the browser blocks the call and the page falls back to the samples.
+const API = location.protocol.startsWith("http") ? "" : "http://localhost:4000";
+
+const $ = (id) => document.getElementById(id);
+const SVG = "http://www.w3.org/2000/svg";
+
+function h(tag, attrs, ...children) {
+  const el = tag === "svg" || attrs?.svg ? document.createElementNS(SVG, tag) : document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs ?? {})) {
+    if (key === "svg" || value === undefined || value === null || value === false) continue;
+    if (key === "class") el.setAttribute("class", value);
+    else if (key === "text") el.textContent = value;
+    else if (key.startsWith("on")) el.addEventListener(key.slice(2), value);
+    else el.setAttribute(key, value === true ? "" : value);
+  }
+  for (const child of children.flat()) {
+    if (child === null || child === undefined || child === false) continue;
+    el.append(child.nodeType ? child : document.createTextNode(String(child)));
+  }
+  return el;
+}
+
+const gradeColor = (grade) => `var(--grade-${grade.toLowerCase()})`;
+const gradeOf = (score) => GRADES.find((g) => score < g.upTo) ?? GRADES[GRADES.length - 1];
+const fmt = (value) => value.toFixed(2);
+const fmtDate = (iso) =>
+  new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" });
+
+let mode = "checking";
+let busy = false;
+let last = null; // { point, key }
+
+function setMode(next) {
+  mode = next;
+  const el = $("mode");
+  el.dataset.mode = next;
+  el.textContent =
+    next === "live" ? "Live API" : next === "sample" ? "Sample data · API not reachable" : "Checking API…";
+}
+
+/* ---------- Location picker ---------- */
+
+function currentPreset() {
+  const lat = Number($("lat").value);
+  const lon = Number($("lon").value);
+  return PRESETS.find((p) => Math.abs(p.lat - lat) < 1e-4 && Math.abs(p.lon - lon) < 1e-4);
+}
+
+function drawChips() {
+  const active = currentPreset();
+  $("chips").replaceChildren(
+    ...PRESETS.map((preset) =>
+      h("button", {
+        type: "button",
+        class: preset.outside ? "chip outside" : "chip",
+        "aria-pressed": String(active === preset),
+        title: preset.outside ? "Outside the coverage area: shows how the API answers" : undefined,
+        text: preset.outside ? `${preset.name} (outside coverage)` : preset.name,
+        onclick: () => {
+          setPoint(preset.lat, preset.lon);
+          void score();
+        },
+      }),
+    ),
+  );
+}
+
+// Latitude grows upwards, SVG y grows downwards
+const mapY = (lat) => BOX.latMax + BOX.latMin - lat;
+
+function drawMap() {
+  const s = (tag, attrs, ...children) => h(tag, { svg: true, ...attrs }, ...children);
+  const nodes = [];
+  for (let lon = 70; lon <= 95; lon += 5) {
+    nodes.push(s("line", { class: "grid", x1: lon, x2: lon, y1: BOX.latMin, y2: BOX.latMax }));
+    nodes.push(s("text", { class: "tick", x: lon, y: BOX.latMax + 1.2, "text-anchor": "middle", text: `${lon}°E` }));
+  }
+  for (let lat = 10; lat <= 35; lat += 5) {
+    nodes.push(s("line", { class: "grid", x1: BOX.lonMin, x2: BOX.lonMax, y1: mapY(lat), y2: mapY(lat) }));
+    nodes.push(s("text", { class: "tick", x: BOX.lonMin - 0.3, y: mapY(lat) + 0.3, "text-anchor": "end", text: `${lat}°` }));
+  }
+  nodes.push(
+    s("rect", {
+      class: "grid", fill: "none",
+      x: BOX.lonMin, y: BOX.latMin, width: BOX.lonMax - BOX.lonMin, height: BOX.latMax - BOX.latMin,
+    }),
+  );
+  for (const preset of PRESETS.filter((p) => !p.outside)) {
+    nodes.push(s("circle", { class: "city", cx: preset.lon, cy: mapY(preset.lat), r: 0.28 }));
+    nodes.push(
+      s("text", {
+        class: "city-label",
+        x: preset.lon + (preset.labelLeft ? -0.55 : 0.55),
+        y: mapY(preset.lat) + 0.35,
+        "text-anchor": preset.labelLeft ? "end" : "start",
+        text: preset.name,
+      }),
+    );
+  }
+
+  const lat = Number($("lat").value);
+  const lon = Number($("lon").value);
+  const inside = lat >= BOX.latMin && lat <= BOX.latMax && lon >= BOX.lonMin && lon <= BOX.lonMax;
+  if (inside) {
+    nodes.push(s("line", { class: "cross", x1: BOX.lonMin, x2: BOX.lonMax, y1: mapY(lat), y2: mapY(lat) }));
+    nodes.push(s("line", { class: "cross", x1: lon, x2: lon, y1: BOX.latMin, y2: BOX.latMax }));
+    nodes.push(s("circle", { class: "pin", cx: lon, cy: mapY(lat), r: 0.6 }));
+  }
+  $("map").replaceChildren(...nodes);
+}
+
+function setPoint(lat, lon) {
+  $("lat").value = String(lat);
+  $("lon").value = String(lon);
+  drawChips();
+  drawMap();
+}
+
+$("map").addEventListener("click", (event) => {
+  const svg = $("map");
+  const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(svg.getScreenCTM().inverse());
+  const lon = Math.min(BOX.lonMax, Math.max(BOX.lonMin, point.x));
+  const lat = Math.min(BOX.latMax, Math.max(BOX.latMin, mapY(point.y)));
+  setPoint(Number(lat.toFixed(4)), Number(lon.toFixed(4)));
+  void score();
+});
+for (const id of ["lat", "lon"]) {
+  $(id).addEventListener("input", () => {
+    drawChips();
+    drawMap();
+  });
+}
+$("form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  void score();
+});
+
+/* ---------- Calling the API ---------- */
+
+// `RateLimit: "60-in-1min"; r=59; t=60`, one entry per limiter
+function parseRateLimit(header) {
+  if (!header) return null;
+  const limits = [...header.matchAll(/"(\d+)-in-[^"]+";\s*r=(\d+)/g)].map((m) => ({
+    limit: Number(m[1]),
+    remaining: Number(m[2]),
+  }));
+  if (limits.length === 0) return null;
+  // The tightest limiter is the one a client runs into first
+  return limits.reduce((a, b) => (b.remaining / b.limit < a.remaining / a.limit ? b : a));
+}
+
+async function callApi(point, key) {
+  const started = performance.now();
+  const res = await fetch(`${API}/climate/profile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+    body: JSON.stringify(point),
+  });
+  const body = await res.json();
+  return {
+    ok: res.ok,
+    status: res.status,
+    body,
+    meta: {
+      ms: Math.round(performance.now() - started),
+      rate: parseRateLimit(res.headers.get("RateLimit")),
+      replayed: res.headers.get("Idempotency-Replayed") === "true",
+      key,
+    },
+  };
+}
+
+function readPoint() {
+  const lat = $("lat").value.trim();
+  const lon = $("lon").value.trim();
+  // Empty or non-numeric input is sent as typed so the API's own validation answers
+  const asNumber = (text) => (text !== "" && Number.isFinite(Number(text)) ? Number(text) : text || null);
+  return { lat: asNumber(lat), lon: asNumber(lon) };
+}
+
+async function score(reuseKey) {
+  if (busy) return;
+  const point = reuseKey ? last.point : readPoint();
+  const key = reuseKey ?? `demo-${crypto.randomUUID()}`;
+  const preset = PRESETS.find((p) => p.lat === point.lat && p.lon === point.lon);
+  const name = preset?.name ?? "Custom point";
+
+  busy = true;
+  $("go").disabled = true;
+  const started = Date.now();
+  const elapsed = h("span", { class: "num", text: "0s" });
+  const timer = setInterval(() => {
+    elapsed.textContent = `${Math.round((Date.now() - started) / 1000)}s`;
+  }, 1000);
+  $("results").replaceChildren(
+    h("div", { class: "card loading" },
+      h("div", {}, `Scoring ${name}… `, elapsed),
+      h("div", { class: "hint", text: "A location seen for the first time downloads about 30 years of daily history and can take up to a minute. After that it is served from cache." }),
+      h("div", { class: "bar" }),
+    ),
+  );
+
+  try {
+    const result = await callApi(point, key);
+    setMode("live");
+    last = { point, key };
+    if (result.ok) renderProfile(result.body, name, result.meta);
+    else renderError(result, name);
+  } catch {
+    setMode("sample");
+    const sample = preset && SAMPLES[preset.id];
+    if (sample) renderProfile(sample, name, null);
+    else renderOffline(preset);
+  } finally {
+    clearInterval(timer);
+    busy = false;
+    $("go").disabled = false;
+  }
+}
+
+/* ---------- Rendering ---------- */
+
+function renderOffline(preset) {
+  $("results").replaceChildren(
+    h("div", { class: "notice" },
+      h("strong", { text: "This point needs the live API" }),
+      preset?.outside
+        ? "With the API running, this location is rejected with 422 OUTSIDE_COVERAGE. "
+        : "Sample data only covers the preset cities. ",
+      "Start it with ", h("code", { text: "npm run dev" }), " in ", h("code", { text: "api/" }),
+      " and open ", h("code", { text: "http://localhost:4000/demo/" }), ".",
+    ),
+  );
+}
+
+function renderError(result, name) {
+  const error = result.body?.error ?? {};
+  $("results").replaceChildren(
+    h("div", { class: "notice error", role: "alert" },
+      h("strong", {}, `${name}: `, error.message ?? "The request failed"),
+      h("span", { class: "hint" }, "HTTP ", h("code", { text: String(result.status) }), " · ",
+        h("code", { text: error.code ?? "UNKNOWN" }),
+        error.step ? [" · step ", h("code", { text: error.step })] : null),
+    ),
+    hoodCard(result.body, result.meta),
+  );
+}
+
+function bar(value, color) {
+  const fill = h("div", { class: "bar-fill", style: `width:${Math.round(value * 100)}%${color ? `;background:${color}` : ""}` });
+  return h("div", { class: "bar" }, fill);
+}
+
+function summaryCard(profile, name) {
+  const band = GRADES.find((g) => g.grade === profile.grade);
+  let from = 0;
+  const widths = GRADES.map((g) => {
+    const width = (g.upTo - from) * 100;
+    from = g.upTo;
+    return width;
+  });
+  const primary = profile.hazards.filter((x) => x.relevance === "primary").map((x) => HAZARDS[x.hazard]);
+
+  return h("section", { class: "card" },
+    h("div", { class: "section-title" }, `${name} · `,
+      h("span", { class: "num", text: `${profile.location.lat}, ${profile.location.lon}` })),
+    h("div", { class: "summary" },
+      h("div", { class: "grade", style: `--g:${gradeColor(profile.grade)}` },
+        h("div", { class: "grade-letter", "aria-label": `Grade ${profile.grade}`, text: profile.grade }),
+        h("div", { class: "grade-meta" },
+          h("div", { class: "big" }, h("span", { class: "num", text: fmt(profile.overall_climate_risk) }), h("small", { text: " / 1" })),
+          h("div", { text: `${band.label} climate risk` }),
+          h("div", { text: `Confidence: ${{ low: "low", med: "medium", high: "high" }[profile.confidence]}` }),
+        ),
+      ),
+      h("div", {},
+        h("div", { class: "scale" },
+          h("div", { class: "scale-track", "aria-hidden": "true" },
+            GRADES.map((g, i) => h("span", { style: `width:${widths[i]}%;background:${gradeColor(g.grade)}` }))),
+          h("div", { class: "scale-marker", style: `left:${profile.overall_climate_risk * 100}%` }),
+          h("div", { class: "scale-labels", "aria-hidden": "true" },
+            GRADES.map((g, i) => h("span", { style: `width:${widths[i]}%`, text: g.grade }))),
+        ),
+        h("div", { class: "facts" },
+          h("span", {}, "Main exposure: ", h("b", { text: primary.length ? primary.join(", ") : "none dominant" })),
+          h("span", {}, "Active events: ", h("b", { text: String(profile.active_events.length) })),
+          profile.data_freshness.history_until
+            ? h("span", {}, "History to ", h("b", { text: fmtDate(profile.data_freshness.history_until) }))
+            : null,
+        ),
+      ),
+    ),
+  );
+}
+
+function hazardCard(item) {
+  const color = gradeColor(gradeOf(item.score).grade);
+  const part = (label, value) =>
+    h("div", { class: "part" },
+      h("span", { text: label }),
+      value === undefined ? h("span", { text: "not applicable" }) : bar(value),
+      h("span", { class: "num", text: value === undefined ? "" : fmt(value) }),
+    );
+  const relevance = item.tripwire_promoted ? "raised by forecast" : item.relevance;
+
+  return h("article", { class: "card hazard", "data-relevance": item.relevance, style: `--g:${color}` },
+    h("div", { class: "hazard-head" },
+      h("h3", { text: HAZARDS[item.hazard] }),
+      h("span", { class: "tag", "data-kind": item.relevance, text: relevance }),
+    ),
+    h("div", { class: "hazard-score" },
+      h("span", { class: "num", text: fmt(item.score) }),
+      bar(item.score, color),
+    ),
+    h("p", { class: "reason", text: item.reason }),
+    h("div", { class: "parts" },
+      part("Site", item.components.structural),
+      part("History", item.components.historical),
+      part("Forecast", item.components.forecast),
+    ),
+    item.forecast_note ? h("p", { class: "extra", text: `Agent note: ${item.forecast_note}` }) : null,
+    item.relevance_method === "agent_raised" ? h("p", { class: "extra", text: "Relevance raised by the AI review." }) : null,
+  );
+}
+
+function eventsCard(profile) {
+  const events = profile.active_events;
+  return h("section", { class: "card" },
+    h("h2", { text: "Next 7 days" }),
+    events.length === 0
+      ? h("p", { class: "quiet", text: "No hazard crosses its danger threshold in the 7-day forecast." })
+      : h("div", { class: "events" },
+          events.map((event) =>
+            h("div", { class: "event" },
+              h("span", { class: "tag", "data-kind": event.severity, text: event.severity }),
+              h("b", { text: HAZARDS[event.hazard] }),
+              h("span", { class: "when", text: `${fmtDate(event.window_start)} to ${fmtDate(event.window_end)}` }),
+              h("span", { class: "when" }, "confidence ", h("span", { class: "num", text: `${Math.round(event.confidence * 100)}%` })),
+            ))),
+    profile.warnings.length
+      ? h("ul", { class: "warnings", "aria-label": "Data warnings" }, profile.warnings.map((w) => h("li", { text: w })))
+      : null,
+  );
+}
+
+function hoodCard(body, meta) {
+  const item = (label, ...value) => h("div", {}, h("dt", { text: label }), h("dd", {}, ...value));
+  const rows = [];
+  if (body?.cache) rows.push(item("Cache", CACHE_TEXT[body.cache]));
+  if (meta) {
+    rows.push(item("Round trip", h("span", { class: "num", text: `${meta.ms} ms` })));
+    if (meta.rate) {
+      rows.push(item("Rate limit", h("span", { class: "num", text: `${meta.rate.remaining} of ${meta.rate.limit}` }), " left this minute"));
+    }
+    rows.push(item("Idempotency", meta.replayed ? "Replayed stored response, pipeline not run again" : "First use of this key, response stored"));
+  } else {
+    rows.push(item("Source", `Response captured from the API on ${SAMPLES_CAPTURED}`));
+  }
+  if (body?.data_freshness?.forecast_issued_at) {
+    rows.push(item("Forecast fetched", h("span", { class: "num", text: body.data_freshness.forecast_issued_at.replace("T", " ").slice(0, 16) }), " IST"));
+  }
+  if (body?.location?.cells) {
+    rows.push(item("Grid cells", h("span", { class: "num", text: `${body.location.cells.historical} · ${body.location.cells.flood}` })));
+  }
+
+  return h("section", { class: "card hood" },
+    h("h2", { text: "Under the hood" }),
+    h("dl", {}, rows),
+    meta
+      ? h("div", { class: "hood-actions" },
+          h("button", { class: "ghost", type: "button", text: "Send again with the same key", onclick: () => void score(meta.key) }),
+          h("span", { class: "hint" }, "Idempotency-Key ", h("span", { class: "num", text: `${meta.key.slice(0, 18)}…` })),
+        )
+      : null,
+    h("details", {}, h("summary", { text: "Raw API response" }), h("pre", { text: JSON.stringify(body, null, 2) })),
+  );
+}
+
+function methodCard() {
+  return h("section", { class: "card method" },
+    h("h2", { text: "How the score is built" }),
+    h("p", {}, h("code", { text: "hazard = 0.3 × site + 0.5 × history + 0.2 × forecast" }),
+      ". Site is how low the exact point sits against its surroundings and only applies to floods; without it, history carries 0.8."),
+    h("p", { text: "The overall risk averages the six hazards, weighting primary hazards 1, secondary 0.5 and dormant 0.1. Grades: A below 0.20, B below 0.35, C below 0.50, D below 0.70, E above." }),
+  );
+}
+
+function renderProfile(profile, name, meta) {
+  const hazards = [...profile.hazards].sort(
+    (a, b) => RELEVANCE_ORDER[a.relevance] - RELEVANCE_ORDER[b.relevance] || b.score - a.score,
+  );
+  $("results").replaceChildren(
+    ...[
+      mode === "sample"
+        ? h("div", { class: "notice" },
+            h("strong", { text: "Showing sample data" }),
+            `The API is not reachable from this page, so this is a real response captured on ${SAMPLES_CAPTURED}. Open `,
+            h("code", { text: "http://localhost:4000/demo/" }), " with the API running for live scoring.")
+        : null,
+      summaryCard(profile, name),
+      h("section", {}, h("div", { class: "section-title", text: "Six hazards" }), h("div", { class: "hazards" }, hazards.map(hazardCard))),
+      eventsCard(profile),
+      hoodCard(profile, meta),
+      methodCard(),
+    ].filter(Boolean),
+  );
+}
+
+/* ---------- Start ---------- */
+
+drawChips();
+drawMap();
+fetch(`${API}/health`)
+  .then((res) => setMode(res.ok || res.status === 503 ? "live" : "sample"))
+  .catch(() => setMode("sample"))
+  .finally(() => void score());
+</script>
+</body>
+</html>

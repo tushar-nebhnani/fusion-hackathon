@@ -2,16 +2,25 @@ import { createHash } from "node:crypto";
 import { CLIMATE } from "../../config/climate.js";
 import { AppError, NotFoundError } from "../../errors/app-error.js";
 import type { PrismaClient } from "../../generated/prisma/client.js";
+import { noopCache, type Cache } from "../cache/cache.js";
+import { applyReview, type ClimateAgent, type ForecastScores } from "./agent.js";
 import { parseCellId, snapPoint, type Cell, type Cells } from "./grid.js";
 import {
   ARCHIVE_VARIABLES,
   CLIMATE_VARIABLES,
   FLOOD_FORECAST_VARIABLES,
+  HAZARD_CATALOG,
   forecastVariables,
 } from "./hazards.js";
 import { parsePayload, type OpenMeteoClient, type UpstreamResult } from "./open-meteo.js";
 import { createRepository } from "./repository.js";
-import { climateProfileSchema, type ClimateProfile } from "./schema.js";
+import {
+  cachedForecastScoresSchema,
+  cachedLayerSchema,
+  cachedRelevanceSchema,
+  climateProfileSchema,
+  type ClimateProfile,
+} from "./schema.js";
 import {
   confidenceLevel,
   detectEvents,
@@ -37,6 +46,7 @@ import {
   WEATHER_HAZARDS,
   storedIndicatorsSchema,
   type CacheResult,
+  type ConfidenceLevel,
   type CurrentData,
   type Hazard,
   type HazardProfile,
@@ -59,6 +69,12 @@ export type ExposureProvider = (point: LatLon) => Promise<number | null>;
 export interface ClimateServiceDeps {
   prisma: PrismaClient;
   openMeteo: OpenMeteoClient;
+  // Redis in production. Postgres stays the durable copy, so a cold or
+  // unreachable cache costs a query, never an upstream call.
+  cache?: Cache;
+  // Verifies hazard categories (fetch 1) and scores the forecast (fetch 2).
+  // Without one the pipeline is rule-based only.
+  agent?: ClimateAgent;
   exposure?: ExposureProvider;
   now?: () => Date;
   logger?: Pick<Console, "error" | "warn">;
@@ -67,6 +83,24 @@ export interface ClimateServiceDeps {
 export interface ClimateService {
   getProfile(point: LatLon, requesterId?: string | null): Promise<ClimateProfile>;
   getCell(cellId: string): Promise<unknown>;
+}
+
+export interface RefreshSummary {
+  points: number;
+  failed: number;
+}
+
+export interface ClimateRefresher {
+  // Refetches the forecast layers of every known location, whatever their
+  // age, and updates Postgres, the cache, scores and events from them.
+  refreshAll(): Promise<RefreshSummary>;
+}
+
+interface RunOptions {
+  // Forecast layers fetched before this moment are refetched even if fresh
+  refreshBefore?: Date;
+  // Scheduled run, not a client request: nothing is added to request_log
+  background?: boolean;
 }
 
 interface Layer {
@@ -98,12 +132,19 @@ function window(data: TimeSeries, start: string, end: string): TimeSeries {
   return { time: data.time.filter((_, i) => keep[i]), values };
 }
 
-export function createClimateService(deps: ClimateServiceDeps): ClimateService {
+export function createClimateService(
+  deps: ClimateServiceDeps,
+): ClimateService & ClimateRefresher {
   const repo = createRepository(deps.prisma);
   const om = deps.openMeteo;
+  const store = deps.cache ?? noopCache;
   const now = deps.now ?? (() => new Date());
   const logger = deps.logger ?? console;
   const exposure: ExposureProvider = deps.exposure ?? (() => Promise.resolve(null));
+
+  const agent = deps.agent;
+  // Set after a failed agent call, so a broken key does not slow every request
+  let agentDownUntil = 0;
 
   let catalogSeeded: Promise<void> | null = null;
   function ensureCatalog(): Promise<void> {
@@ -144,12 +185,12 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
     cells: Cells,
     requesterId: string | null,
     startedAt: number,
+    options: RunOptions = {},
   ): Promise<ClimateProfile> {
     const at = now();
     const today = istDate(at);
     const warnings = new Set<string>();
     const quality: DataQuality = {
-      staleServed: false,
       primaryMissing: false,
       secondaryMissing: false,
     };
@@ -178,13 +219,52 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
 
     await ensureCatalog();
     const pointRow = await repo.ensurePoint(point, cells);
-    const rows = await repo.getRelevance([cells.historical.id, cells.flood.id]);
+
+    const relevanceKey = (cellId: string) => `climate:relevance:${cellId}`;
+
+    // Screening results per cell: Redis first, Postgres for the cells it lacks
+    async function loadRelevance(cellIds: string[]) {
+      const found = await Promise.all(
+        cellIds.map(async (cellId) => {
+          const hit = cachedRelevanceSchema.safeParse(await store.get(relevanceKey(cellId)));
+          return hit.success ? hit.data : null;
+        }),
+      );
+      const missing = cellIds.filter((_, i) => !found[i]);
+      const stored = missing.length > 0 ? await repo.getRelevance(missing) : [];
+      for (const cellId of missing) {
+        await rememberRelevance(cellId, stored.filter((row) => row.cellId === cellId));
+      }
+      return [...found.flatMap((rows) => rows ?? []), ...stored];
+    }
+
+    async function rememberRelevance(
+      cellId: string,
+      cellRows: Awaited<ReturnType<typeof repo.getRelevance>>,
+    ): Promise<void> {
+      const expiry = Math.min(...cellRows.map((row) => row.reviewAfter.getTime()));
+      // Expired profiles are never served, so they are not cached
+      if (cellRows.length > 0 && expiry > at.getTime()) {
+        await store.set(relevanceKey(cellId), cellRows, expiry - at.getTime());
+      } else {
+        await store.del(relevanceKey(cellId));
+      }
+    }
+
+    // Writes Postgres first, then refreshes the cache from what was stored
+    async function saveRelevance(...args: Parameters<typeof repo.saveRelevance>): Promise<void> {
+      await repo.saveRelevance(...args);
+      await rememberRelevance(args[0], await repo.getRelevance([args[0]]));
+    }
+
+    const rows = await loadRelevance([...new Set([cells.historical.id, cells.flood.id])]);
 
     function cachedProfiles(cellId: string, hazards: readonly Hazard[]) {
       const profiles: HazardProfile[] = [];
       let fresh = true;
       let decidedAt = at;
       let reviewAt = at;
+      let confidence: ConfidenceLevel = "high";
       for (const hazard of hazards) {
         const row = rows.find((r) => r.cellId === cellId && r.hazard === hazard);
         const indicators = storedIndicatorsSchema.safeParse(row?.indicators);
@@ -192,6 +272,7 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
         if (row.reviewAfter <= at) fresh = false;
         decidedAt = row.decidedAt;
         reviewAt = row.reviewAfter;
+        confidence = row.confidence;
         profiles.push({
           hazard,
           relevance: row.relevance,
@@ -199,10 +280,71 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
           indicatorValue: row.indicatorValue,
           reason: row.rationale ?? "",
           indicators: indicators.data,
+          agentVersion: row.agentVersion,
         });
       }
       const complete = profiles.length === hazards.length;
-      return { profiles, complete, fresh: complete && fresh, decidedAt, reviewAt };
+      return { profiles, complete, fresh: complete && fresh, decidedAt, reviewAt, confidence };
+    }
+
+    const agentReady = () => agent !== undefined && at.getTime() >= agentDownUntil;
+
+    function agentFailed(error: unknown, consequence: string): void {
+      logger.warn("climate: agent call failed", error);
+      warnings.add(`agent_unavailable: ${consequence}`);
+      agentDownUntil = at.getTime() + CLIMATE.agent.retryMinutes * 60_000;
+    }
+
+    // --- Fetch 1: agent review of the screening ---
+    // Confirms each category or raises it. If the call fails the profiles
+    // stay unreviewed, so a later request asks again.
+    async function review(list: HazardProfile[]): Promise<HazardProfile[]> {
+      if (!agent || !agentReady() || list.every((profile) => profile.agentVersion)) return list;
+      try {
+        const verdicts = await call(() =>
+          agent.reviewScreening({
+            location: point,
+            weatherHistory: list.find((p) => p.indicators.weather)?.indicators.weather ?? null,
+            riverHistory: list.find((p) => p.indicators.river)?.indicators.river ?? null,
+            hazards: list.map((profile) => ({
+              hazard: profile.hazard,
+              description: HAZARD_CATALOG[profile.hazard].description,
+              indicatorRule: HAZARD_CATALOG[profile.hazard].indicatorRule,
+              indicatorValue: profile.indicatorValue,
+              primaryThreshold: profile.indicators.primaryThreshold,
+              dormantThreshold: HAZARD_CATALOG[profile.hazard].dormantThreshold,
+              ruleCategory: profile.relevance,
+              ruleReason: profile.reason,
+            })),
+          }),
+        );
+        return list.map((profile) =>
+          applyReview(profile, verdicts.find((v) => v.hazard === profile.hazard), agent.version),
+        );
+      } catch (error) {
+        agentFailed(error, "hazard categories are rule-based only");
+        return list;
+      }
+    }
+
+    // Profiles cached before the agent saw them: screened while it was off
+    // or failing. Reviewed in place, keeping their original review date.
+    async function reviewCached(
+      cellId: string,
+      cached: ReturnType<typeof cachedProfiles>,
+    ): Promise<HazardProfile[]> {
+      const profiles = await review(cached.profiles);
+      if (profiles !== cached.profiles) {
+        await write("agent review", () =>
+          saveRelevance(cellId, profiles, {
+            confidence: cached.confidence,
+            decidedAt: cached.decidedAt,
+            reviewAfter: cached.reviewAt,
+            ruleVersion: CLIMATE.ruleVersion,
+          }),
+        );
+      }
+      return profiles;
     }
 
     const reviewAfter = (complete: boolean) =>
@@ -283,7 +425,7 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
       if (projections) {
         await saveHistory(cells.climate, "climate", CLIMATE_VARIABLES, projections.result, "projection");
       }
-      await repo.saveRelevance(cells.historical.id, profiles, {
+      await saveRelevance(cells.historical.id, profiles, {
         confidence: projections ? "high" : "med",
         decidedAt,
         reviewAfter: reviewAt,
@@ -295,16 +437,17 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
     async function weatherProfiles(): Promise<HazardProfile[]> {
       const cached = cachedProfiles(cells.historical.id, WEATHER_HAZARDS);
       if (cached.fresh) {
-        const retryAt = cached.profiles[0]?.indicators.projectionsRetryAt;
-        if (!retryAt) return cached.profiles;
+        const known = await reviewCached(cells.historical.id, cached);
+        const retryAt = known[0]?.indicators.projectionsRetryAt;
+        if (!retryAt) return known;
         if (at < new Date(retryAt)) {
           warnings.add("climate_projections_unavailable: no projection adjustment applied yet");
           quality.secondaryMissing = true;
-          return cached.profiles;
+          return known;
         }
         // Screening is done; only the projections are still owed
         const projections = await fetchProjections();
-        const profiles = cached.profiles.map((p) => withProjections(p, projections));
+        const profiles = known.map((p) => withProjections(p, projections));
         await write("projections", () =>
           saveWeatherProfiles(profiles, projections, cached.decidedAt, cached.reviewAt),
         );
@@ -326,12 +469,8 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
       }
 
       const history = archive?.daily ?? null;
+      // An expired profile is never served in its place
       if (!archive || !history) {
-        if (cached.complete) {
-          warnings.add("historical_weather_unavailable: using an expired relevance profile");
-          quality.staleServed = true;
-          return cached.profiles;
-        }
         throw new AppError(
           "Climate data sources are unavailable",
           503,
@@ -345,7 +484,7 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
       const projections = await fetchProjections();
       const indicators = computeWeatherIndicators(history);
       const screened = screenWeather(indicators);
-      const profiles = WEATHER_HAZARDS.map((hazard) =>
+      const screenedProfiles = WEATHER_HAZARDS.map((hazard) =>
         withProjections(
           {
             hazard,
@@ -362,6 +501,7 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
           projections,
         ),
       );
+      const profiles = await review(screenedProfiles);
 
       const screenedArchive = archive;
       await write("weather screening", async () => {
@@ -375,7 +515,9 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
     async function riverProfile(): Promise<HazardProfile> {
       const cached = cachedProfiles(cells.flood.id, ["river_flood"]);
       const cachedProfile = cached.profiles[0];
-      if (cached.fresh && cachedProfile) return cachedProfile;
+      if (cached.fresh && cachedProfile) {
+        return (await reviewCached(cells.flood.id, cached))[0] ?? cachedProfile;
+      }
       miss = true;
 
       let history: UpstreamResult | null = null;
@@ -383,18 +525,13 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
         history = await call(() => om.floodHistory(cells.flood, CLIMATE.historyStart, today));
       } catch (error) {
         logger.warn("climate: river discharge history failed", error);
-        if (cachedProfile) {
-          warnings.add("river_discharge_history_unavailable: using an expired relevance profile");
-          quality.staleServed = true;
-          return cachedProfile;
-        }
         warnings.add("river_discharge_history_unavailable: river flood treated as secondary");
         quality.primaryMissing = true;
       }
 
       const river = history?.daily ? computeRiverIndicators(history.daily) : null;
       const screened = screenRiver(river, await exposureAt(cells.flood), history === null);
-      const profile: HazardProfile = {
+      const screenedProfile: HazardProfile = {
         hazard: "river_flood",
         relevance: screened.relevance,
         method: "static",
@@ -406,12 +543,13 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
           projectionAdjustment: 0,
         },
       };
+      const [profile = screenedProfile] = await review([screenedProfile]);
 
       await write("river screening", async () => {
         if (history) {
           await saveHistory(cells.flood, "flood_history", ["river_discharge"], history, "observed");
         }
-        await repo.saveRelevance(cells.flood.id, [profile], {
+        await saveRelevance(cells.flood.id, [profile], {
           confidence: history ? "high" : "low",
           decidedAt: at,
           reviewAfter: reviewAfter(history !== null),
@@ -469,6 +607,32 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
       metrics: (result: UpstreamResult) => TimeSeries | null;
     }): Promise<Layer> {
       const hash = paramsHash(spec.variables);
+      const cacheKey = `climate:response:${spec.api}:${spec.cell.id}:${hash}`;
+      const remember = (payload: unknown, fetchedAt: Date, staleAfter: Date, responseId: number | null) =>
+        store.set(
+          cacheKey,
+          { payload, fetchedAt, staleAfter, responseId },
+          staleAfter.getTime() - at.getTime(),
+        );
+
+      // During a scheduled refresh a layer only counts if this run fetched it,
+      // so each cell is refetched once however many locations share it
+      const current = (fetchedAt: Date) =>
+        !options.refreshBefore || fetchedAt >= options.refreshBefore;
+
+      const hit = cachedLayerSchema.safeParse(await store.get(cacheKey));
+      if (hit.success && hit.data.staleAfter > at && current(hit.data.fetchedAt)) {
+        try {
+          return {
+            data: parsePayload(spec.api, hit.data.payload),
+            fetchedAt: hit.data.fetchedAt,
+            responseId: hit.data.responseId,
+          };
+        } catch {
+          // Unreadable entry: fall through to Postgres and overwrite it
+        }
+      }
+
       const cached = await repo.getResponse(spec.cell.id, spec.api, hash);
 
       const fromCache = (): Layer | null => {
@@ -484,13 +648,17 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
         }
       };
 
-      if (cached?.staleAfter && cached.staleAfter > at) {
-        const hit = fromCache();
-        if (hit) return hit;
+      if (cached?.staleAfter && cached.staleAfter > at && current(cached.fetchedAt)) {
+        const stored = fromCache();
+        if (stored) {
+          await remember(cached.response, cached.fetchedAt, cached.staleAfter, cached.id);
+          return stored;
+        }
       }
 
       try {
         const result = await call(spec.fetch);
+        const staleAfter = new Date(at.getTime() + spec.staleHours * HOUR_MS);
         const responseId = await write(`${spec.api} response`, async () => {
           const id = await repo.saveResponse({
             cellId: spec.cell.id,
@@ -499,24 +667,20 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
             paramsHash: hash,
             payload: result.payload,
             fetchedAt: at,
-            staleAfter: new Date(at.getTime() + spec.staleHours * HOUR_MS),
+            staleAfter,
           });
           const metrics = spec.metrics(result);
           if (metrics) await repo.insertMetrics(spec.cell.id, metrics, "forecast", at, id);
           return id;
         });
+        await remember(result.payload, at, staleAfter, responseId);
         return { data: result, fetchedAt: at, responseId };
       } catch (error) {
         logger.warn(`climate: ${spec.api} failed`, error);
-        const stale = fromCache();
-        if (stale?.fetchedAt && cached) {
-          warnings.add(
-            `${spec.api}_unavailable: serving cached data from ${toIstIso(stale.fetchedAt)}`,
-          );
-          quality.staleServed = true;
-          await write("stale marker", () => repo.markStale(cached.id));
-          return stale;
-        }
+        // A failed scheduled refresh leaves a layer that is still valid alone.
+        // One past its `staleAfter` is never served.
+        const valid = cached?.staleAfter && cached.staleAfter > at ? fromCache() : null;
+        if (valid) return valid;
         warnings.add(`${spec.api}_unavailable: forecast signal left out`);
         quality.primaryMissing = true;
         return { data: null, fetchedAt: null, responseId: null };
@@ -592,6 +756,56 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
         : null,
     };
 
+    // --- Fetch 2: agent score for the forecast window ---
+    // Asked once per forecast refresh; the answer is cached beside the
+    // forecast, so a complete hit never calls the model.
+    const ruleForecast = Object.fromEntries(
+      HAZARDS.map((hazard) => [hazard, forecastScore(profiles[hazard], current)]),
+    ) as Record<Hazard, number>;
+
+    async function agentForecast(): Promise<ForecastScores | null> {
+      if (!agent || (!current.weather && !current.flood)) return null;
+      const basis = [agent.version, forecast.fetchedAt, floodForecast?.fetchedAt ?? null, relevance];
+      const key = `climate:agent-forecast:${cells.forecast.id}:${cells.flood.id}:${createHash(
+        "sha256",
+      )
+        .update(JSON.stringify(basis))
+        .digest("hex")
+        .slice(0, 16)}`;
+
+      const hit = cachedForecastScoresSchema.safeParse(await store.get(key));
+      if (hit.success && HAZARDS.every((hazard) => hit.data[hazard])) {
+        return hit.data;
+      }
+      if (!agentReady()) {
+        warnings.add("agent_unavailable: forecast scores are rule-based only");
+        return null;
+      }
+      try {
+        const scores = await call(() =>
+          agent.scoreForecast({
+            location: point,
+            window: { start: today, end: windowEnd },
+            weatherHistory: profiles.heat.indicators.weather ?? null,
+            riverHistory: profiles.river_flood.indicators.river ?? null,
+            weather: current.weather,
+            flood: current.flood,
+            hazards: HAZARDS.map((hazard) => ({
+              hazard,
+              category: relevance[hazard],
+              ruleScore: round(ruleForecast[hazard]),
+            })),
+          }),
+        );
+        await store.set(key, scores, CLIMATE.staleFloodHours * HOUR_MS);
+        return scores;
+      } catch (error) {
+        agentFailed(error, "forecast scores are rule-based only");
+        return null;
+      }
+    }
+    const agentScores = await agentForecast();
+
     // --- Score ---
     const events = detectEvents(profiles, current);
     const hazards = HAZARDS.map((hazard) => {
@@ -601,7 +815,7 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
       const components = {
         structural: structuralScore(hazard, features),
         historical: historicalScore(profile),
-        forecast: forecastScore(profile, current),
+        forecast: agentScores?.[hazard].score ?? ruleForecast[hazard],
       };
       return {
         hazard,
@@ -655,14 +869,16 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
         events,
       ),
     );
-    await write("request log", () =>
-      repo.logRequest({
-        pointId: pointRow.id,
-        requesterId,
-        cacheResult: cache,
-        latencyMs: Math.round(performance.now() - startedAt),
-      }),
-    );
+    if (!options.background) {
+      await write("request log", () =>
+        repo.logRequest({
+          pointId: pointRow.id,
+          requesterId,
+          cacheResult: cache,
+          latencyMs: Math.round(performance.now() - startedAt),
+        }),
+      );
+    }
 
     // --- Build and validate the response ---
     const profile = {
@@ -684,6 +900,9 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
         relevance: h.relevance,
         relevance_method: h.method,
         ...(h.promoted ? { tripwire_promoted: true as const } : {}),
+        ...(agentScores
+          ? { forecast_source: "agent" as const, forecast_note: agentScores[h.hazard].note }
+          : {}),
         score: round(h.score),
         components: {
           ...(h.components.structural === null
@@ -726,13 +945,33 @@ export function createClimateService(deps: ClimateServiceDeps): ClimateService {
     return checked.data;
   }
 
+  const lockKey = (cells: Cells) => `${cells.historical.id}|${cells.flood.id}`;
+
   return {
     getProfile(point, requesterId = null) {
       const startedAt = performance.now();
       const cells = snapPoint(point.lat, point.lon);
-      return withCellLock(`${cells.historical.id}|${cells.flood.id}`, () =>
-        run(point, cells, requesterId, startedAt),
-      );
+      return withCellLock(lockKey(cells), () => run(point, cells, requesterId, startedAt));
+    },
+
+    // One location at a time, to stay well inside the upstream rate limits.
+    // A location that fails is logged and skipped; the rest still refresh.
+    async refreshAll() {
+      const refreshBefore = now();
+      const points = await repo.listPoints();
+      let failed = 0;
+      for (const point of points) {
+        const cells = snapPoint(point.lat, point.lon);
+        try {
+          await withCellLock(lockKey(cells), () =>
+            run(point, cells, null, performance.now(), { refreshBefore, background: true }),
+          );
+        } catch (error) {
+          failed += 1;
+          logger.warn(`climate: refresh failed for ${point.lat},${point.lon}`, error);
+        }
+      }
+      return { points: points.length, failed };
     },
 
     async getCell(cellId) {

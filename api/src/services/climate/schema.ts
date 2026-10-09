@@ -28,6 +28,9 @@ export const climateProfileSchema = z.strictObject({
         relevance_method: z.enum(["static", "agent_raised"]),
         // Set when a dormant hazard was temporarily raised by the tripwire
         tripwire_promoted: z.literal(true).optional(),
+        // Present when the agent, not the rule formula, set `components.forecast`
+        forecast_source: z.literal("agent").optional(),
+        forecast_note: z.string().optional(),
         score: unit,
         components: z.strictObject({
           structural: unit.optional(),
@@ -56,3 +59,34 @@ export const climateProfileSchema = z.strictObject({
 });
 
 export type ClimateProfile = z.infer<typeof climateProfileSchema>;
+
+// Shapes of the Redis entries. Anything that does not match is a cache miss.
+export const cachedLayerSchema = z.object({
+  payload: z.unknown(),
+  fetchedAt: z.coerce.date(),
+  staleAfter: z.coerce.date(),
+  responseId: z.number().int().nullable(),
+});
+
+export const cachedRelevanceSchema = z
+  .array(
+    z.object({
+      cellId: z.string(),
+      hazard: z.string(),
+      relevance,
+      method: z.enum(["static", "agent_raised"]),
+      indicatorValue: z.number().nullable(),
+      indicators: z.unknown(),
+      rationale: z.string().nullable(),
+      confidence: z.enum(["low", "med", "high"]),
+      agentVersion: z.string().nullable(),
+      decidedAt: z.coerce.date(),
+      reviewAfter: z.coerce.date(),
+    }),
+  )
+  .min(1);
+
+export const cachedForecastScoresSchema = z.record(
+  z.enum(HAZARDS),
+  z.object({ score: unit, note: z.string() }),
+);
