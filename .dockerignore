@@ -1,0 +1,39 @@
+# Version control and editor
+.git
+.gitignore
+.claude
+.vscode
+.idea
+.DS_Store
+
+# Docker
+docker-compose*.yml
+**/Dockerfile*
+.dockerignore
+
+# Env files (pass config at runtime instead)
+**/.env*
+!**/.env.example
+
+# Node
+**/node_modules
+**/dist
+**/coverage
+**/.next
+**/out
+**/*.tsbuildinfo
+**/npm-debug.log*
+api/src/generated
+
+# Python
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.ipynb_checkpoints
+ml/notebooks
+ml/data
+
+# Docs
+**/*.md
