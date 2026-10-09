@@ -64,7 +64,7 @@ What to keep in mind:
 
 1. **Start the database and cache:** `docker compose up -d` from the repository root.
 2. **Start the API:** `npm run dev` inside `api/`. It listens on port 4000.
-3. **Serve the web console:** `python3 -m http.server 3000 --directory web`, then open http://localhost:3000.
+3. **Serve the web console:** `python3 -m http.server 3000 --directory web`, then open http://localhost:3000 for the Playground, or http://localhost:3000/analysis.html for the owner's analysis.
 4. **Name the bank officers** in `api/.env` (`AUTH_BANK_EMAILS`, `AUTH_BANK_DOMAINS`) and restart the API.
 5. **Start the background jobs** when you want live watching and warnings: `npm run monitor`, `npm run alerts:worker` and `npm run monitor:verify`, each in its own terminal inside `api/`.
 6. **Start the ML service** if the models are wanted: `uvicorn app.main:app --port 8001` inside `ml/`, with `ML_SERVICE_URL=http://localhost:8001` in `api/.env`.
@@ -81,27 +81,26 @@ Two switches to know before a demo:
 | **Monitor** | Checks the forecast for every business with an authorised or active loan, more often when the forecast worsens, and queues an alert when a threshold is crossed | Owner and bank, through alerts |
 | **Alert worker** | Sends each queued alert as two emails, one to the owner and one to the bank. It will not email anyone who has not consented, and it waits 6 hours before repeating the same warning | Owner and bank |
 | **Advisor** | A chat assistant that reads the business's evaluation and answers in plain language. Every number it gives must match the system's own figures | Owner and bank |
-| **ML models** | Estimate how likely a fired flood or storm alert is to be real, spot a break in a business's revenue pattern, and simulate what the local weather does to a business's chance of missing repayments | Whoever calls `/ml`; not shown in the web console yet |
+| **ML models** | Estimate how likely a fired flood or storm alert is to be real, spot a break in a business's revenue pattern, and simulate what the local weather does to a business's chance of missing repayments | Whoever calls `/ml`; the console's Analysis page shows the cash-flow outlook |
 
 ## One loan, start to finish
 
-The web console is a single page that walks one loan through the whole system. The "Run the whole workflow" button at the top does every step in turn.
+The web console has two pages. The **Playground** follows one loan in eight chapters, one at a time, each saying what happens, who does it and why it matters. "Play the whole story" runs them all in turn. The **Analysis** page is for the people who use the app: the owner fills in one form (business, location, monthly figures, contact, consent; the location is a pin on an OpenStreetMap map, found by address search, a click or the browser's location, and a dropped pin fills in the address and pincode), and gets one analysis built from the scoring rules (overall rating with reasons, climate grade and hazards, financial score before and after weather, weather impact, repayment headroom if sales fall 30% for 3 months, and the cash-flow outlook) with the advisor chat beside it. A returning owner enters their business ID instead. It shows no routes, raw answers or settings; bank officers also get a collapsed panel of bank tools. To call each endpoint directly, use the Postman collection.
 
-| Step | What happens | Who |
+| Chapter | What happens | Who |
 | --- | --- | --- |
-| 01 | Sign in with Google | Owner or bank officer |
-| 02 | The business applies: profile, location, operations, suppliers | Owner |
-| 03 | The app works out how weather moves this business | Automatic |
-| 04 | Climate risk at the location: grade and six hazard scores | Automatic |
-| 05 | The owner enters financial figures | Owner |
-| 06 | The bank records a loan and reads the finance profile | Bank officer |
-| 07 | The bank authorises the loan; the monitor starts watching | Bank officer |
-| 08 | An event hits; the advisor guides the owner and proposes a recovery plan | Owner, then bank officer to decide |
-| 09 | What protects every step: rate limits, safe retries, the audit trail | Operator |
+| 1 | The business applies: profile, location, operations, suppliers, consent | Owner |
+| 2 | The app works out how weather moves this business | Automatic |
+| 3 | Climate risk at the location: grade and six hazard scores | Automatic |
+| 4 | The owner enters financial figures | Owner |
+| 5 | The bank records a loan and reads the climate-adjusted score | Bank officer |
+| 6 | The bank authorises the loan and pays out; the monitor starts watching | Bank officer |
+| 7 | Heavy rain is forecast; the advisor tells the owner what to do first | Monitor, then advisor |
+| 8 | The shop floods; the advisor proposes repayment options and the bank decides | Owner, then bank officer |
 
-Steps 06 and 07 need a bank officer. If you are signed in as an owner, the workflow stops there and shows the refusal.
+Chapters 5 to 8 need a bank officer. If you are signed in as an owner, the story stops there and shows the refusal.
 
-If the API is not running, the page switches to **sample mode**: it shows built-in example answers, each labelled as a sample, and sends nothing.
+If the API is not running, both pages switch to **sample mode**: every step answers with made-up data for one bakery, each answer labelled as a sample, and nothing is sent.
 
 ## Reading the numbers
 
@@ -120,7 +119,8 @@ If the API is not running, the page switches to **sample mode**: it shows built-
 - **The alert model is a ranking aid, not a forecast.** In its high band about 18% of flood alerts and 31% of storm alerts were real in the test years; the rest were false alarms. The storm figure rests on 16 real storms.
 - **The cash-flow simulation's city order is measured; its sizes are assumed.** How often floods hit each city comes from 29 years of records. What one flood costs a business is an assumption.
 - **The anomaly and credit-default models were built on made-up businesses.** They show the method works, not how real businesses behave.
-- **The ML results are reachable through the API but have no screen in the web console yet.**
+- **The location picker uses OpenStreetMap's free services.** Map tiles come from tile.openstreetmap.org and address search from Nominatim, which allows about one search a second and asks heavy users to run their own. Fine for a pilot; a busy deployment needs its own geocoder or a paid one.
+- **Only the cash-flow outlook has a screen.** The Analysis page shows it; the alert model and the anomaly model are reached through `/ml` only.
 - **There is no admin screen.** Bank officers are named in a settings file, and alert contacts for the bank are entered by hand.
 - **Heat, drought and cold-wave alerts are rule-only**, because there are no verified records to check them against.
 

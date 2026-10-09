@@ -633,6 +633,7 @@ const { SAMPLES, HAND } = (() => {
   const SAMPLES = [
     [on("GET /auth/me"), { user: { id: "demo-bank-officer", email: OFFICER, name: "Priya Raman", role: "bank" } }, "Synthetic bank officer. Sample mode has no session; it answers as if a bank officer were signed in, so every step is open."],
     [on("GET /auth/config"), { google_client_id: null }, HAND],
+    [on("POST /auth/logout"), { sampleStatus: 204 }, "Synthetic. Live, this ends the session and clears the cookie."],
 
     [on("POST /businesses"), () => { demo = { ...applied(), snapshots: 0, loan: null }; return { ...business(), sampleStatus: 201 }; }, "Synthetic. A new application: it has no financials and no loan yet, so the steps below add them. Values typed into the form do not change the answer."],
     [on("GET|PATCH /businesses/:id"), business, HAND],

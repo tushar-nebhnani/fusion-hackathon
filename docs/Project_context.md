@@ -15,7 +15,7 @@ This README is the handover document for anyone, human or AI agent, picking up t
 | Finance service | `api/src/services/finance/` | Built. Baseline financial health score and a climate-adjusted score per business, from the input service's data and the climate profile. Rule-based; the ML scorer is a stub. Has its own `README.md`. |
 | Evaluator | `api/src/services/evaluator/` | Built. Checks the climate and finance answers for one business against each other and against their own rules, gives one combined rating with reasons, and stores each evaluation. The chat advisor reads climate and finance only through it. See [The evaluator](#the-evaluator). |
 | Chat advisor | `api/src/services/advisor/` | Built on the `chatbot-work` branch and merged. Mounted at `/advisor` for signed-in users, with the input service's ownership and sharing rule; bank decisions need a bank officer. Its `/advisor/dev/*` routes (fake alert, verify, sweep) are for bank officers only, exist only when `ADVISOR_ENABLE_DEV_ROUTES=true` and never in production. Runs an offline planner without an API key. Reads businesses, snapshots, loans and weather-impact profiles from the input service and scores from the finance service; the `api/data/smes.json` demo businesses stay behind them outside production. Advises owners after each alert the alert system sends. Its `NOTES.md` has the details. |
-| Web console | `web/` | Built. A static HTML, CSS and JavaScript page with no build step. It walks one loan through every unit on a single page and calls every endpoint; see [The web console](#the-web-console). Checked against the live API only as far as the public routes and the 401 answers; the signed-in flows have not been exercised from it yet. |
+| Web console | `web/` | Built. A static HTML, CSS and JavaScript page with no build step. A Playground page tells one loan's story in eight chapters; an Analysis page calls every endpoint, `/ml` included; see [The web console](#the-web-console). Checked against the live API only as far as the public routes and the 401 answers; the signed-in flows have not been exercised from it yet. |
 | ML service | `ml/` | A separate FastAPI service, started by hand: alert calibration for flood and storm, cash-flow anomaly detection and a climate cash-flow simulation. The API reaches it through `/ml` (see [The ML endpoints](#the-ml-endpoints)); the monitor and the finance score do not use it yet. Model cards are in `ml/models/`, assumptions in `ml/data/ASSUMPTIONS.md`. |
 | Postgres | `docker-compose.yml` | Used by the API as the durable store. |
 | Redis | `docker-compose.yml` | Used by the API as a read cache in front of Postgres. No job queue yet. |
@@ -34,7 +34,7 @@ fusion-hackathon/
 ├── AGENTS.md               Working rules for AI coding agents
 ├── CLAUDE.md               One line that makes Claude Code load AGENTS.md
 ├── api/                    Express + TypeScript + Prisma API (the real work)
-├── web/                    Static console for every unit: index.html, styles.css, app.js, sample-data.js
+├── web/                    Static console: the Playground (index.html) and Analysis (analysis.html) pages
 ├── landing/                Product landing page: Vite + React + TypeScript, with the demo video
 └── ml/                     Python project (FastAPI, scikit-learn): data, features, training, models, service, tests
 ```
@@ -73,20 +73,24 @@ Or open the web console in `web/`; see below.
 
 ### The web console
 
-`web/` is one static page that follows a single loan through every unit, in order: sign in, the business applies, its weather-impact profile, climate risk at its location, financials, the loan and its finance profile, authorisation and the alert outbox, then an event and the advisor. The advisor chat stays docked beside the steps. It has no dependencies and no build step.
+`web/` is two static pages with no dependencies and no build step. The header switches between them.
+
+- **Playground** (`index.html`, `playground.js`): one loan told as eight chapters, one on screen at a time: the business applies, its weather-impact profile, climate risk at its location, its financials, the loan and its score, authorisation and the alert outbox, an alert, and recovery after damage. Each chapter says what happens, who does it and why it matters, runs the real endpoints, and draws the answer as a picture. "Behind the scenes" under each chapter names the endpoints and shows the raw requests. "Play the whole story" runs every chapter in turn and ends with the bank accepting the repayment proposal; it stops at the first refusal and shows it in that chapter. The chapters are `CHAPTERS` in `playground.js`.
+- **Analysis** (`analysis.html`, `analysis.js`): every endpoint of every service, `/ml` included, grouped by service in a sidebar with a search box. Each group has a short description; each endpoint a card with who may call it, what it does, its fields, and its answer with the raw request and response. The page also holds the Google sign-in, the advisor chat, a status strip, a bar of working ids (business, loan, proposal, cell and so on, filled in as you go) and the platform demos: idempotent replay, rate limits and the error shape. The groups and cards are `GROUPS` in `analysis.js`.
 
 ```bash
 # from the repository root, with the API running on port 4000
 python3 -m http.server 3000 --directory web
 ```
 
-Open http://localhost:3000. The port matters: `http://localhost:3000` is the default in `AUTH_ALLOWED_ORIGINS`, and the API refuses writes from any other origin. To sign in from it, add `http://localhost:3000` to the OAuth client's authorised JavaScript origins.
+Open http://localhost:3000 for the Playground and http://localhost:3000/analysis.html for Analysis. The port matters: `http://localhost:3000` is the default in `AUTH_ALLOWED_ORIGINS`, and the API refuses writes from any other origin. To sign in from it, add `http://localhost:3000` to the OAuth client's authorised JavaScript origins.
 
-- **Run the whole workflow.** The button at the top submits the main form of each step in turn (`WORKFLOW` in `web/app.js`) and stops at the first one the API refuses, showing the answer in that step. Creating a loan and authorising it need a bank officer. The secondary endpoints of each step sit under its "More" fold.
-- **The advisor step continues with the same business.** Creating the business and recording the loan fill their ids into the chat and the step 08 forms. Before that, the chat uses `SME-0142`, a demo business from `api/data/smes.json`.
-- **Live and sample modes.** The page probes `GET /health` on load. If the API does not answer it switches to sample mode, where nothing is sent and every step answers with synthetic data from `web/sample-data.js`, each answer labelled as a sample. The data follows one made-up business, Sri Lakshmi Bakery in Chennai, and writes move a state kept in the page (loan status, advisor state, alert outbox, repayment proposal), so the whole workflow can be walked without the API; a reload starts it again. The figures imitate the services' rules and are not computed by them. The mode button in the header switches back.
-- **Wire log.** The bar at the bottom lists every request the page made, with its status, time, `RateLimit` header, `Idempotency-Key`, whether it was replayed, and `X-Request-Id`.
-- **Adding an endpoint to it** needs no JavaScript for a plain form: give a `<form>` a `data-call="METHOD /path/:param"` attribute and name its inputs after the body fields. The comment at the top of `web/index.html` lists the conventions. A bespoke view is a function in `RENDER` in `web/app.js`; without one the answer is drawn as plain fields.
+- **Shared code.** `core.js` holds what both pages use: the API client (it adds the `Idempotency-Key`), sample mode, the request log, the session, the theme and the views in `RENDER` that draw each kind of answer. Ids the Playground creates are kept in `localStorage`, so Analysis opens on the same business and loan.
+- **Bank steps.** Recording, authorising and paying out a loan, the test alert and the decision need a bank officer. The test alert (`/advisor/dev/fake-alert`) also needs `ADVISOR_ENABLE_DEV_ROUTES=true`.
+- **Live and sample modes.** Both pages probe `GET /health` on load. If the API does not answer they switch to sample mode, where nothing is sent and every request answers with synthetic data from `web/sample-data.js`, each answer labelled as a sample. The data follows one made-up business, Sri Lakshmi Bakery in Chennai, and writes move a state kept in the page (loan status, advisor state, alert outbox, repayment proposal), so the whole story can be walked without the API; a reload, or a switch of mode, starts it again. Each page keeps its own sample state. The figures imitate the services' rules and are not computed by them. The mode button in the header switches back.
+- **API address.** The `API` box in the header sets where requests go, and is kept for next time. A link can set it too: `?api=https://api.example.org` on either page, for testers reaching the API through a tunnel. That address must also be in `AUTH_ALLOWED_ORIGINS` and the OAuth client's authorised origins.
+- **Request log.** The bar at the bottom of each page lists every request it made, with its status, time, `RateLimit` header, `Idempotency-Key`, whether it was replayed, and `X-Request-Id`.
+- **Adding an endpoint** to Analysis is one entry in `GROUPS` in `analysis.js`: method, path, who may call it, one line on what it does, and its fields. A bespoke view is a function in `RENDER` in `web/core.js`; without one the answer is drawn as plain fields.
 - The `.next` folder, `node_modules` and `next-env.d.ts` in `web/` are ignored leftovers of the removed Next.js scaffold and are not used.
 
 ### The landing page
@@ -866,7 +870,7 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 ## Not built yet
 
 - A production frontend. `web/` is a static console for showing and testing the API, not the product UI. It has no tests.
-- Using the ML models inside the pipeline. The UI can call them through `/ml`, but the monitor does not ask for an alert's calibrated probability, and the finance score ignores the cash-flow simulation. The web console has no `/ml` panel yet. The finance service scores with rules; its ML scorer is a stub that would call a model over HTTP (`FINANCE_SCORER=ml`), and no model exists.
+- Using the ML models inside the pipeline. The UI can call them through `/ml`, but the monitor does not ask for an alert's calibrated probability, and the finance score ignores the cash-flow simulation. The web console's Analysis page can call them, with sample answers when the API is not running. The finance service scores with rules; its ML scorer is a stub that would call a model over HTTP (`FINANCE_SCORER=ml`), and no model exists.
 - The advisor's use of the finance service's other functions. It sees the finance service only through the evaluation; the scenario, location and repayment-capacity functions are not tools yet, and the advisor still runs its own cash-flow and repayment maths on the business's own figures.
 - A way to manage users. Bank officers are named in `api/.env`; there is no admin screen, and no way to hand a business to a different owner except by editing `businesses.owner_user_id`.
 - `request_log.requester_id` for signed-in users. It is still null for every client request; only the monitor sets it.
