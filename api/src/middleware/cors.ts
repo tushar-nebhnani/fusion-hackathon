@@ -20,8 +20,10 @@ function sameOrigin(req: Request, origin: string): boolean {
 // refuses writes from any other website. Browsers attach `Origin` to every
 // cross-origin request and every write, so this check is also the CSRF
 // protection the cookie needs. Requests without it (curl, servers) pass.
+// "*" allows every origin; auth config drops it in production.
 export function cors(allowedOrigins: readonly string[]): RequestHandler {
   const allowed = new Set(allowedOrigins);
+  const anyOrigin = allowed.has("*");
 
   return (req, res, next) => {
     res.vary("Origin");
@@ -30,7 +32,7 @@ export function cors(allowedOrigins: readonly string[]): RequestHandler {
       next();
       return;
     }
-    if (!allowed.has(origin)) {
+    if (!anyOrigin && !allowed.has(origin)) {
       // A read gets no CORS headers, so the browser keeps the answer from the page
       if (SAFE_METHODS.has(req.method)) {
         next();

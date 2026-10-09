@@ -15,7 +15,7 @@ This README is the handover document for anyone, human or AI agent, picking up t
 | Finance service | `api/src/services/finance/` | Built. Baseline financial health score and a climate-adjusted score per business, from the input service's data and the climate profile. Rule-based; the ML scorer is a stub. Has its own `README.md`. |
 | Evaluator | `api/src/services/evaluator/` | Built. Checks the climate and finance answers for one business against each other and against their own rules, gives one combined rating with reasons, and stores each evaluation. The chat advisor reads climate and finance only through it. See [The evaluator](#the-evaluator). |
 | Chat advisor | `api/src/services/advisor/` | Built on the `chatbot-work` branch and merged. Mounted at `/advisor` for signed-in users, with the input service's ownership and sharing rule; bank decisions need a bank officer. Runs an offline planner without an API key. Reads businesses, snapshots, loans and weather-impact profiles from the input service and scores from the finance service; the `api/data/smes.json` demo businesses stay behind them outside production. Advises owners after each alert the alert system sends. Its `NOTES.md` has the details. |
-| Demo page | `api/public/index.html`, `api/public/workflow.html` | Built. Two static pages served by the API: the climate map at `/demo/`, and at `/demo/workflow.html` a guide to the whole loan workflow, step by step and by role, with every endpoint linked. |
+| Demo page | `api/public/index.html`, `api/public/workflow.html`, `api/public/live.html`, `api/public/dashboard.html` | Built. Four static pages served by the API: the climate map at `/demo/`; at `/demo/workflow.html` a guide to the whole loan workflow, step by step and by role, with every endpoint linked; and at `/demo/live.html` a live run that drives one synthetic business (four personas to choose from) through all five stages with real API calls, showing each request, response, status and timing, the loan state and a few guardrail calls the API refuses. It writes real rows and needs a signed-in bank officer; step 10 uses `/advisor/dev/fake-alert`, so it needs `ADVISOR_ENABLE_DEV_ROUTES=true`. `/demo/dashboard.html` starts at Google sign-in and then takes a business the user types (or one of four presets) through input, analysis (classifier, live climate profile, finance score), the advisor chat, an evaluator that checks the chat's verdict, citations, tool calls and hazards against the data, and the bank's loan lifecycle; an inspector beside it shows every request and response. |
 | Web console | `web/` | Built. A static HTML, CSS and JavaScript page with no build step. It walks one loan through every unit on a single page and calls every endpoint; see [The web console](#the-web-console). Checked against the live API only as far as the public routes and the 401 answers; the signed-in flows have not been exercised from it yet. |
 | ML service | `ml/` | Dependencies declared only. No code, models, data or tests. |
 | Postgres | `docker-compose.yml` | Used by the API as the durable store. |
@@ -107,7 +107,7 @@ The climate agent is off until you put an `OPENAI_API_KEY` in `api/.env`. Withou
 | `AUTH_BANK_EMAILS` | none | Comma-separated emails of bank officers |
 | `AUTH_BANK_DOMAINS` | none | Comma-separated email domains whose users are all bank officers |
 | `AUTH_ROLES_ENFORCED` | `true` | `false` gives every signed-in user the bank role and ignores the two lists above. Only an exact `false` switches roles off, and it is ignored when `NODE_ENV=production` |
-| `AUTH_ALLOWED_ORIGINS` | `http://localhost:3000` | Comma-separated frontend origins allowed to call the API with the session cookie |
+| `AUTH_ALLOWED_ORIGINS` | `http://localhost:3000` | Comma-separated frontend origins allowed to call the API with the session cookie. `*` allows every origin, for local demos only; it is ignored when `NODE_ENV=production` |
 | `AUTH_COOKIE_SAMESITE` | `lax` | `lax` or `none`. Use `none` when the frontend is on a different site from the API; the cookie is then also `Secure`, so it needs HTTPS |
 
 | `FINANCE_SCORER` | `rules` | `rules` or `ml`. `ml` sends the metrics to `FINANCE_ML_URL` and falls back to the rules if the call fails |
@@ -206,7 +206,7 @@ An owner who asks for another owner's business gets 404 `BUSINESS_NOT_FOUND`, th
 
 **Audit trail.** Every answer carries an `X-Request-Id`. One row goes to `audit_events` for each write (`POST`, `PUT`, `PATCH`, `DELETE`), each refusal (401 or 403) and each failed attempt to open a business: the request id, the user id and role, the action as method and route (`PUT /businesses/:id/locations`), the record it was about, the outcome (`success`, `denied` or `failure`), the status and the error code. Request bodies, tokens and financial values are never stored. Plain reads and rate-limited requests are not recorded. The table is append only: a database trigger refuses `UPDATE` and `DELETE`. There is no endpoint that reads it; query the database.
 
-**Requests from other websites.** Because the session is a cookie, the API checks the `Origin` header that browsers attach. Origins in `AUTH_ALLOWED_ORIGINS` get CORS headers with credentials allowed. A `POST`, `PUT`, `PATCH` or `DELETE` from any other origin is refused with 403 `ORIGIN_NOT_ALLOWED`. Requests with no `Origin` header (curl, other servers) and pages the API serves itself are not affected.
+**Requests from other websites.** Because the session is a cookie, the API checks the `Origin` header that browsers attach. Origins in `AUTH_ALLOWED_ORIGINS` get CORS headers with credentials allowed. A `POST`, `PUT`, `PATCH` or `DELETE` from any other origin is refused with 403 `ORIGIN_NOT_ALLOWED`. Setting it to `*` turns this check off so any local page can sign in; that also turns off the CSRF protection, so it is ignored in production. Requests with no `Origin` header (curl, other servers) and pages the API serves itself are not affected.
 
 **Setting it up.** In Google Cloud Console, create an OAuth client ID of type "Web application". Add each frontend origin, and `http://localhost:4000` for the demo page, to its authorised JavaScript origins. Put the client ID in `GOOGLE_CLIENT_ID`. Until it is set, `POST /auth/google` answers 503 `AUTH_NOT_CONFIGURED`.
 
@@ -591,6 +591,7 @@ api/
 ├── data/monitor-locations.json   Locations for monitor:simulate, or the monitor with MONITOR_LOCATION_SOURCE=json
 ├── prisma.config.ts              Prisma 7 config; the datasource URL lives here
 ├── public/index.html             Demo page, served at /demo/
+├── public/live.html              Live run of the whole workflow, served at /demo/live.html
 ├── vitest.config.ts              Points tests at a *_test database and Redis database 1; test files run one at a time
 ├── vitest.global-setup.ts        Applies migrations to the test database
 └── src/

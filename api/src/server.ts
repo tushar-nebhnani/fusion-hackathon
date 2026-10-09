@@ -5,6 +5,8 @@ import { env } from "./config/env.js";
 import { startClimateRefresh } from "./jobs/climate-refresh.js";
 import { createRedis } from "./config/redis.js";
 import { createAdvisorFromEnv } from "./services/advisor/bootstrap.js";
+import { loadAlertsConfig } from "./services/alerts/config.js";
+import { createEnqueue } from "./services/alerts/enqueue.js";
 import { createAlertReader } from "./services/alerts/reader.js";
 import { createPrismaAuditRecorder } from "./services/audit/recorder.js";
 import { loadAuthEnv } from "./services/auth/config.js";
@@ -38,6 +40,7 @@ const auth = createAuthService({
   rolesEnforced: authEnv.rolesEnforced,
 });
 await auth.purgeExpired();
+
 console.log(
   authEnv.googleClientId
     ? "Sign in with Google: on"
@@ -125,6 +128,7 @@ const app = createApp({
   advisor: {
     service: advisor.advisor,
     devRoutes: advisor.config.enableDevRoutes,
+    enqueue: createEnqueue({ prisma, config: loadAlertsConfig() }),
     // The input service's ownership and sharing rule. The smes.json demo
     // businesses (never in production) stay open to every signed-in user.
     assertAccess: async (businessId, actor) => {

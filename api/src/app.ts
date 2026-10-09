@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import express, { type Express } from "express";
-import type { AdvisorAccess } from "./controllers/advisor.controller.js";
+import type { AdvisorAccess, EnqueueAlert } from "./controllers/advisor.controller.js";
 import type { AuthCookieOptions } from "./controllers/auth.controller.js";
 import { auditTrail } from "./middleware/audit.js";
 import { loadSession, requireAuth, requireBank, sessionUser } from "./middleware/auth.js";
@@ -24,7 +24,7 @@ import type { Advisor } from "./services/advisor/index.js";
 import type { AlertReader } from "./services/alerts/reader.js";
 import type { AuditRecorder } from "./services/audit/recorder.js";
 import { AUTH } from "./services/auth/config.js";
-import type { AuthService } from "./services/auth/service.js";
+import type { AuthService, AuthUser } from "./services/auth/service.js";
 import type { ClimateService } from "./services/climate/profile.service.js";
 import { EVALUATOR } from "./services/evaluator/config.js";
 import { FINANCE } from "./services/finance/index.js";
@@ -43,6 +43,9 @@ export interface AppDeps extends HealthDeps {
     cookie?: AuthCookieOptions;
     // Requests per minute per client on /auth
     rateLimit?: number;
+    // AUTH DISABLED: when given, every request acts as this user and no
+    // session is read. Local development only; server.ts refuses it in production.
+    devUser?: AuthUser;
   };
   climate: ClimateService;
   // Where security audit events go. Without one, requests still get an id
@@ -55,7 +58,13 @@ export interface AppDeps extends HealthDeps {
   alerts?: AlertReader;
   // Chat advisor. /advisor is mounted only when it is given. Every route that
   // names a business or loan asks assertAccess first.
-  advisor?: { service: Advisor; devRoutes: boolean; assertAccess: AdvisorAccess };
+  advisor?: {
+    service: Advisor;
+    devRoutes: boolean;
+    assertAccess: AdvisorAccess;
+    // The alert outbox; the dev fake-alert route queues an email through it
+    enqueue?: EnqueueAlert;
+  };
   // Defaults to an in-process store, which only suits tests and one instance
   idempotency?: IdempotencyStore;
   // Requests per minute per client across the whole API
@@ -98,7 +107,21 @@ export function createApp(deps: AppDeps): Express {
 
   // The session is read before idempotency so that each user's keys are
   // kept apart. It does not reject; the routes below say who they need.
-  app.use(loadSession(deps.auth.service));
+  // ---- AUTH DISABLED ----------------------------------------------------
+  // With a devUser, sign-in is switched off: every request is that user, so
+  // requireAuth and requireBank always pass. To turn sign-in back on, stop
+  // passing auth.devUser in server.ts; this line then reads real sessions.
+  // app.use(loadSession(deps.auth.service));
+  const devUser = deps.auth.devUser;
+  app.use(
+    devUser
+      ? (_req, res, next) => {
+          res.locals.user = devUser;
+          next();
+        }
+      : loadSession(deps.auth.service),
+  );
+  // ------------------------------------------------------------------------
   app.use(
     idempotency(deps.idempotency ?? createMemoryIdempotencyStore(), {
       subject: (_req, res) => sessionUser(res)?.id ?? null,
@@ -149,6 +172,7 @@ export function createApp(deps: AppDeps): Express {
       advisorRouter(deps.advisor.service, {
         devRoutes: deps.advisor.devRoutes,
         assertAccess: deps.advisor.assertAccess,
+        enqueue: deps.advisor.enqueue,
       }),
     );
   }

@@ -154,7 +154,8 @@ export function createOpenAiAgent(options: OpenAiAgentOptions): ClimateAgent {
         max_output_tokens: CLIMATE.agent.maxTokens,
         instructions: system,
         input: JSON.stringify(input),
-        reasoning: { effort },
+        // Only reasoning models accept an effort; gpt-4.1 and older refuse it
+        ...(/^(gpt-5|o\d)/.test(options.model) && { reasoning: { effort } }),
         text: { format: zodTextFormat(schema, name) },
         // Locations are not kept on OpenAI's side
         store: false,

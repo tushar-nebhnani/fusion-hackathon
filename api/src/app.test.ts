@@ -214,6 +214,19 @@ describe("cross-origin requests", () => {
     expect(read.headers).not.toHaveProperty("access-control-allow-origin");
   });
 
+  it("allows any origin when the list is \"*\"", async () => {
+    const getProfile = vi.fn(() => Promise.resolve({ grade: "C" } as never));
+    const open = app({ auth: { service: fakeAuth(), allowedOrigins: ["*"] }, climate: { getProfile, getCell: getProfile } });
+
+    const res = await signedIn(open)
+      .post("/climate/profile")
+      .set("Origin", "http://127.0.0.1:5500")
+      .send({ lat: 26.1445, lon: 91.7362 });
+
+    expect(res.status).toBe(200);
+    expect(res.headers["access-control-allow-origin"]).toBe("http://127.0.0.1:5500");
+  });
+
   it("accepts a write from a page the API serves itself", async () => {
     const server = app({ climate: { getProfile: () => Promise.resolve({ grade: "C" } as never), getCell: () => Promise.reject(new Error("no")) } });
 

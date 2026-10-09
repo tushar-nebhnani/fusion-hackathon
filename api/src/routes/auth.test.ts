@@ -338,4 +338,11 @@ describe("loadAuthEnv", () => {
     expect(loadAuthEnv({ NODE_ENV: "production" }).cookieSecure).toBe(true);
     expect(loadAuthEnv({ AUTH_COOKIE_SAMESITE: "none" }).cookieSecure).toBe(true);
   });
+
+  it("allows every origin with \"*\", except in production", () => {
+    expect(loadAuthEnv({ AUTH_ALLOWED_ORIGINS: "*" }).allowedOrigins).toEqual(["*"]);
+    expect(loadAuthEnv({ AUTH_ALLOWED_ORIGINS: "*, https://app.example.com", NODE_ENV: "production" }).allowedOrigins).toEqual([
+      "https://app.example.com",
+    ]);
+  });
 });

@@ -4,6 +4,7 @@ import { AppError, BadRequestError } from "../errors/app-error.js";
 import { requireUser } from "../middleware/auth.js";
 import { buildFakeAlert, fakeAlertOptionsSchema } from "../services/advisor/dev/fakeAlert.js";
 import type { Advisor } from "../services/advisor/index.js";
+import { HAZARDS, type AlertEvent, type Hazard, type Severity } from "../services/alerts/types.js";
 import { damageSchema } from "../services/advisor/types.js";
 
 const id = z.string().min(1).max(64);
@@ -44,7 +45,22 @@ const param = (value: unknown) => parse(id, value, "path parameter");
 // service's rule: owners see their own, the bank sees what was shared with it.
 export type AdvisorAccess = (businessId: string, actor: { role: "owner" | "bank"; id: string }) => Promise<void>;
 
-export function advisorController(advisor: Advisor, assertAccess: AdvisorAccess) {
+// The alert system's enqueue(); resolves to whether the event was queued
+export type EnqueueAlert = (event: AlertEvent) => Promise<boolean>;
+
+const SEVERITY: Record<"watch" | "warning" | "severe", Severity> = {
+  watch: "WATCH",
+  warning: "WARNING",
+  severe: "CRITICAL",
+};
+
+// The advisor's hazards are free text; the alert templates know a fixed list
+const alertHazard = (hazard: string): Hazard =>
+  (HAZARDS as readonly string[]).includes(hazard) ? (hazard as Hazard) : "flood";
+
+const istDate = (iso: string) => new Date(Date.parse(iso) + 330 * 60_000).toISOString().slice(0, 10);
+
+export function advisorController(advisor: Advisor, assertAccess: AdvisorAccess, enqueue?: EnqueueAlert) {
   const actorOf = (res: Response) => {
     const user = requireUser(res);
     return { role: user.role, id: user.id };
@@ -116,7 +132,30 @@ export function advisorController(advisor: Advisor, assertAccess: AdvisorAccess)
 
   const fakeAlert: RequestHandler = async (req, res) => {
     const event = buildFakeAlert(parse(fakeAlertOptionsSchema, req.body, "body"));
-    res.json({ event, ...(await advisor.handleAlert(event)) });
+    const result = await advisor.handleAlert(event);
+    // Also into the alert outbox, the way the monitor would, so the alert
+    // worker emails it. Consent, dedupe and cooldown still apply there.
+    let emailsQueued = 0;
+    if (enqueue) {
+      const businesses = new Set<string>();
+      for (const loanId of event.loanIds) {
+        const businessId = await advisor.businessOfLoan(loanId).catch(() => null);
+        if (businessId) businesses.add(businessId);
+      }
+      for (const businessId of businesses) {
+        const queued = await enqueue({
+          businessId,
+          hazard: alertHazard(event.hazard),
+          severity: SEVERITY[event.severity],
+          windowStart: istDate(event.windowStart),
+          windowEnd: istDate(event.windowEnd),
+          evidence: `Test alert raised from the demo (${event.hazard}, ${event.severity})`,
+          sourceRunId: event.alertId,
+        });
+        if (queued) emailsQueued += 1;
+      }
+    }
+    res.json({ event, ...result, emailsQueued });
   };
 
   const verifyAlert: RequestHandler = async (req, res) => {

@@ -726,7 +726,8 @@ async function loadAccount() {
   state.user = me.ok ? (me.data?.user ?? me.data) : null;
   drawAccount();
   const gsi = $("gsi");
-  if (state.user) { gsi.replaceChildren(note("", `Signed in as ${state.user.email}, role ${state.user.role}.`)); return; }
+  // Auth is disabled on the API for now: /auth/me always answers with the local developer
+  if (state.user) { gsi.replaceChildren(note("", `Sign-in is disabled for now. Every request acts as ${state.user.email}, role ${state.user.role}.`)); return; }
   const config = await api("GET", "/auth/config");
   const clientId = config.data?.google_client_id;
   if (!clientId) {

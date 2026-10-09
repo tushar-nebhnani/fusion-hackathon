@@ -57,8 +57,11 @@ export function loadAuthEnv(source: NodeJS.ProcessEnv = process.env): AuthEnv {
     bankEmails: list(parsed.AUTH_BANK_EMAILS),
     bankDomains: list(parsed.AUTH_BANK_DOMAINS).map((domain) => domain.replace(/^@/, "")),
     rolesEnforced: parsed.AUTH_ROLES_ENFORCED === "true" || parsed.NODE_ENV === "production",
-    // Origins are compared as the browser sends them, without a trailing slash
-    allowedOrigins: list(parsed.AUTH_ALLOWED_ORIGINS).map((origin) => origin.replace(/\/+$/, "")),
+    // Origins are compared as the browser sends them, without a trailing slash.
+    // "*" (every origin) is for local demos and is ignored in production.
+    allowedOrigins: list(parsed.AUTH_ALLOWED_ORIGINS)
+      .map((origin) => origin.replace(/\/+$/, ""))
+      .filter((origin) => origin !== "*" || parsed.NODE_ENV !== "production"),
     cookieSameSite,
     // Browsers drop a SameSite=None cookie that is not Secure
     cookieSecure: parsed.NODE_ENV === "production" || cookieSameSite === "none",

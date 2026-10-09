@@ -391,10 +391,17 @@ async function main(): Promise<void> {
   const config = loadAlertsConfig();
 
   // nodemailer is loaded only when messages really go out
-  const sender =
+  const chosen =
     config.mode === "live"
       ? (await import("./senders/emailSmtp.js")).createSmtpSender(config.smtp)
       : createDryRunSender();
+  // ALERTS_REDIRECT_TO: consent and cooldown still decide whether a message
+  // goes out; only the address it goes to changes
+  const redirectTo = config.redirectTo;
+  const sender: Sender = redirectTo
+    ? { provider: chosen.provider, send: (message) => chosen.send({ ...message, to: redirectTo }) }
+    : chosen;
+  if (redirectTo) console.warn(`Alert worker: every email is redirected to ${redirectTo}`);
 
   const worker = createAlertWorker({ prisma, config, content: loadContent(), sender });
 

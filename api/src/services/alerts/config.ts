@@ -14,6 +14,9 @@ export interface AlertsConfig {
   // Local time the bank's daily WATCH digest goes out, in minutes after midnight
   digestTime: number;
   dashboardUrl: string;
+  // Development only: every live email goes to this one address instead of
+  // its contacts, so a demo never mails a real customer
+  redirectTo?: string;
   smtp: { host: string; port: number; user?: string; password?: string; from?: string };
 }
 
@@ -60,6 +63,9 @@ const schema = z.object({
   SMTP_USER: optional,
   SMTP_APP_PASSWORD: optional,
   ALERTS_FROM_EMAIL: optional,
+  ALERTS_REDIRECT_TO: z
+    .preprocess((value) => (value === "" ? undefined : value), z.email().optional())
+    .catch(undefined),
 });
 
 export function loadAlertsConfig(
@@ -74,6 +80,7 @@ export function loadAlertsConfig(
     timezone: env.ALERTS_TZ,
     digestTime: env.ALERTS_DIGEST_TIME,
     dashboardUrl: env.ALERTS_DASHBOARD_URL.replace(/\/+$/, ""),
+    redirectTo: env.ALERTS_REDIRECT_TO,
     smtp: {
       host: env.SMTP_HOST,
       port: env.SMTP_PORT,
