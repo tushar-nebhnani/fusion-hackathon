@@ -4,7 +4,6 @@
 # Fetched weather data: large, re-creatable with data/fetch_weather.py
 data/raw/
 data/progress.json
-data/weather_dataset.csv
 data/run.out
 data/*.tmp
 
@@ -21,3 +20,4 @@ data/*.tmp
 !data/synthetic_businesses.csv
 !data/features_flood.csv
 !data/features_storm.csv
+!data/weather_dataset.csv

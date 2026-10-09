@@ -17,7 +17,7 @@ EDA findings that shaped the features: floods follow locally extreme rain (media
 
 `build_events.py` reads two downloads kept out of git in `data/external/`: `ifi/India_Flood_Inventory_v3.csv` (India Flood Inventory, IFI-Impacts) and `ibtracs/ibtracs.NI.list.v04r01.csv` (IBTrACS North Indian basin). Its outputs are committed, so you only need these to rebuild them.
 
-`weather_dataset.csv` (55 MB) is not committed. Rebuild it with the commands below.
+`weather_dataset.csv` (55 MB) is committed. Rebuild it with the commands below to refresh it.
 
 # Weather dataset for the hazard early-warning model
 
