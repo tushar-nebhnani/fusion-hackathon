@@ -56,7 +56,7 @@ describe("/advisor routes", () => {
     // 2. The bank disburses; a heavy-rain warning fires
     const disbursed = await bank().post("/advisor/loans/LN-0101/disburse").send({});
     expect(body<{ state: string }>(disbursed).state).toBe("ACTIVE");
-    const alert = await owner().post("/advisor/dev/fake-alert").send({ loanIds: ["LN-0101"] });
+    const alert = await bank().post("/advisor/dev/fake-alert").send({ loanIds: ["LN-0101"] });
     expect(alert.status).toBe(200);
     expect(body<{ results: { smsText: string }[] }>(alert).results[0]?.smsText.length).toBeLessThanOrEqual(160);
     const state = await owner().get("/advisor/loans/LN-0101/state");
@@ -135,6 +135,58 @@ describe("/advisor routes", () => {
   it("lists the businesses as JSON, not an unresolved promise", async () => {
     const res = await signedIn(app()).get("/advisor/businesses");
     expect(body<{ businesses: unknown[] }>(res).businesses.length).toBeGreaterThan(0);
+  });
+
+  it("keeps the dev routes for bank officers: an owner cannot fire alerts", async () => {
+    const server = app();
+    for (const path of ["fake-alert", "verify-alert", "sweep-alerts"]) {
+      const owner = await signedIn(server, OWNER).post(`/advisor/dev/${path}`).send({ loanIds: ["LN-0101"] });
+      expect(owner.status, path).toBe(403);
+      const anonymous = await request(server).post(`/advisor/dev/${path}`).send({});
+      expect(anonymous.status, path).toBe(401);
+    }
+    const bank = await signedIn(server, BANK).post("/advisor/dev/fake-alert").send({ loanIds: ["LN-0101"] });
+    expect(bank.status).toBe(200);
+  });
+
+  it("lets a bank officer act only on businesses the bank may see", async () => {
+    // The bank loses sight of SME-0101 (its owner withdrew consent, say) after the owner has used the advisor
+    let hidden = false;
+    const access: AdvisorAccess = (businessId, actor) =>
+      hidden && actor.role === "bank" && businessId === "SME-0101"
+        ? Promise.reject(new NotFoundError(`Business ${businessId} not found`))
+        : Promise.resolve();
+    const server = app(true, access);
+    const owner = () => signedIn(server, OWNER);
+    const bank = () => signedIn(server, BANK);
+
+    const ask = await owner().post("/advisor/chat").send({ businessId: "SME-0101", loanId: "LN-0101", message: "Should I take a ₹3L loan?" });
+    await owner().post("/advisor/chat").send({
+      businessId: "SME-0101",
+      conversationId: body<ChatBody>(ask).conversationId,
+      message: "Dry goods mostly. Kept on the ground floor.",
+    });
+    await bank().post("/advisor/loans/LN-0101/disburse").send({});
+    await bank().post("/advisor/dev/fake-alert").send({ loanIds: ["LN-0101"] });
+    const damage = await owner().post("/advisor/damage-report").send({
+      loanId: "LN-0101",
+      daysClosed: 6,
+      stockLossInr: 40_000,
+      equipmentDamageInr: 0,
+      expectedReopenDate: "2026-10-09",
+      insuranceClaim: { status: "none" },
+    });
+    const { proposal } = body<ChatBody>(damage);
+
+    hidden = true;
+    const decide = await bank().post(`/advisor/proposals/${proposal.id}/decision`).send({ decision: "accept" });
+    expect(decide.status).toBe(404);
+    const fake = await bank().post("/advisor/dev/fake-alert").send({ loanIds: ["LN-0101"] });
+    expect(fake.status).toBe(404);
+    // The refusal changed nothing: once the bank may see the business again it can decide
+    hidden = false;
+    const later = await bank().post(`/advisor/proposals/${proposal.id}/decision`).send({ decision: "accept" });
+    expect(later.status).toBe(200);
   });
 
   it("does not mount dev routes when they are off", async () => {

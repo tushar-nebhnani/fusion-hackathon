@@ -773,6 +773,12 @@ export function createAdvisor(deps: AdvisorDeps) {
     sweepAlerts,
     // Which business a loan belongs to, so the caller can check access first
     businessOfLoan: async (loanId: string) => (await requireLoan(loanId)).business.id,
+    // Same for a proposal, through its loan
+    businessOfProposal: async (proposalId: string) => {
+      const proposal = await repo.getProposal(proposalId);
+      if (!proposal) throw new NotFoundError(`Proposal ${proposalId} not found`);
+      return (await requireLoan(proposal.loanId)).business.id;
+    },
     listBusinesses: async () =>
       (await directory.list()).map((b) => ({
         id: b.id,

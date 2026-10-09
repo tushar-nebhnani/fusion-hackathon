@@ -21,6 +21,7 @@ Use the status values `Not started`, `In progress`, `Implemented`, and `Tested`.
 | P1 | Timeout/retry/fallback behavior for external APIs | Tested | `services/climate/open-meteo.ts` (timeout, three tries) | `open-meteo.test.ts` retry tests; `climate.test.ts` "returns 503 when the history is unavailable and nothing is cached" |
 | P1 | Score provenance includes input timestamps/model version | In progress | Climate responses carry freshness and agent version; `finance_profiles` (not finished) stores inputs and model version | Not verified end to end; the finance service is still being built |
 | P1 | Dependency vulnerability review | In progress | `api/package.json` | `npm audit` 2026-10-09: 4 high, all `mysql2` reached through the `prisma` package. See F-08 |
+| P0 | Dev routes limited to bank officers, and every bank action checks access to its business (F-10, F-15) | Tested | `routes/advisor.ts`; `controllers/advisor.controller.ts` (`decide`, `fakeAlert`); `advisor.businessOfProposal` | `advisor/tests/routes.test.ts`; `routes/access-matrix.test.ts` |
 | P2 | Automated security checks in CI | Not started | No CI in the repository | — |
 | P2 | Backup/recovery and secret rotation plan | Not started | TBD | — |
 

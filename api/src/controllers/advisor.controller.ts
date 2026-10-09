@@ -84,6 +84,7 @@ export function advisorController(advisor: Advisor, assertAccess: AdvisorAccess,
 
   const decide: RequestHandler = async (req, res) => {
     const proposalId = parse(z.uuid(), req.params.id, "proposal id");
+    await assertAccess(await advisor.businessOfProposal(proposalId), actorOf(res));
     // The signed-in bank officer, never a name taken from the body
     const decidedBy = requireUser(res).email;
     res.json(await advisor.decideProposal(proposalId, { ...parse(decisionBody, req.body, "body"), decidedBy }));
@@ -132,6 +133,7 @@ export function advisorController(advisor: Advisor, assertAccess: AdvisorAccess,
 
   const fakeAlert: RequestHandler = async (req, res) => {
     const event = buildFakeAlert(parse(fakeAlertOptionsSchema, req.body, "body"));
+    for (const loanId of event.loanIds) await checkLoan(res, loanId);
     const result = await advisor.handleAlert(event);
     // Also into the alert outbox, the way the monitor would, so the alert
     // worker emails it. Consent, dedupe and cooldown still apply there.
