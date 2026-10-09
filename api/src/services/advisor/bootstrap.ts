@@ -3,6 +3,7 @@ import { loadAlertsConfig } from "../alerts/config.js";
 import { loadContent } from "../alerts/render.js";
 import { createDryRunSender } from "../alerts/senders/dryRun.js";
 import { createSmtpSender } from "../alerts/senders/emailSmtp.js";
+import { redirected } from "../alerts/senders/Sender.js";
 import type { EvaluatorService } from "../evaluator/service.js";
 import { loadAdvisorConfig, type AdvisorConfig } from "./config.js";
 import { combineDirectories, loadDirectory, type BusinessDirectory } from "./directory.js";
@@ -40,7 +41,13 @@ export function createAdvisorFromEnv(deps: {
     config.provider === "openai" && config.apiKey
       ? createOpenAiLlm({ apiKey: config.apiKey, model: config.model })
       : createOfflineLlm();
-  const sender = alerts.mode === "live" ? createSmtpSender(alerts.smtp) : createDryRunSender();
+  // The advisor sends on its own, not through the alert worker, so the
+  // development redirect has to be applied here as well
+  const sender = redirected(
+    alerts.mode === "live" ? createSmtpSender(alerts.smtp) : createDryRunSender(),
+    alerts.redirectTo,
+  );
+  if (alerts.redirectTo) logger.log(`Advisor: every email is redirected to ${alerts.redirectTo}`);
 
   const demo = config.demoBusinesses ? loadDirectory(config.smesPath) : null;
   const directory = demo

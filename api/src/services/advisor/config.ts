@@ -39,7 +39,8 @@ const schema = z.object({
   ADVISOR_LLM_API_KEY: optional,
   OPENAI_API_KEY: optional,
   ADVISOR_MAX_ITERATIONS: z.coerce.number().int().min(2).max(20).catch(8),
-  ADVISOR_ENABLE_DEV_ROUTES: z.enum(["true", "false"]).catch("true"),
+  // Off unless asked for: the dev routes act on any loan by its id
+  ADVISOR_ENABLE_DEV_ROUTES: z.enum(["true", "false"]).catch("false"),
   ADVISOR_SMES_PATH: optional,
   ADVISOR_DEMO_BUSINESSES: z.enum(["true", "false"]).catch("true"),
   ADVISOR_MONITOR_ALERTS: z.enum(["true", "false"]).catch("true"),

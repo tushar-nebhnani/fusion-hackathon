@@ -4,7 +4,7 @@ import { loadAlertsConfig, type AlertsConfig } from "./config.js";
 import { createEnqueue } from "./enqueue.js";
 import { createAlertReader } from "./reader.js";
 import { loadContent } from "./render.js";
-import type { OutboundMessage, Sender } from "./senders/Sender.js";
+import { redirected, type OutboundMessage, type Sender } from "./senders/Sender.js";
 import type { AlertEvent } from "./types.js";
 import { createAlertWorker } from "./worker.js";
 
@@ -625,5 +625,34 @@ describe("businesses from the input service", () => {
       "Lakshmi Tailors",
       "Lakshmi Tailors",
     ]);
+  });
+});
+
+describe("redirected sender", () => {
+  const recording = () => {
+    const to: string[] = [];
+    const sender: Sender = {
+      provider: "smtp",
+      send: (message) => {
+        to.push(message.to);
+        return Promise.resolve({});
+      },
+    };
+    return { to, sender };
+  };
+  const message = { to: "owner@example.com", subject: "s", body: "b", html: false };
+
+  it("sends every message to the one address, under the same provider", async () => {
+    const { to, sender } = recording();
+    const wrapped = redirected(sender, "dev@example.com");
+    await wrapped.send(message);
+    expect(to).toEqual(["dev@example.com"]);
+    expect(wrapped.provider).toBe("smtp");
+  });
+
+  it("leaves the sender alone without an address", async () => {
+    const { to, sender } = recording();
+    await redirected(sender, undefined).send(message);
+    expect(to).toEqual(["owner@example.com"]);
   });
 });

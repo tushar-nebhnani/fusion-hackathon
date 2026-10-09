@@ -13,7 +13,7 @@ import {
   type RenderedMessage,
 } from "./render.js";
 import { createDryRunSender } from "./senders/dryRun.js";
-import type { Sender } from "./senders/Sender.js";
+import { redirected, type Sender } from "./senders/Sender.js";
 import { LANGUAGES, alertEventSchema, type AlertEvent, type Language } from "./types.js";
 import { withTimeout } from "./withTimeout.js";
 
@@ -398,9 +398,7 @@ async function main(): Promise<void> {
   // ALERTS_REDIRECT_TO: consent and cooldown still decide whether a message
   // goes out; only the address it goes to changes
   const redirectTo = config.redirectTo;
-  const sender: Sender = redirectTo
-    ? { provider: chosen.provider, send: (message) => chosen.send({ ...message, to: redirectTo }) }
-    : chosen;
+  const sender = redirected(chosen, redirectTo);
   if (redirectTo) console.warn(`Alert worker: every email is redirected to ${redirectTo}`);
 
   const worker = createAlertWorker({ prisma, config, content: loadContent(), sender });

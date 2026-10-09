@@ -44,7 +44,7 @@ export interface AppDeps extends HealthDeps {
     // Requests per minute per client on /auth
     rateLimit?: number;
     // AUTH DISABLED: when given, every request acts as this user and no
-    // session is read. Local development only; server.ts refuses it in production.
+    // session is read. Local development only; createApp refuses it in production.
     devUser?: AuthUser;
   };
   climate: ClimateService;
@@ -113,6 +113,9 @@ export function createApp(deps: AppDeps): Express {
   // passing auth.devUser in server.ts; this line then reads real sessions.
   // app.use(loadSession(deps.auth.service));
   const devUser = deps.auth.devUser;
+  if (devUser && process.env.NODE_ENV === "production") {
+    throw new Error("auth.devUser switches sign-in off and cannot be used in production");
+  }
   app.use(
     devUser
       ? (_req, res, next) => {
