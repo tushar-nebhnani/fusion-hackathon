@@ -70,7 +70,8 @@ describe("Mode 1: pre-loan advisor", () => {
     const result = await advisor.handleChat({ businessId: "SME-0307", message: "Can I take a ₹2L loan?" });
     expect(result.reply).toContain("unavailable");
     expect(result.structured?.verdict).toBeNull();
-    expect(result.toolCalls.find((c) => c.tool === "getClimateProfile")?.ok).toBe(false);
+    // The evaluation itself answers; its climate check says why there is no verdict
+    expect(result.toolCalls.find((c) => c.tool === "getEvaluation")?.ok).toBe(true);
   });
 });
 
@@ -241,15 +242,15 @@ describe("agent loop", () => {
 
   it("runs one repair pass when the answer has a number with no source", async () => {
     const llm = scripted([
-      tool("getFinanceProfile"),
+      tool("getEvaluation"),
       plain("Your EMI would be ₹9,999."),
-      plain("Your annual revenue is ₹21,48,000.", ["call_1.annualRevenue"]),
+      plain("Your annual revenue is ₹21,48,000.", ["call_1.business.annualRevenue"]),
     ]);
     const { advisor } = createTestAdvisor({ llm });
     const result = await advisor.handleChat({ businessId: "SME-0101", message: "How am I doing?" });
     expect(llm.calls).toBe(3);
     expect(result.reply).toBe("Your annual revenue is ₹21,48,000.");
-    expect(result.citations).toEqual(["call_1.annualRevenue"]);
+    expect(result.citations).toEqual(["call_1.business.annualRevenue"]);
     expect(result.warnings).toEqual([]);
   });
 

@@ -12,6 +12,7 @@ Instructions for any AI coding agent working here. `README.md` is the reference:
 | `api/src/services/alerts/` | The email alert system. Design in `job.md` | Yes |
 | `api/src/services/auth/` | Sign in with Google, sessions and roles | Yes |
 | `api/src/services/finance/` | The finance service: baseline and climate-adjusted scores. Has its own `README.md` | Yes |
+| `api/src/services/evaluator/` | Checks the climate and finance answers together and rates them; the chat advisor's only way to both. Described in `README.md` | Yes |
 | `api/src/services/input/` | The input service, still being built | Only when asked. It is not documented here or in `README.md` yet |
 | `web/` | Static console that calls every endpoint: `index.html`, `styles.css`, `app.js`. No build step, no tests | Yes |
 | `ml/` | Python project with dependencies only | Nothing to work on yet |

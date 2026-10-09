@@ -1,15 +1,5 @@
-import type { ClimateService } from "../../climate/profile.service.js";
 import type { ClimateProfile } from "../../climate/schema.js";
 import { MONTHS, type BusinessRecord, type Hazard, type MonthName } from "../types.js";
-
-// Read-only wrapper over the climate unit's public entry function. The
-// profile comes back exactly as the climate unit returns it.
-export async function getClimateProfile(
-  climate: Pick<ClimateService, "getProfile">,
-  business: BusinessRecord,
-): Promise<ClimateProfile> {
-  return climate.getProfile({ lat: business.lat, lon: business.lon }, `advisor:${business.id}`);
-}
 
 // Hazards worth a scenario. README §5 says "medium or higher"; the climate
 // unit's categories are primary / secondary / dormant.

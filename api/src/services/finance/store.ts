@@ -57,6 +57,18 @@ export async function listProfiles(db: PrismaClient, businessId: string, limit: 
   }));
 }
 
+export interface StoredProfile {
+  id: number;
+  createdAt: Date;
+  profile: FinanceProfile;
+}
+
+// The newest stored profile, whole, or null when there is none
+export async function latestProfile(db: PrismaClient, businessId: string): Promise<StoredProfile | null> {
+  const row = await db.financeProfile.findFirst({ where: { businessId }, orderBy: { id: "desc" } });
+  return row ? { id: row.id, createdAt: row.createdAt, profile: row.profile as unknown as FinanceProfile } : null;
+}
+
 export interface RequestLogEntry {
   requestId: string;
   operation: "profile" | "scenario" | "evaluate_location" | "repayment_capacity";

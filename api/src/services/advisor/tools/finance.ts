@@ -2,20 +2,12 @@ import { MONTHS, type BusinessRecord, type LoanRecord, type LoanStateName } from
 import { outstanding, rupees } from "./money.js";
 import { netOperatingIncome } from "./scenario.js";
 
-// The finance service's latest stored profile, as the advisor shows it
-export interface FinanceScore {
-  baselineScore: number;
-  // null when no climate profile could be applied
-  climateAdjustedScore: number | null;
-  scoredAt: string;
-  modelVersion: string;
-}
-
-// Revenue by month, expenses, existing debt and loans, as README §6 says
-// getFinanceProfile returns. The figures come from the business record: the
-// input service's latest snapshot (inputDirectory.ts) or, for a demo
-// business, smes.json.
-export function getFinanceProfile(
+// Revenue by month, expenses, existing debt and loans: the `business` part
+// of getEvaluation, which the advisor's own cash-flow maths runs on. The
+// figures come from the business record: the input service's latest
+// snapshot (inputDirectory.ts) or, for a demo business, smes.json. The
+// finance service's scores are in the evaluation beside it.
+export function businessFinances(
   business: BusinessRecord,
   loanStates: Map<string, LoanStateName>,
   today: string,

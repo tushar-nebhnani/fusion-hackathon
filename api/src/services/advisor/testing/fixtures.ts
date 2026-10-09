@@ -1,5 +1,6 @@
 import type { ClimateProfile } from "../../climate/schema.js";
 import { HAZARDS, type Hazard } from "../../climate/types.js";
+import { createEvaluatorService } from "../../evaluator/service.js";
 import { loadAdvisorConfig } from "../config.js";
 import { loadDirectory } from "../directory.js";
 import { createAdvisor, type AdvisorDeps } from "../index.js";
@@ -79,13 +80,19 @@ export function createTestAdvisor(options: { llm?: LlmClient; now?: () => Date; 
   const deps: AdvisorDeps = {
     repo: memory.repo,
     directory: loadDirectory(loadAdvisorConfig({}).smesPath),
-    climate: {
-      getProfile: (point) => {
-        if (options.climateDown) return Promise.reject(new Error("Climate data sources are unavailable"));
-        const profile = PROFILES[`${point.lat},${point.lon}`];
-        return profile ? Promise.resolve(profile) : Promise.reject(new Error("no test profile"));
+    // The real evaluator over a stand-in climate unit. Demo businesses have
+    // no finance profile, so only the climate side is evaluated.
+    evaluator: createEvaluatorService({
+      climate: {
+        getProfile: (point) => {
+          if (options.climateDown) return Promise.reject(new Error("Climate data sources are unavailable"));
+          const profile = PROFILES[`${point.lat},${point.lon}`];
+          return profile ? Promise.resolve(profile) : Promise.reject(new Error("no test profile"));
+        },
       },
-    },
+      now: options.now ?? (() => new Date("2026-10-09T06:00:00Z")),
+      logger: { error: () => undefined, warn: () => undefined },
+    }),
     messenger,
     contacts: { forBusiness: () => Promise.resolve(contacts) },
     llm: options.llm ?? createOfflineLlm(),

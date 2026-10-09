@@ -3,9 +3,8 @@ import { loadAlertsConfig } from "../alerts/config.js";
 import { loadContent } from "../alerts/render.js";
 import { createDryRunSender } from "../alerts/senders/dryRun.js";
 import { createSmtpSender } from "../alerts/senders/emailSmtp.js";
-import type { ClimateService } from "../climate/profile.service.js";
+import type { EvaluatorService } from "../evaluator/service.js";
 import { loadAdvisorConfig, type AdvisorConfig } from "./config.js";
-import type { FinanceService } from "../finance/service.js";
 import { combineDirectories, loadDirectory, type BusinessDirectory } from "./directory.js";
 import { createAdvisor, type Advisor } from "./index.js";
 import { createOpenAiLlm } from "./llm/client.js";
@@ -25,13 +24,12 @@ export interface AdvisorRuntime {
   stop(): void;
 }
 
-// Builds the advisor from env, reusing the climate service, the input
-// service's tables, the finance service's scores, the alert system's sender
-// (dry run or SMTP, per ALERTS_MODE) and its guidelines
+// Builds the advisor from env, reusing the evaluator (its only way to the
+// climate unit and the finance service), the input service's tables, the
+// alert system's sender (dry run or SMTP, per ALERTS_MODE) and its guidelines
 export function createAdvisorFromEnv(deps: {
   prisma: PrismaClient;
-  climate: ClimateService;
-  finance?: Pick<FinanceService, "listProfiles">;
+  evaluator: Pick<EvaluatorService, "evaluate">;
   logger?: Pick<Console, "log" | "error">;
 }): AdvisorRuntime {
   const logger = deps.logger ?? console;
@@ -48,25 +46,11 @@ export function createAdvisorFromEnv(deps: {
   const directory = demo
     ? combineDirectories(createInputDirectory(deps.prisma), demo)
     : createInputDirectory(deps.prisma);
-  const { finance } = deps;
 
   const advisor = createAdvisor({
     repo: createPrismaAdvisorRepository(deps.prisma),
     directory,
-    financeScore: finance
-      ? async (businessId) => {
-          const [latest] = await finance.listProfiles(businessId, 1);
-          return latest
-            ? {
-                baselineScore: latest.baseline_score,
-                climateAdjustedScore: latest.adjusted_score,
-                scoredAt: latest.created_at,
-                modelVersion: latest.model_version,
-              }
-            : null;
-        }
-      : undefined,
-    climate: deps.climate,
+    evaluator: deps.evaluator,
     messenger: createMessenger(sender),
     contacts: createContactBook(deps.prisma),
     llm,
