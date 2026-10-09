@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Loan Workflow · Fusion</title>
+<link rel="stylesheet" href="workflow.css">
+</head>
+<body>
+<div class="page">
+
+  <header class="top">
+    <div class="eyebrow">Fusion 2026 · Workflow guide</div>
+    <h1>How a loan moves through Fusion, end to end</h1>
+    <p>From a business owner signing up to a bank officer approving a recovery plan after a flood. Each step says who does it, which endpoint they call, what the system does next on its own, and what they see. Open a step for the detail; filter by role to see only your part.</p>
+    <nav aria-label="Pages">
+      <a href="./">← Climate risk demo</a>
+      <a href="#reference">Endpoint reference</a>
+      <a href="#rules">Rules the system enforces</a>
+      <a href="/health" target="_blank" rel="noopener">Is the API up?</a>
+    </nav>
+  </header>
+
+  <ol class="stages" aria-label="Stages">
+    <li><a href="#stage-onboard"><strong>Onboard</strong>Sign in, register, add finances</a></li>
+    <li><a href="#stage-assess"><strong>Assess</strong>Climate risk, advice, score</a></li>
+    <li><a href="#stage-lend"><strong>Lend</strong>Record, authorise, disburse</a></li>
+    <li><a href="#stage-watch"><strong>Watch &amp; alert</strong>Monitor, email warnings</a></li>
+    <li><a href="#stage-recover"><strong>Advise &amp; recover</strong>Actions, damage, relief</a></li>
+  </ol>
+
+  <section class="states" aria-labelledby="states-title">
+    <h2 id="states-title">The loan's state, as the advisor tracks it</h2>
+    <p>Every step below moves the loan along this line, or back to <span class="state">ACTIVE</span> once a risk has passed.</p>
+    <ol class="track">
+      <li><span class="state">PRE_LOAN</span></li>
+      <li><span class="state">ACTIVE</span></li>
+      <li><span class="state">ALERT</span></li>
+      <li><span class="state">IMPACTED</span></li>
+      <li><span class="state">RECOVERY</span></li>
+      <li><span class="state">ACTIVE</span></li>
+    </ol>
+  </section>
+
+  <!-- Role filter, CSS only: the radios must be siblings of .filter and .steps -->
+  <div class="guide">
+    <input class="role" type="radio" name="role" id="f-all" checked>
+    <input class="role" type="radio" name="role" id="f-owner">
+    <input class="role" type="radio" name="role" id="f-bank">
+    <input class="role" type="radio" name="role" id="f-system">
+    <div class="filter" role="group" aria-label="Show steps for">
+      <span class="filter-label">Show steps for</span>
+      <label for="f-all">Everyone</label>
+      <label for="f-owner">Business owner</label>
+      <label for="f-bank">Bank officer</label>
+      <label for="f-system">Automatic</label>
+    </div>
+
+  <div class="steps">
+
+    <!-- ───────────── Stage 1 ───────────── -->
+    <section class="stage-block" id="stage-onboard">
+      <h2>1 · Onboard</h2>
+      <p>The owner signs in and describes the business once. The system classifies its weather sensitivity and warms the climate data for its location in the background.</p>
+      <ol class="step-list">
+
+        <li><details class="step owner bank" id="step-1">
+          <summary><span class="num">01</span><h3>Sign in with Google</h3>
+            <span class="who"><span class="tag owner">Owner</span><span class="tag bank">Bank officer</span></span></summary>
+          <div class="body">
+            <section><h4>You do</h4>
+              <div class="eps">
+                <a class="ep" href="/auth/config" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/auth/config</code></a>
+                <a class="ep" href="#ep-auth-google"><span class="verb">POST</span><code>/auth/google</code></a>
+              </div></section>
+            <section><h4>System does</h4><p>Checks the Google token, opens a session cookie, and gives the role: <em>bank</em> for addresses listed in <code>AUTH_BANK_EMAILS</code> / <code>AUTH_BANK_DOMAINS</code>, otherwise <em>owner</em>.</p></section>
+            <section><h4>You see</h4>
+              <div class="eps"><a class="ep" href="/auth/me" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/auth/me</code></a></div>
+              <p>Your name and role. Every route below needs this session.</p></section>
+          </div>
+        </details></li>
+
+        <li><details class="step owner" id="step-2">
+          <summary><span class="num">02</span><h3>Register the business</h3>
+            <span class="who"><span class="tag owner">Owner</span></span></summary>
+          <div class="body">
+            <section><h4>You do</h4>
+              <div class="eps"><a class="ep" href="#ep-create-business"><span class="verb">POST</span><code>/businesses</code></a></div>
+              <p>Profile, primary location, operations, suppliers, contacts and consent, in one form.</p></section>
+            <section><h4>System does</h4><ul>
+              <li>Refuses it unless <code>consent.data_processing</code> is true.</li>
+              <li>Queues the weather-impact classifier.</li>
+              <li>Warms the climate cell with 15 years of history (step 4).</li>
+            </ul></section>
+            <section><h4>You see</h4><p>The stored business with <code>scoring: "pending"</code> until the background work finishes.</p></section>
+          </div>
+        </details></li>
+
+        <li><details class="step owner" id="step-3">
+          <summary><span class="num">03</span><h3>Add a financial snapshot</h3>
+            <span class="who"><span class="tag owner">Owner</span></span></summary>
+          <div class="body">
+            <section><h4>You do</h4>
+              <div class="eps"><a class="ep" href="#ep-snapshot"><span class="verb">POST</span><code>/businesses/{id}/snapshots</code></a></div>
+              <p>6 to 12 months of revenue, monthly costs, existing EMIs, debt and cash.</p></section>
+            <section><h4>System does</h4><p>Derives average revenue, volatility, operating margin, DSCR and cash buffer. Each snapshot is a new version; old ones are kept.</p></section>
+            <section><h4>You see</h4>
+              <div class="eps"><a class="ep" href="#ep-snapshots"><span class="verb get">GET</span><code>/businesses/{id}/snapshots</code></a></div></section>
+          </div>
+        </details></li>
+
+        <li><details class="step system" id="step-4">
+          <summary><span class="num">04</span><h3>Classify weather impact and warm climate data</h3>
+            <span class="who"><span class="tag system">Automatic</span></span></summary>
+          <div class="body">
+            <section><h4>Triggered by</h4><p>Steps 2 and 3, and any change of location.</p></section>
+            <section><h4>System does</h4><ul>
+              <li>Rates how each of six hazards hits this business (physical loss, demand change). Sector defaults when no OpenAI key is set.</li>
+              <li>Screens the location's climate cell on 15 years of history and caches it.</li>
+              <li>A failed call stays pending and is retried.</li>
+            </ul></section>
+            <section><h4>You see</h4>
+              <div class="eps"><a class="ep" href="#ep-impact"><span class="verb get">GET</span><code>/businesses/{id}/impact-profile</code></a></div></section>
+          </div>
+        </details></li>
+      </ol>
+    </section>
+
+    <!-- ───────────── Stage 2 ───────────── -->
+    <section class="stage-block" id="stage-assess">
+      <h2>2 · Assess</h2>
+      <p>Before a loan, the owner can ask the advisor whether it is affordable, and the bank sees a baseline and a climate-adjusted score.</p>
+      <ol class="step-list">
+
+        <li><details class="step owner bank" id="step-5">
+          <summary><span class="num">05</span><h3>Check climate risk at a location</h3>
+            <span class="who"><span class="tag owner">Owner</span><span class="tag bank">Bank officer</span></span></summary>
+          <div class="body">
+            <section><h4>You do</h4>
+              <div class="eps">
+                <a class="ep" href="#ep-climate-profile"><span class="verb">POST</span><code>/climate/profile</code></a>
+                <a class="ep" href="/climate/events?lat=26.1445&amp;lon=91.7362" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/climate/events</code></a>
+              </div>
+              <p>Or use the <a href="./">map demo</a>.</p></section>
+            <section><h4>System does</h4><p>Snaps the point to grid cells, screens six hazards, adds the 7-day forecast and scores each hazard 0–1.</p></section>
+            <section><h4>You see</h4><p>A grade A–E, a score per hazard with a reason, and any active forecast events.</p></section>
+          </div>
+        </details></li>
+
+        <li><details class="step owner" id="step-6">
+          <summary><span class="num">06</span><h3>Ask the advisor before borrowing</h3>
+            <span class="who"><span class="tag owner">Owner</span></span></summary>
+          <div class="body">
+            <section><h4>You do</h4>
+              <div class="eps">
+                <a class="ep" href="/advisor/businesses" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/advisor/businesses</code></a>
+                <a class="ep" href="#ep-advisor-chat"><span class="verb">POST</span><code>/advisor/chat</code></a>
+              </div>
+              <p>"Should I take a ₹3L loan?"</p></section>
+            <section><h4>System does</h4><p>Reads your snapshot, loans, weather impact, climate profile and finance score; asks up to two questions it cannot answer from your data; runs the numbers in code, never in the model.</p></section>
+            <section><h4>You see</h4>
+              <p>A verdict (viable / with conditions / not advisable) with cited figures.</p>
+              <div class="eps"><a class="ep" href="/advisor/conversations/SME-0101" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/advisor/conversations/{businessId}</code></a></div></section>
+          </div>
+        </details></li>
+
+        <li><details class="step bank" id="step-7">
+          <summary><span class="num">07</span><h3>Review the finance score</h3>
+            <span class="who"><span class="tag bank">Bank officer</span></span></summary>
+          <div class="body">
+            <section><h4>You do</h4>
+              <div class="eps">
+                <a class="ep" href="#ep-finance-profile"><span class="verb get">GET</span><code>/finance/business/{id}/profile</code></a>
+                <a class="ep" href="#ep-finance-scenario"><span class="verb">POST</span><code>/finance/business/{id}/scenario</code></a>
+                <a class="ep" href="#ep-finance-capacity"><span class="verb">POST</span><code>/finance/business/{id}/repayment-capacity</code></a>
+                <a class="ep" href="#ep-verify-snapshot"><span class="verb">POST</span><code>/businesses/{id}/snapshots/{v}/verify</code></a>
+              </div></section>
+            <section><h4>System does</h4><p>Scores financial health, stress-tests it against each relevant hazard, and caps the climate penalty. The bank can mark a snapshot as verified.</p></section>
+            <section><h4>You see</h4><p>Baseline and climate-adjusted scores with their drivers, a what-if result, and the largest EMI the business can carry under stress.</p></section>
+          </div>
+        </details></li>
+      </ol>
+    </section>
+
+    <!-- ───────────── Stage 3 ───────────── -->
+    <section class="stage-block" id="stage-lend">
+      <h2>3 · Lend</h2>
+      <p>The bank records the loan and moves it forward. From "authorised" on, the business is monitored and its key details are locked to the bank.</p>
+      <ol class="step-list">
+
+        <li><details class="step bank" id="step-8">
+          <summary><span class="num">08</span><h3>Record the loan</h3>
+            <span class="who"><span class="tag bank">Bank officer</span></span></summary>
+          <div class="body">
+            <section><h4>You do</h4>
+              <div class="eps"><a class="ep" href="#ep-create-loan"><span class="verb">POST</span><code>/businesses/{id}/loans</code></a></div></section>
+            <section><h4>System does</h4><p>Refuses it unless the owner agreed to share with the bank (<code>consent.share_with_bank</code>). The loan starts as <em>applied</em>; the advisor sees it as <span class="state">PRE_LOAN</span>.</p></section>
+            <section><h4>You see</h4><p>The loan with its EMI, added to the business's debt service.</p></section>
+          </div>
+        </details></li>
+
+        <li><details class="step bank" id="step-9">
+          <summary><span class="num">09</span><h3>Authorise, then mark active</h3>
+            <span class="who"><span class="tag bank">Bank officer</span></span></summary>
+          <div class="body">
+            <section><h4>You do</h4>
+              <div class="eps"><a class="ep" href="#ep-loan-status"><span class="verb">PATCH</span><code>/loans/{id}/status</code></a></div>
+              <p><code>applied → authorised → active</code>, one step at a time.</p></section>
+            <section><h4>System does</h4><ul>
+              <li><em>authorised</em>: stores the first finance profile, locks the owner's key details, and the monitor starts watching the location.</li>
+              <li><em>active</em>: the advisor moves the loan to <span class="state">ACTIVE</span>.</li>
+            </ul></section>
+            <section><h4>You see</h4>
+              <div class="eps"><a class="ep" href="/advisor/loans/LN-0101/state" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/advisor/loans/{loanId}/state</code></a></div></section>
+          </div>
+        </details></li>
+      </ol>
+    </section>
+
+    <!-- ───────────── Stage 4 ───────────── -->
+    <section class="stage-block" id="stage-watch">
+      <h2>4 · Watch &amp; alert</h2>
+      <p>No one has to do anything here. A separate monitor process watches every live loan and the alert worker emails people who agreed to it.</p>
+      <ol class="step-list">
+
+        <li><details class="step system" id="step-10">
+          <summary><span class="num">10</span><h3>The monitor checks each location</h3>
+            <span class="who"><span class="tag system">Automatic</span></span></summary>
+          <div class="body">
+            <section><h4>Runs as</h4><p><code>npm run monitor</code>, a process of its own, every 15 minutes.</p></section>
+            <section><h4>System does</h4><ul>
+              <li>Watches every business with an authorised or active loan.</li>
+              <li>Checks a cell every 6 h, more often when the forecast worsens.</li>
+              <li>Heavy rain, heat, wind and river thresholds give <code>WATCH</code>, <code>WARNING</code> or <code>SEVERE</code>.</li>
+            </ul></section>
+            <section><h4>You see</h4>
+              <div class="eps"><a class="ep" href="#ep-climate-cell"><span class="verb get">GET</span><code>/climate/cell/{cellId}</code></a></div>
+              <p>When a level rises, an alert is queued (step 11).</p></section>
+          </div>
+        </details></li>
+
+        <li><details class="step system owner" id="step-11">
+          <summary><span class="num">11</span><h3>Alert emails go out</h3>
+            <span class="who"><span class="tag system">Automatic</span><span class="tag owner">Owner receives</span></span></summary>
+          <div class="body">
+            <section><h4>Runs as</h4><p><code>npm run alerts:worker</code>. In <code>dry_run</code> mode (the default) emails are logged, not sent.</p></section>
+            <section><h4>System does</h4><ul>
+              <li>Owner email in English, Hindi or Marathi, with preventive steps — only with consent and the email channel chosen.</li>
+              <li>Bank email with the evidence; <code>WATCH</code> alerts wait for a 09:00 digest.</li>
+              <li>The same hazard is not repeated within 6 hours unless it gets worse.</li>
+            </ul></section>
+            <section><h4>You see</h4><p>An email in your inbox with what is coming and what to do before it.</p></section>
+          </div>
+        </details></li>
+
+        <li><details class="step bank" id="step-12">
+          <summary><span class="num">12</span><h3>See every alert</h3>
+            <span class="who"><span class="tag bank">Bank officer</span></span></summary>
+          <div class="body">
+            <section><h4>You do</h4>
+              <div class="eps">
+                <a class="ep" href="/alerts?limit=20" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/alerts</code></a>
+                <a class="ep" href="/alerts?status=sent&amp;limit=20" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/alerts?status=sent</code></a>
+              </div></section>
+            <section><h4>System does</h4><p>Lists each alert with its status (sent, suppressed and why, failed) and the message as rendered. Recipients are never shown.</p></section>
+            <section><h4>You see</h4><p>Which borrowers were warned, about what, and when.</p></section>
+          </div>
+        </details></li>
+      </ol>
+    </section>
+
+    <!-- ───────────── Stage 5 ───────────── -->
+    <section class="stage-block" id="stage-recover">
+      <h2>5 · Advise &amp; recover</h2>
+      <p>After an alert the advisor helps the owner act; if damage happens it proposes repayment relief, and only the bank can approve it.</p>
+      <ol class="step-list">
+
+        <li><details class="step system owner" id="step-13">
+          <summary><span class="num">13</span><h3>The advisor follows up the alert</h3>
+            <span class="who"><span class="tag system">Automatic</span><span class="tag owner">Owner receives</span></span></summary>
+          <div class="body">
+            <section><h4>Triggered by</h4><p>An owner alert email that was actually sent (checked every 60 s). Consent and cooldown have already been applied.</p></section>
+            <section><h4>System does</h4><p>Moves each live loan to <span class="state">ALERT</span> and sends ranked actions with deadlines in IST. It goes back to <span class="state">ACTIVE</span> once the window ends.</p></section>
+            <section><h4>You see</h4><p>"1. Move stock off the floor by Thu 6 pm …", and a chat you can reply in via <a class="ep" href="#ep-advisor-chat"><span class="verb">POST</span><code>/advisor/chat</code></a>.</p></section>
+          </div>
+        </details></li>
+
+        <li><details class="step owner" id="step-14">
+          <summary><span class="num">14</span><h3>Report damage</h3>
+            <span class="who"><span class="tag owner">Owner</span></span></summary>
+          <div class="body">
+            <section><h4>You do</h4>
+              <div class="eps"><a class="ep" href="#ep-damage"><span class="verb">POST</span><code>/advisor/damage-report</code></a></div>
+              <p>Days closed, stock and equipment lost, reopening date, insurance claim. Or tell the advisor in chat.</p></section>
+            <section><h4>System does</h4><p>Moves the loan to <span class="state">IMPACTED</span>, recomputes 12 months of cash flow, and compares moratorium, tenure extension, step-down EMI and insurance bridge.</p></section>
+            <section><h4>You see</h4><p>The recommended option and a proposal marked <em>pending bank</em>. Nothing is approved by the advisor.</p></section>
+          </div>
+        </details></li>
+
+        <li><details class="step bank" id="step-15">
+          <summary><span class="num">15</span><h3>Decide on the relief, then close recovery</h3>
+            <span class="who"><span class="tag bank">Bank officer</span></span></summary>
+          <div class="body">
+            <section><h4>You do</h4>
+              <div class="eps">
+                <a class="ep" href="#ep-decision"><span class="verb">POST</span><code>/advisor/proposals/{id}/decision</code></a>
+                <a class="ep" href="#ep-close-recovery"><span class="verb">POST</span><code>/advisor/loans/{loanId}/close-recovery</code></a>
+              </div></section>
+            <section><h4>System does</h4><p><em>accept</em> moves the loan to <span class="state">RECOVERY</span> and records who decided. Closing recovery returns it to <span class="state">ACTIVE</span>.</p></section>
+            <section><h4>You see</h4>
+              <div class="eps"><a class="ep" href="/advisor/loans/LN-0101/state" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/advisor/loans/{loanId}/state</code></a></div>
+              <p>The state with its full history.</p></section>
+          </div>
+        </details></li>
+
+        <li><details class="step system" id="step-16">
+          <summary><span class="num">16</span><h3>Check whether the alert was right</h3>
+            <span class="who"><span class="tag system">Automatic</span></span></summary>
+          <div class="body">
+            <section><h4>Runs as</h4><p><code>npm run monitor:verify</code>, once a day.</p></section>
+            <section><h4>System does</h4><p>Five days after an event window, compares the forecast with observed weather and labels it <em>hit</em>, <em>false alarm</em> or <em>missed</em>.</p></section>
+            <section><h4>You see</h4><p>Labelled events that become training data for the future ML model.</p></section>
+          </div>
+        </details></li>
+      </ol>
+    </section>
+  </div>
+  </div>
+
+  <!-- ───────────── Rules ───────────── -->
+  <section class="rules" id="rules">
+    <h2>Rules the system enforces</h2>
+    <ul>
+      <li><strong>You only see your own business.</strong> Owners see what they created; the bank sees what owners agreed to share. Anything else answers "not found".</li>
+      <li><strong>No message without consent.</strong> Owners are emailed only if they agreed to alerts and chose email; an opt-out always wins.</li>
+      <li><strong>No repeated alerts.</strong> One email per hazard per 6 hours, unless the severity rises.</li>
+      <li><strong>The advisor never approves.</strong> It can only propose relief; a bank officer accepts or rejects it.</li>
+      <li><strong>Locked after authorisation.</strong> Once a loan is authorised, only the bank can change the business's key details.</li>
+      <li><strong>Every write is audited and can be retried safely.</strong> Send an <code>Idempotency-Key</code> header; the same key never applies a change twice.</li>
+    </ul>
+  </section>
+
+  <!-- ───────────── Endpoint reference ───────────── -->
+  <section class="ref" id="reference">
+    <h2>Endpoint reference</h2>
+    <p>Green <span class="verb get">GET</span> links open the live answer in a new tab, using your current session. Writes need a JSON body, so they are listed with an example; send them from the app, <code>curl</code> or an API client, signed in, with an <code>Idempotency-Key</code>. <code>{id}</code> means a real id from an earlier answer.</p>
+
+    <h3>Sign-in and health</h3>
+    <div class="table"><table>
+      <thead><tr><th>Endpoint</th><th>Who</th><th>What it does</th><th>Try it</th></tr></thead>
+      <tbody>
+        <tr id="ep-health"><td><a class="ep" href="/health" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/health</code></a></td><td>Anyone</td><td>API, database and Open-Meteo status</td><td><a class="live" href="/health" target="_blank" rel="noopener">Open</a></td></tr>
+        <tr id="ep-auth-config"><td><a class="ep" href="/auth/config" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/auth/config</code></a></td><td>Anyone</td><td>Whether sign-in is on, and the Google client id</td><td><a class="live" href="/auth/config" target="_blank" rel="noopener">Open</a></td></tr>
+        <tr id="ep-auth-google"><td><a class="ep" href="#ep-auth-google"><span class="verb">POST</span><code>/auth/google</code></a></td><td>Anyone</td><td>Exchanges a Google ID token for a session</td><td><pre>{ "credential": "&lt;Google ID token&gt;" }</pre></td></tr>
+        <tr id="ep-auth-me"><td><a class="ep" href="/auth/me" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/auth/me</code></a></td><td>Signed in</td><td>Who you are and your role</td><td><a class="live" href="/auth/me" target="_blank" rel="noopener">Open</a></td></tr>
+        <tr id="ep-auth-logout"><td><a class="ep" href="#ep-auth-logout"><span class="verb">POST</span><code>/auth/logout</code></a></td><td>Signed in</td><td>Ends the session</td><td>No body</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Businesses and loans (input service)</h3>
+    <div class="table"><table>
+      <thead><tr><th>Endpoint</th><th>Who</th><th>What it does</th><th>Try it</th></tr></thead>
+      <tbody>
+        <tr id="ep-create-business"><td><a class="ep" href="#ep-create-business"><span class="verb">POST</span><code>/businesses</code></a></td><td>Owner</td><td>Registers a business (step 2)</td><td><pre>{ "profile": {…}, "locations": { "primary": {…} },
+  "operations": {…}, "suppliers": [], "contacts": {…},
+  "consent": { "data_processing": true,
+    "share_with_bank": true, "alerts": true } }</pre></td></tr>
+        <tr id="ep-business"><td><a class="ep" href="#ep-business"><span class="verb get">GET</span><code>/businesses/{id}</code></a></td><td>Owner, bank</td><td>The business with its latest snapshot, loans and impact profile</td><td>Needs an id</td></tr>
+        <tr id="ep-patch-business"><td><a class="ep" href="#ep-patch-business"><span class="verb">PATCH</span><code>/businesses/{id}</code></a></td><td>Owner, bank</td><td>Changes profile, operations or contacts</td><td><pre>{ "operations": { "has_insurance": true, … } }</pre></td></tr>
+        <tr id="ep-locations"><td><a class="ep" href="#ep-locations"><span class="verb">PUT</span><code>/businesses/{id}/locations</code></a></td><td>Owner, bank</td><td>Replaces locations; warms the new cell</td><td><pre>{ "primary": { "lat": 19.07, "lon": 72.87, … } }</pre></td></tr>
+        <tr id="ep-suppliers"><td><a class="ep" href="#ep-suppliers"><span class="verb">PUT</span><code>/businesses/{id}/suppliers</code></a></td><td>Owner, bank</td><td>Replaces the supplier list</td><td><pre>[ { "name": "…", "lat": 19.2, "lon": 72.9, "share": 0.6 } ]</pre></td></tr>
+        <tr id="ep-snapshot"><td><a class="ep" href="#ep-snapshot"><span class="verb">POST</span><code>/businesses/{id}/snapshots</code></a></td><td>Owner, bank</td><td>Adds a financial snapshot (step 3)</td><td><pre>{ "as_of": "2026-09-30",
+  "monthly_revenue": [80000, 90000, 100000,
+    110000, 120000, 100000],
+  "monthly_opex": 60000, "existing_emi_total": 10000,
+  "outstanding_debt": 240000, "cash_balance": 90000,
+  "payment_delays_12m": 1 }</pre></td></tr>
+        <tr id="ep-snapshots"><td><a class="ep" href="#ep-snapshots"><span class="verb get">GET</span><code>/businesses/{id}/snapshots</code></a></td><td>Owner, bank</td><td>Every snapshot version with derived ratios</td><td>Needs an id</td></tr>
+        <tr id="ep-verify-snapshot"><td><a class="ep" href="#ep-verify-snapshot"><span class="verb">POST</span><code>/businesses/{id}/snapshots/{v}/verify</code></a></td><td>Bank</td><td>Marks a snapshot as checked by the bank</td><td>No body</td></tr>
+        <tr id="ep-create-loan"><td><a class="ep" href="#ep-create-loan"><span class="verb">POST</span><code>/businesses/{id}/loans</code></a></td><td>Bank</td><td>Records a loan as <em>applied</em> (step 8)</td><td><pre>{ "amount": 500000, "emi": 10000,
+  "tenure_months": 60, "interest_rate": 11.5,
+  "purpose": "equipment" }</pre></td></tr>
+        <tr id="ep-loan-status"><td><a class="ep" href="#ep-loan-status"><span class="verb">PATCH</span><code>/loans/{id}/status</code></a></td><td>Bank</td><td>Moves a loan one step (step 9)</td><td><pre>{ "status": "authorised" }</pre></td></tr>
+        <tr id="ep-impact"><td><a class="ep" href="#ep-impact"><span class="verb get">GET</span><code>/businesses/{id}/impact-profile</code></a></td><td>Owner, bank</td><td>How each hazard affects the business (step 4)</td><td>Needs an id</td></tr>
+        <tr id="ep-reclassify"><td><a class="ep" href="#ep-reclassify"><span class="verb">POST</span><code>/businesses/{id}/impact-profile/reclassify</code></a></td><td>Bank</td><td>Runs the classifier again</td><td>No body</td></tr>
+        <tr id="ep-override"><td><a class="ep" href="#ep-override"><span class="verb">PUT</span><code>/businesses/{id}/impact-profile</code></a></td><td>Bank</td><td>Corrects a rating, with a reason</td><td><pre>{ "reason": "Shop is on the first floor",
+  "conditions": { "river_flood": { "physical": 0.2 } } }</pre></td></tr>
+        <tr id="ep-seed"><td><a class="ep" href="#ep-seed"><span class="verb">POST</span><code>/seed/smes</code></a></td><td>Bank, not in production</td><td>Loads the synthetic demo businesses</td><td><pre>{ "classify": "defaults" }</pre></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Climate</h3>
+    <div class="table"><table>
+      <thead><tr><th>Endpoint</th><th>Who</th><th>What it does</th><th>Try it</th></tr></thead>
+      <tbody>
+        <tr id="ep-climate-profile"><td><a class="ep" href="#ep-climate-profile"><span class="verb">POST</span><code>/climate/profile</code></a></td><td>Signed in</td><td>Grade and hazard scores for a point (step 5). A new place calls Open-Meteo</td><td><pre>{ "lat": 26.1445, "lon": 91.7362 }</pre></td></tr>
+        <tr id="ep-climate-events"><td><a class="ep" href="/climate/events?lat=26.1445&amp;lon=91.7362" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/climate/events?lat=&amp;lon=</code></a></td><td>Signed in</td><td>Active forecast events at a point</td><td><a class="live" href="/climate/events?lat=26.1445&amp;lon=91.7362" target="_blank" rel="noopener">Open (Guwahati)</a></td></tr>
+        <tr id="ep-climate-cell"><td><a class="ep" href="/climate/cell/0.1:26.1:91.7" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/climate/cell/{cellId}</code></a></td><td>Signed in</td><td>What is stored for one grid cell</td><td><a class="live" href="/climate/cell/0.1:26.1:91.7" target="_blank" rel="noopener">Open (0.1:26.1:91.7)</a></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Finance</h3>
+    <div class="table"><table>
+      <thead><tr><th>Endpoint</th><th>Who</th><th>What it does</th><th>Try it</th></tr></thead>
+      <tbody>
+        <tr id="ep-finance-demo"><td><a class="ep" href="/finance/demo" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/finance/demo</code></a></td><td>Signed in</td><td>Scores for the demo businesses. May call Open-Meteo</td><td><a class="live" href="/finance/demo" target="_blank" rel="noopener">Open</a></td></tr>
+        <tr id="ep-finance-profile"><td><a class="ep" href="#ep-finance-profile"><span class="verb get">GET</span><code>/finance/business/{id}/profile</code></a></td><td>Owner, bank</td><td>Baseline and climate-adjusted score (step 7)</td><td>Needs an id</td></tr>
+        <tr id="ep-finance-history"><td><a class="ep" href="#ep-finance-history"><span class="verb get">GET</span><code>/finance/business/{id}/profiles</code></a></td><td>Owner, bank</td><td>Stored scores, newest first</td><td>Needs an id</td></tr>
+        <tr id="ep-finance-scenario"><td><a class="ep" href="#ep-finance-scenario"><span class="verb">POST</span><code>/finance/business/{id}/scenario</code></a></td><td>Owner, bank</td><td>What-if for one hazard</td><td><pre>{ "hazard": "river_flood", "severity": 0.6,
+  "duration_months": 2 }</pre></td></tr>
+        <tr id="ep-finance-capacity"><td><a class="ep" href="#ep-finance-capacity"><span class="verb">POST</span><code>/finance/business/{id}/repayment-capacity</code></a></td><td>Owner, bank</td><td>Largest EMI affordable under a revenue drop</td><td><pre>{ "revenue_drop_pct": 30, "months": 3 }</pre></td></tr>
+        <tr id="ep-finance-evaluate"><td><a class="ep" href="#ep-finance-evaluate"><span class="verb">POST</span><code>/finance/evaluate-location</code></a></td><td>Signed in</td><td>Scores a business that is not stored, at a candidate place</td><td><pre>{ "lat": 19.07, "lon": 72.87, "business": {…} }</pre></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Alerts</h3>
+    <div class="table"><table>
+      <thead><tr><th>Endpoint</th><th>Who</th><th>What it does</th><th>Try it</th></tr></thead>
+      <tbody>
+        <tr id="ep-alerts"><td><a class="ep" href="/alerts?limit=20" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/alerts</code></a></td><td>Bank</td><td>Recent alerts. Filters: <code>limit</code>, <code>business_id</code>, <code>status</code></td><td><a class="live" href="/alerts?limit=20" target="_blank" rel="noopener">Open</a> · <a class="live" href="/alerts?status=suppressed&amp;limit=20" target="_blank" rel="noopener">Suppressed</a></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Advisor</h3>
+    <div class="table"><table>
+      <thead><tr><th>Endpoint</th><th>Who</th><th>What it does</th><th>Try it</th></tr></thead>
+      <tbody>
+        <tr id="ep-advisor-businesses"><td><a class="ep" href="/advisor/businesses" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/advisor/businesses</code></a></td><td>Signed in</td><td>Businesses you may talk about</td><td><a class="live" href="/advisor/businesses" target="_blank" rel="noopener">Open</a></td></tr>
+        <tr id="ep-advisor-chat"><td><a class="ep" href="#ep-advisor-chat"><span class="verb">POST</span><code>/advisor/chat</code></a></td><td>Owner, bank</td><td>One chat turn (steps 6, 13)</td><td><pre>{ "businessId": "SME-0101", "loanId": "LN-0101",
+  "message": "Should I take a ₹3L loan?" }</pre></td></tr>
+        <tr id="ep-advisor-conversations"><td><a class="ep" href="/advisor/conversations/SME-0101" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/advisor/conversations/{businessId}</code></a></td><td>Owner, bank</td><td>Past conversations with citations</td><td><a class="live" href="/advisor/conversations/SME-0101" target="_blank" rel="noopener">Open (SME-0101)</a></td></tr>
+        <tr id="ep-advisor-state"><td><a class="ep" href="/advisor/loans/LN-0101/state" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/advisor/loans/{loanId}/state</code></a></td><td>Owner, bank</td><td>Loan state and its history</td><td><a class="live" href="/advisor/loans/LN-0101/state" target="_blank" rel="noopener">Open (LN-0101)</a></td></tr>
+        <tr id="ep-damage"><td><a class="ep" href="#ep-damage"><span class="verb">POST</span><code>/advisor/damage-report</code></a></td><td>Owner</td><td>Reports damage; returns relief options (step 14)</td><td><pre>{ "loanId": "LN-0101", "hazard": "flash_flood",
+  "daysClosed": 6, "stockLossInr": 40000,
+  "equipmentDamageInr": 0,
+  "expectedReopenDate": "2026-10-20",
+  "insuranceClaim": { "status": "none" } }</pre></td></tr>
+        <tr id="ep-decision"><td><a class="ep" href="#ep-decision"><span class="verb">POST</span><code>/advisor/proposals/{id}/decision</code></a></td><td>Bank</td><td>Accepts or rejects relief (step 15)</td><td><pre>{ "decision": "accept", "note": "Moratorium approved" }</pre></td></tr>
+        <tr id="ep-disburse"><td><a class="ep" href="#ep-disburse"><span class="verb">POST</span><code>/advisor/loans/{loanId}/disburse</code></a></td><td>Bank</td><td>Moves a demo loan to ACTIVE. Input loans follow step 9 instead</td><td><pre>{ "note": "Disbursed" }</pre></td></tr>
+        <tr id="ep-close-recovery"><td><a class="ep" href="#ep-close-recovery"><span class="verb">POST</span><code>/advisor/loans/{loanId}/close-recovery</code></a></td><td>Bank</td><td>Ends recovery, back to ACTIVE (step 15)</td><td><pre>{ "note": "Repayments back to normal" }</pre></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Development only</h3>
+    <div class="table"><table>
+      <thead><tr><th>Endpoint</th><th>Who</th><th>What it does</th><th>Try it</th></tr></thead>
+      <tbody>
+        <tr id="ep-fake-alert"><td><a class="ep" href="#ep-fake-alert"><span class="verb">POST</span><code>/advisor/dev/fake-alert</code></a></td><td>Signed in</td><td>Raises a test alert without the monitor</td><td><pre>{ "loanIds": ["LN-0101"] }</pre></td></tr>
+        <tr id="ep-verify-alert"><td><a class="ep" href="#ep-verify-alert"><span class="verb">POST</span><code>/advisor/dev/verify-alert</code></a></td><td>Signed in</td><td>Labels a test alert as hit or miss</td><td><pre>{ "alertId": "…", "label": "hit" }</pre></td></tr>
+        <tr id="ep-sweep"><td><a class="ep" href="#ep-sweep"><span class="verb">POST</span><code>/advisor/dev/sweep-alerts</code></a></td><td>Signed in</td><td>Ends alert windows that have passed</td><td>No body</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <footer>
+    Fusion 2026 hackathon MVP. Scores are a screening signal, not financial advice. The endpoint details are in <code>README.md</code> and each service's own README.
+  </footer>
+</div>
+</body>
+</html>
