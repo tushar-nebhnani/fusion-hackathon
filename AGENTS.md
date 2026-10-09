@@ -13,7 +13,6 @@ Instructions for any AI coding agent working here. `README.md` is the reference:
 | `api/src/services/auth/` | Sign in with Google, sessions and roles | Yes |
 | `api/src/services/finance/` | The finance service: baseline and climate-adjusted scores. Has its own `README.md` | Yes |
 | `api/src/services/input/` | The input service, still being built | Only when asked. It is not documented here or in `README.md` yet |
-| `web/` | Untouched Next.js 16 scaffold | Read `web/AGENTS.md` first |
 | `ml/` | Python project with dependencies only | Nothing to work on yet |
 
 Four processes exist, each started by hand inside `api/`: the API (`npm run dev`), the alert worker (`npm run alerts:worker`), the monitor (`npm run monitor`) and the verification job (`npm run monitor:verify`). None starts another.
@@ -113,7 +112,6 @@ Do not change `ALERTS_MODE`, `MONITOR_ALERT_SINK` or the OpenAI key in `api/.env
 - **Comments mention "README section 12", "section 17", "Call 6" and "Call 7".** They point to a specification that was never committed, not to `README.md`.
 - **The per-cell lock, the refresh job and the rate limit counters are per process.** Do not write code that assumes the API and the monitor share them.
 - **The monitor and the alert system are two units.** The monitor only calls `enqueue()`; it never sends. The alert worker only reads the outbox; it never decides what is dangerous.
-- **`web/` runs Next.js 16**, which differs from older versions. Read the guides in `web/node_modules/next/dist/docs/` before writing frontend code.
 
 ## Before you say it is done
 

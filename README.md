@@ -8,13 +8,13 @@ This README is the handover document for anyone, human or AI agent, picking up t
 
 | Part | Folder | State |
 | --- | --- | --- |
-| Climate risk API | `api/` | Built and tested. 789 tests pass across `api/`; typecheck and lint are clean. |
+| Climate risk API | `api/` | Built and tested. 850 tests pass across `api/`; typecheck and lint are clean. |
 | Climate agent | `api/src/services/climate/agent.ts` | Built. Optional: an OpenAI model reviews the screening and scores the forecast. Off without an API key. |
 | Alert system | `api/src/services/alerts/` | Built. Email warnings to business owners and banks, sent by a separate worker process. SMS was removed (see `RESOLVE_LATER.md`). Triggered by the background monitor. |
 | Background monitor | `api/src/services/climate/monitor/` | Built. Part of the climate unit, run as its own process. Watches locations with active loans, checks them more often when the forecast worsens, queues alerts and records events for the ML model. The loans DB and logs system it will read from and write to are stand-ins. |
 | Finance service | `api/src/services/finance/` | Built. Baseline financial health score and a climate-adjusted score per business, from the input service's data and the climate profile. Rule-based; the ML scorer is a stub. Has its own `README.md`. |
+| Chat advisor | `api/src/services/advisor/` | Built on the `chatbot-work` branch and merged. Mounted at `/advisor` for signed-in users; bank decisions need a bank officer. Runs an offline planner without an API key. It still reads `api/data/smes.json` through stubs instead of the finance and input services. Stubs and endpoints are listed in its `NOTES.md`. |
 | Demo page | `api/public/index.html` | Built. A single static page served by the API at `/demo/`. |
-| Web frontend | `web/` | Untouched `create-next-app` scaffold. No project UI yet. |
 | ML service | `ml/` | Dependencies declared only. No code, models, data or tests. |
 | Postgres | `docker-compose.yml` | Used by the API as the durable store. |
 | Redis | `docker-compose.yml` | Used by the API as a read cache in front of Postgres. No job queue yet. |
@@ -31,7 +31,6 @@ fusion-hackathon/
 ├── AGENTS.md               Working rules for AI coding agents
 ├── CLAUDE.md               One line that makes Claude Code load AGENTS.md
 ├── api/                    Express + TypeScript + Prisma API (the real work)
-├── web/                    Next.js 16 + React 19 + Tailwind 4 scaffold
 └── ml/                     Python 3.13 project (FastAPI, scikit-learn), empty
 ```
 
@@ -704,7 +703,6 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 - **Rate limiting is by IP address, counted in process memory, and `trust proxy` is not set.** Behind a reverse proxy, every client would share one limit; with several instances, each would count separately.
 - **The `stale` value of `climate_responses.status` is unused.** Nothing writes it since stale data stopped being served. Expired screening rows stay in Postgres until the next re-screening overwrites them, and nothing reads them.
 - **Prisma 7.** The client is generated into `src/generated/prisma` and uses the `@prisma/adapter-pg` driver adapter. The database URL is in `prisma.config.ts`, not in `schema.prisma`.
-- **`web/` uses Next.js 16, which has breaking changes.** Read `web/AGENTS.md` and the guides in `web/node_modules/next/dist/docs/` before writing frontend code.
 - **Run `npm run db:generate` after pulling a migration.** `prisma migrate dev` applied the alerts migration without regenerating the client, and every `prisma.alert*` call then fails to typecheck.
 - **Alert content files are not copied to `dist/`.** `tsc` leaves `guidelines.json` and `templates/` behind, so a compiled worker reads them from `src/`. Ship `src/services/alerts/` content with any deployment.
 - **Replying STOP does not update the database.** Emails tell people to reply STOP, but nothing reads replies. Set `alert_contacts.opted_out_at` by hand until an inbound webhook exists.
@@ -713,10 +711,9 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 
 ## Not built yet
 
-- The frontend. `web/` still shows the default Next.js page. The only UI is the static demo page at `/demo/`.
+- The frontend. The `web/` scaffold was removed from the repository. The only UI is the static demo page at `/demo/`.
 - The ML service. `ml/` is empty. The finance service scores with rules; its ML scorer is a stub that would call a model over HTTP (`FINANCE_SCORER=ml`), and no model exists.
-- The advisory chat. The finance service exports four tool-ready functions for it; nothing calls them as tools yet.
-- `smes.json`, the synthetic SME data. The input service's seed loader and the finance tests are written without it.
+- The advisor's link to the real services. The chat advisor reads `api/data/smes.json` through stubs; the finance service exports four tool-ready functions for it, and nothing calls them yet.
 - A way to manage users. Bank officers are named in `api/.env`; there is no admin screen, and no way to hand a business to a different owner except by editing `businesses.owner_user_id`.
 - `request_log.requester_id` for signed-in users. It is still null for every client request; only the monitor sets it.
 - The World Bank flood exposure raster. `createClimateService` accepts an `exposure` provider, but none is passed, so every response carries a `flood_exposure_unavailable` warning and confidence is `med` at best.
