@@ -4,7 +4,7 @@ import { loadAlertsConfig } from "./config.js";
 import { createEnqueue } from "./enqueue.js";
 import { alertEventSchema, dedupeKey } from "./types.js";
 
-// Fires a test event, standing in for the background monitor until it exists:
+// Fires a test event by hand, the way the background monitor does on its own:
 //   npm run alerts:test -- --business SME-0142 --hazard flood --severity WARNING
 // Add --seed to create the demo business and its contacts first.
 

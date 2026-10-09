@@ -879,3 +879,178 @@ describe("unsupported methods", () => {
     expect(res.status).toBe(404);
   });
 });
+
+// The option and the extra method the background monitor uses. Both are
+// additions: a caller that does not ask for them sees no difference.
+describe("forceFreshForecast and getProfileWithForecast", () => {
+  const forced = { forceFreshForecast: true };
+
+  it("change nothing for a caller that does not ask for them", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    om.calls.length = 0;
+
+    const viaHttp = await profile();
+    const direct = await service.getProfile(GUWAHATI);
+    const explicitlyOff = await service.getProfile(GUWAHATI, null, { forceFreshForecast: false });
+
+    expect(om.calls).toEqual([]);
+    expect(viaHttp.body.cache).toBe("complete_hit");
+    expect(direct).toEqual(viaHttp.body);
+    expect(explicitlyOff).toEqual(viaHttp.body);
+  });
+
+  it("refetches only the two forecast layers, even while they are fresh", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    om.calls.length = 0;
+
+    // Same instant: by its age the cached forecast is as fresh as it can be
+    const result = await service.getProfile(GUWAHATI, null, forced);
+
+    expect([...om.calls].sort()).toEqual(["flood_forecast", "forecast"]);
+    expect(result.cache).toBe("partial_hit");
+  });
+
+  it("skips the river forecast while river flood is dormant, forced or not", async () => {
+    const { om, profile, service } = setup({ riverDischarge: null });
+    await profile();
+    om.calls.length = 0;
+
+    await service.getProfile(GUWAHATI, null, forced);
+
+    expect(om.calls).toEqual(["forecast"]);
+  });
+
+  it("sees a forecast that changed since the cached one", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    om.climateOf.forecastRain = [0, 150, 150, 150];
+    clock = new Date(START.getTime() + HOUR_MS);
+
+    const cached = await service.getProfile(GUWAHATI);
+    const fresh = await service.getProfile(GUWAHATI, null, forced);
+
+    expect(cached.active_events).toEqual([]);
+    expect(fresh.active_events).toMatchObject([{ hazard: "flash_flood", severity: "warning" }]);
+  });
+
+  it("leaves the refreshed forecast in the cache for the next ordinary request", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    clock = new Date(START.getTime() + HOUR_MS);
+    await service.getProfile(GUWAHATI, null, forced);
+    om.calls.length = 0;
+
+    const { body } = await profile();
+
+    expect(body.cache).toBe("complete_hit");
+    expect(om.calls).toEqual([]);
+    expect(body.data_freshness.forecast_issued_at).toBe("2026-10-09T12:30:00+05:30");
+  });
+
+  it("keeps a still-valid forecast when the forced refetch cannot reach Open-Meteo", async () => {
+    const { om, profile, service } = setup();
+    const before = await profile();
+    om.climateOf.failing = ["forecast", "flood_forecast"];
+    clock = new Date(START.getTime() + HOUR_MS);
+
+    const result = await service.getProfile(GUWAHATI, null, forced);
+
+    expect(result.confidence).toBe(before.body.confidence);
+    expect(result.warnings).toEqual(before.body.warnings);
+  });
+
+  it("takes the same cell lock on a partial hit as on a miss", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    let running = 0;
+    let most = 0;
+    const fetchForecast = om.forecast.bind(om);
+    om.forecast = async (...args) => {
+      running += 1;
+      most = Math.max(most, running);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      running -= 1;
+      return fetchForecast(...args);
+    };
+    om.calls.length = 0;
+
+    // Two refetches of one cell at once, as the monitor and a request might
+    const [a, b] = await Promise.all([
+      service.getProfile(GUWAHATI, null, forced),
+      service.getProfile(GUWAHATI, null, forced),
+    ]);
+
+    expect(most).toBe(1);
+    expect([a.cache, b.cache]).toEqual(["partial_hit", "partial_hit"]);
+    expect(om.calls.filter((call) => call === "forecast")).toHaveLength(2);
+  });
+
+  it("makes an ordinary request wait for a refetch of its cell, then reuse it", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    const fetchForecast = om.forecast.bind(om);
+    om.forecast = async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      return fetchForecast(...args);
+    };
+    clock = new Date(START.getTime() + HOUR_MS);
+    om.calls.length = 0;
+
+    const [refetch, ordinary] = await Promise.all([
+      service.getProfile(GUWAHATI, null, forced),
+      service.getProfile(GUWAHATI),
+    ]);
+
+    expect(refetch.cache).toBe("partial_hit");
+    expect(ordinary.cache).toBe("complete_hit");
+    expect(ordinary.data_freshness).toEqual(refetch.data_freshness);
+    expect(om.calls.filter((call) => call === "forecast")).toHaveLength(1);
+  });
+
+  it("returns exactly the API's profile, plus the daily forecast values", async () => {
+    const { om, profile, service } = setup({ forecastRain: [0, 82], forecastTmax: [31, 41] });
+    await profile();
+    om.calls.length = 0;
+    const viaHttp = await profile();
+
+    const detailed = await service.getProfileWithForecast(GUWAHATI);
+
+    expect(detailed.profile).toEqual(viaHttp.body);
+    expect(om.calls).toEqual([]);
+    expect(detailed.forecast.window).toEqual({ start: "2026-10-09", end: "2026-10-15" });
+    expect(detailed.forecast.weather?.time).toHaveLength(7);
+    expect(detailed.forecast.weather?.values).toMatchObject({
+      precipitation_sum: [0, 82, 0, 0, 0, 0, 0],
+      precipitation_probability_max: [80, 80, 80, 80, 80, 80, 80],
+      temperature_2m_max: [31, 41, 30, 30, 30, 30, 30],
+    });
+    expect(detailed.forecast.flood?.values.river_discharge).toEqual([500, 500, 500, 500, 500, 500, 500]);
+    // The river's historical high and the rain percentiles the events use
+    expect(detailed.forecast.riverHistory?.dischargeP99).toBeGreaterThan(500);
+    expect(detailed.forecast.weatherHistory?.rain3dP99).toBeGreaterThan(0);
+  });
+
+  it("does not add the forecast values to the HTTP response", async () => {
+    const { profile } = setup();
+
+    const { body } = await profile();
+
+    expect(body).not.toHaveProperty("forecast");
+    expect(() => climateProfileSchema.parse(body)).not.toThrow();
+  });
+
+  it("logs a forced request with the requester it was given", async () => {
+    const { profile, service } = setup();
+    await profile();
+
+    await service.getProfileWithForecast(GUWAHATI, "climate-monitor", forced);
+
+    const rows = await prisma.requestLog.findMany({ orderBy: { id: "asc" } });
+    expect(rows.map((row) => [row.requesterId, row.cacheResult])).toEqual([
+      [null, "miss"],
+      ["climate-monitor", "partial_hit"],
+    ]);
+  });
+});

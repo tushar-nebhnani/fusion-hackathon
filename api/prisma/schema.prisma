@@ -363,3 +363,243 @@ model AlertContact {
   @@index([audience, businessId])
   @@map("alert_contacts")
 }
+
+// --- Background monitor (src/services/climate/monitor) ---
+
+enum MonitorLevel {
+  NORMAL
+  WATCH
+  WARNING
+  SEVERE
+}
+
+enum DisasterEventStatus {
+  pending
+  hit
+  false_alarm
+  missed
+}
+
+// One row per watched forecast cell. `cell_id` is the id the forecast cache
+// uses, so a monitor cell and a cache cell are the same thing. The schedule
+// lives here, not in timers, which is what makes the monitor restart-safe.
+model MonitoredCell {
+  cellId            String       @id @map("cell_id")
+  // The location the cell is checked at: one of the businesses inside it
+  lat               Float
+  lon               Float
+  active            Boolean      @default(true)
+  level             MonitorLevel @default(NORMAL)
+  calmRuns          Int          @default(0) @map("calm_runs")
+  nextCheckAt       DateTime     @map("next_check_at") @db.Timestamptz
+  lastCheckedAt     DateTime?    @map("last_checked_at") @db.Timestamptz
+  // Per-hazard levels and key forecast values of the last check
+  lastSnapshot      Json?        @map("last_snapshot")
+  lastAgentReviewAt DateTime?    @map("last_agent_review_at") @db.Timestamptz
+  // Lease held by the monitor instance checking the cell
+  lockedBy          String?      @map("locked_by")
+  lockUntil         DateTime?    @map("lock_until") @db.Timestamptz
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([active, nextCheckAt])
+  @@map("monitored_cells")
+}
+
+// One row per sudden change the monitor detected, labelled later against
+// observed data. Training data for the ML model.
+model DisasterEvent {
+  eventId        Int                 @id @default(autoincrement()) @map("event_id")
+  cellId         String              @map("cell_id")
+  hazard         String
+  level          MonitorLevel
+  windowStart    DateTime            @map("window_start") @db.Date
+  windowEnd      DateTime            @map("window_end") @db.Date
+  forecastValues Json                @map("forecast_values")
+  evidence       String
+  status         DisasterEventStatus @default(pending)
+  observedValues Json?               @map("observed_values")
+  // Monitor run that raised it; null for `missed` events
+  sourceRunId    String?             @map("source_run_id")
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  verifiedAt     DateTime?           @map("verified_at") @db.Timestamptz
+
+  @@index([status, windowEnd])
+  @@index([cellId, hazard, windowStart])
+  @@map("disaster_events")
+}
+
+// ---- Input service (services/input) ----
+// Enum-like columns are plain strings; the service's zod schemas own the
+// allowed values, so adding one needs no migration.
+
+// One business as entered through the form. The input groups are kept as
+// the validated JSON the owner submitted; `name` and `sector` are copied
+// out for lookups.
+model Business {
+  id         String   @id @default(uuid())
+  // `user` or `synthetic` (seeded)
+  source     String   @default("user")
+  // Id of the seed entry, so a seed run can be repeated
+  externalId String?  @unique @map("external_id")
+  name       String
+  sector     String
+  profile    Json
+  operations Json
+  contacts   Json
+  consent    Json
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  locations      BusinessLocation[]
+  suppliers      BusinessSupplier[]
+  snapshots      FinancialSnapshot[]
+  loans          Loan[]
+  impactProfiles WeatherImpactProfile[]
+  triggerJobs    InputTriggerJob[]
+
+  @@map("businesses")
+}
+
+model BusinessLocation {
+  id         Int     @id @default(autoincrement())
+  businessId String  @map("business_id")
+  isPrimary  Boolean @map("is_primary")
+  position   Int
+  lat        Float
+  lon        Float
+  address    String
+  pincode    String?
+  premises   String?
+  floor      String?
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, position])
+  @@map("business_locations")
+}
+
+model BusinessSupplier {
+  id         Int     @id @default(autoincrement())
+  businessId String  @map("business_id")
+  position   Int
+  name       String
+  lat        Float
+  lon        Float
+  share      Float
+  critical   Boolean @default(false)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, position])
+  @@map("business_suppliers")
+}
+
+// Append only: a new submission is a new version, the values of an old one
+// never change. `raw` is what was entered, `derived` the ratios computed
+// from it by `derivation_version`.
+model FinancialSnapshot {
+  id                Int       @id @default(autoincrement())
+  businessId        String    @map("business_id")
+  version           Int
+  asOf              DateTime  @map("as_of") @db.Date
+  raw               Json
+  derived           Json
+  derivationVersion String    @map("derivation_version")
+  verifiedByBank    Boolean   @default(false) @map("verified_by_bank")
+  verifiedBy        String?   @map("verified_by")
+  verifiedAt        DateTime? @map("verified_at") @db.Timestamptz
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, version])
+  @@map("financial_snapshots")
+}
+
+model Loan {
+  id           String   @id @default(uuid())
+  businessId   String   @map("business_id")
+  amount       Float
+  emi          Float
+  tenureMonths Int      @map("tenure_months")
+  interestRate Float?   @map("interest_rate")
+  purpose      String?
+  // applied -> authorised -> active -> closed, or rejected
+  status       String   @default("applied")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([status])
+  @@map("loans")
+}
+
+// One row per classifier run or bank override. A `pending` row is a run
+// that has not finished; it is filled in place when it does.
+model WeatherImpactProfile {
+  id                Int      @id @default(autoincrement())
+  businessId        String   @map("business_id")
+  version           Int
+  // pending | ok | fallback | overridden
+  status            String
+  category          String?
+  conditions        Json?
+  overallConfidence Float?   @map("overall_confidence")
+  model             String?
+  promptVersion     String   @map("prompt_version")
+  inputsHash        String   @map("inputs_hash")
+  // The model's reply before the guardrails were applied
+  rawOutput         Json?    @map("raw_output")
+  note              String?
+  overriddenBy      String?  @map("overridden_by")
+  overrideReason    String?  @map("override_reason")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, version])
+  // Classifier cache lookup
+  @@index([inputsHash, promptVersion, model, status])
+  @@map("weather_impact_profiles")
+}
+
+// Calls owed to the climate unit and the finance service after a save. A
+// row stays `pending` until its call succeeds, so a failed or unconnected
+// service never loses a trigger.
+model InputTriggerJob {
+  id         Int      @id @default(autoincrement())
+  businessId String   @map("business_id")
+  // climate_warm | finance_first_profile | finance_recompute
+  kind       String
+  payload    Json
+  // pending | done
+  status     String   @default("pending")
+  attempts   Int      @default(0)
+  lastError  String?  @map("last_error")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([businessId, status])
+  @@map("input_trigger_jobs")
+}
+
+model InputRequestLog {
+  id         Int      @id @default(autoincrement())
+  method     String
+  route      String
+  status     Int
+  latencyMs  Int      @map("latency_ms")
+  businessId String?  @map("business_id")
+  actorRole  String?  @map("actor_role")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([createdAt])
+  @@map("input_request_log")
+}

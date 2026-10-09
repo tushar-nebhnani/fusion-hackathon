@@ -84,6 +84,15 @@ export interface IdempotencyOptions {
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const KEY_PATTERN = /^[\x21-\x7e]{1,255}$/;
 
+// For routers whose writes must carry a key. It only checks that the header
+// is there; `idempotency` below, mounted on the app, does the handling.
+export const requireIdempotencyKey: RequestHandler = (req, _res, next) => {
+  if (UNSAFE_METHODS.has(req.method) && req.get("Idempotency-Key") === undefined) {
+    throw new AppError("Idempotency-Key header is required", 400, "MISSING_IDEMPOTENCY_KEY");
+  }
+  next();
+};
+
 // Honours the Idempotency-Key header on unsafe methods: the first request runs
 // and its response is stored, repeats with the same key get that response back
 // without running again. GET, HEAD and OPTIONS are idempotent already and pass

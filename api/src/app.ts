@@ -12,6 +12,8 @@ import { climateRouter } from "./routes/climate.js";
 import { healthRouter, type HealthDeps } from "./routes/health.js";
 import type { AlertReader } from "./services/alerts/reader.js";
 import type { ClimateService } from "./services/climate/profile.service.js";
+import { inputRouter, type InputRouterOptions } from "./services/input/index.js";
+import type { InputService } from "./services/input/service.js";
 
 // api/public, whether this runs from src/ or dist/
 const DEMO_DIR = fileURLToPath(new URL("../public", import.meta.url));
@@ -26,6 +28,8 @@ export interface AppDeps extends HealthDeps {
   rateLimit?: number;
   // Stricter limit on /climate; each request can cost upstream calls
   climateRateLimit?: number;
+  // Input service. /businesses, /loans and /seed are mounted only when it is given
+  input?: { service: InputService; options?: InputRouterOptions };
 }
 
 export function createApp(deps: AppDeps): Express {
@@ -42,6 +46,7 @@ export function createApp(deps: AppDeps): Express {
   app.use("/health", healthRouter(deps));
   app.use("/climate", rateLimiter(deps.climateRateLimit ?? 60), climateRouter(deps.climate));
   if (deps.alerts) app.use("/alerts", alertsRouter(deps.alerts));
+  if (deps.input) app.use(inputRouter(deps.input.service, deps.input.options));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

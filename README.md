@@ -2,22 +2,23 @@
 
 A 24-hour hackathon project (Fusion 2026) that scores how exposed a small business in India is to climate hazards, so that the score can feed a financial risk assessment.
 
-This README is the handover document for anyone, human or AI agent, picking up the repository cold. It describes what exists today, how it works, how to run it, and what is not built yet.
+This README is the handover document for anyone, human or AI agent, picking up the repository cold. It describes what exists today, how it works, how to run it, and what is not built yet. AI agents should read `AGENTS.md` first: it holds the working rules, and points back here for the detail.
 
 ## Status at a glance
 
 | Part | Folder | State |
 | --- | --- | --- |
-| Climate risk API | `api/` | Built and tested. 281 tests pass; typecheck and lint are clean. |
+| Climate risk API | `api/` | Built and tested. 460 tests pass across `api/`; typecheck and lint are clean. |
 | Climate agent | `api/src/services/climate/agent.ts` | Built. Optional: an OpenAI model reviews the screening and scores the forecast. Off without an API key. |
-| Alert system | `api/src/services/alerts/` | Built. Email warnings to business owners and banks, sent by a separate worker process. SMS was removed (see `RESOLVE_LATER.md`). Nothing triggers it yet: the background monitor is not built. |
+| Alert system | `api/src/services/alerts/` | Built. Email warnings to business owners and banks, sent by a separate worker process. SMS was removed (see `RESOLVE_LATER.md`). Triggered by the background monitor. |
+| Background monitor | `api/src/services/climate/monitor/` | Built. Part of the climate unit, run as its own process. Watches locations with active loans, checks them more often when the forecast worsens, queues alerts and records events for the ML model. The loans DB and logs system it will read from and write to are stand-ins. |
 | Demo page | `api/public/index.html` | Built. A single static page served by the API at `/demo/`. |
 | Web frontend | `web/` | Untouched `create-next-app` scaffold. No project UI yet. |
 | ML service | `ml/` | Dependencies declared only. No code, models, data or tests. |
 | Postgres | `docker-compose.yml` | Used by the API as the durable store. |
 | Redis | `docker-compose.yml` | Used by the API as a read cache in front of Postgres. No job queue yet. |
 
-Everything of substance is in `api/`, and all of it is committed on `main`.
+Everything of substance is in `api/`.
 
 ## Repository layout
 
@@ -26,6 +27,8 @@ fusion-hackathon/
 ├── docker-compose.yml      Postgres 16 and Redis 7 for local development
 ├── .dockerignore           Written ahead of time; there are no Dockerfiles yet
 ├── .claude/settings.json   Enables the ECC plugin for Claude Code
+├── AGENTS.md               Working rules for AI coding agents
+├── CLAUDE.md               One line that makes Claude Code load AGENTS.md
 ├── api/                    Express + TypeScript + Prisma API (the real work)
 ├── web/                    Next.js 16 + React 19 + Tailwind 4 scaffold
 └── ml/                     Python 3.13 project (FastAPI, scikit-learn), empty
@@ -79,7 +82,7 @@ The climate agent is off until you put an `OPENAI_API_KEY` in `api/.env`. Withou
 | `CLIMATE_AGENT_ENABLED` | `true` | Set to `false` to switch the agent off while keeping the key |
 | `CLIMATE_AGENT_MODEL` | `gpt-5-nano` | OpenAI model the agent uses |
 
-They are validated at startup by `api/src/config/env.ts`; the process exits if one is invalid. The alert system's variables (`ALERTS_*`, `SMTP_*`) are listed under [The alert system](#the-alert-system) and are read separately, so a bad one never stops the API. Open-Meteo needs no key: its free tier is used without one.
+They are validated at startup by `api/src/config/env.ts`; the process exits if one is invalid. The alert system's variables (`ALERTS_*`, `SMTP_*`) are listed under [The alert system](#the-alert-system), and the monitor's (`MONITOR_*`) under [The background monitor](#the-background-monitor). Both sets are read separately, so a bad one never stops the API. Open-Meteo needs no key: its free tier is used without one.
 
 ### API commands (run inside `api/`)
 
@@ -97,6 +100,9 @@ They are validated at startup by `api/src/config/env.ts`; the process exits if o
 | `npm run db:studio` | Opens Prisma Studio |
 | `npm run alerts:worker` | Runs the alert worker, a separate process that sends queued alerts |
 | `npm run alerts:test` | Queues a test alert. Add `-- --seed` to create the demo business and contacts first |
+| `npm run monitor` | Runs the background monitor, a separate process that checks watched locations and queues alerts |
+| `npm run monitor:verify` | Labels past monitor events against observed weather. Runs once and exits |
+| `npm run monitor:simulate` | Scripted demo of the monitor in its own database. Add `-- --location L1 --scenario heavy-rain` |
 
 ## What the API does
 
@@ -275,6 +281,8 @@ The weather forecast and the river forecast are each cached for 6 hours and refe
 
 A background job (`api/src/jobs/climate-refresh.ts`) also refetches the forecasts of every location the API has been asked about, every 6 hours, and updates scores and events from them. It handles one location at a time, fetches a shared cell once per run, and skips a location that fails. Its first run is 6 hours after startup, so restarting the server causes no burst of upstream calls.
 
+The [background monitor](#the-background-monitor) is a different thing: a separate process that refetches the forecasts of watched locations on its own schedule and acts on what it finds.
+
 ### 4. Score
 
 Each hazard has up to three components, each between 0 and 1:
@@ -355,7 +363,7 @@ Events are still detected by the fixed thresholds in step 5. The agent has no sa
 
 It warns a business owner and the bank when a sudden climate change is detected near a business, each with preventive steps. The full design is in `api/src/services/alerts/job.md`; this section says what was built and where it differs. The biggest difference: **alerts go out by email only.** The SMS channel in `job.md` was built and then removed, because the Twilio trial account refuses custom message text. `RESOLVE_LATER.md` item 5 says how to bring it back.
 
-**Nothing triggers it yet.** The trigger is a background monitor that is not built. Until it exists, queue alerts with the CLI:
+**The background monitor triggers it**: `npm run monitor` calls `enqueue()` once per affected business whenever a hazard rises. To queue an alert by hand, use the CLI:
 
 ```bash
 cd api
@@ -394,15 +402,49 @@ Differences from `job.md`:
 - A fourth table, `alert_businesses`, holds the name, city and sector that messages show, because the project has no business table yet.
 - `Sender.send` takes one message object instead of `(to, subject, body)`, so it can say whether the body is HTML.
 
+## The background monitor
+
+It watches every location with an active loan and reacts when the forecast there suddenly worsens. It is part of the climate unit (`api/src/services/climate/monitor/`) and reuses its pipeline, grid, thresholds, agent and database, but it runs as its own processes and is never started inside the API. `api/src/services/climate/monitor/README.md` has the details; this section is the summary.
+
+```bash
+cd api
+npm run monitor:simulate -- --location L1 --scenario heavy-rain   # safe demo, about 3 seconds
+npm run monitor            # the real loop; Ctrl+C stops it cleanly
+npm run monitor:verify     # daily: label past events against observed weather
+```
+
+How it works:
+
+- **One loop, every 15 minutes.** Each tick reads the watched locations, groups them by the 0.1° forecast cell, and checks the cells that are due. A slow tick delays the next one; ticks never overlap.
+- **The schedule is data.** Each cell's level, calm count and next check time are in `monitored_cells`, so a restart loses nothing. A cell is checked every 6 hours at `NORMAL`, every 3 at `WATCH`, and hourly at `WARNING` and `SEVERE`.
+- **One call per cell.** A check calls the climate pipeline once with `forceFreshForecast`, which refetches only the weather and river forecasts, however many businesses are in the cell.
+- **Rules decide.** Daily rain of 64.5, 115.6 or 204.5 mm with at least 25% probability gives `WATCH`, `WARNING` or `SEVERE`. Max temperature of 40 or 45 °C, and gusts of 60 or 90 km/h, give `WATCH` or `WARNING`. A river above its historical high is a `WARNING`, and `SEVERE` with heavy rain within 72 hours. A dormant hazard whose tripwire trips is at least a `WARNING`.
+- **A sudden change is a hazard that rose since the last check.** The cell jumps to the new level, every business in it gets an alert through `enqueue()` (`SEVERE` is sent as `CRITICAL`), and a `disaster_events` row is stored as `pending`.
+- **It calms down slowly.** A cell steps down one level only after two calm checks in a row.
+- **The agent is optional and can only raise.** Off by default (`MONITOR_AGENT_ENABLED`). At most one review per cell every 6 hours; the final level is the higher of the rule level and the agent level.
+- **Verification makes training data.** Five days after an event's window ends, `npm run monitor:verify` compares it with observed weather and labels it `hit` or `false_alarm`. Observed extremes that nothing forecast are added as `missed`.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `MONITOR_ENABLED` | `true` | `false` makes the monitor processes idle |
+| `MONITOR_TICK_MINUTES` | `15` | |
+| `MONITOR_CONCURRENCY` | `5` | Cells checked at once |
+| `MONITOR_AGENT_ENABLED` | `false` | Also needs `OPENAI_API_KEY` |
+| `MONITOR_LOCATIONS_FILE` | `data/monitor-locations.json` | Watched locations, until the loans DB exists |
+| `MONITOR_ALERT_SINK` | `outbox` | `console` prints alerts instead of queueing them |
+
+Two things it depends on are not built, so they sit behind small interfaces in `monitor/ports.ts`: the list of active loans (a JSON file for now) and the logs system (the console for now). The monitor README gives the steps to swap each in.
+
 ## Code map (`api/`)
 
 ```
 api/
 ├── prisma/schema.prisma          Database schema
-├── prisma/migrations/            Three migrations: climate_tool, idempotency_keys, alerts
+├── prisma/migrations/            Four migrations: climate_tool, idempotency_keys, alerts, climate_monitor
+├── data/monitor-locations.json   Locations the monitor watches, until the loans DB exists
 ├── prisma.config.ts              Prisma 7 config; the datasource URL lives here
 ├── public/index.html             Demo page, served at /demo/
-├── vitest.config.ts              Points tests at a *_test database and Redis database 1
+├── vitest.config.ts              Points tests at a *_test database and Redis database 1; test files run one at a time
 ├── vitest.global-setup.ts        Applies migrations to the test database
 └── src/
     ├── server.ts                 Entry point: connects, wires dependencies, listens
@@ -451,12 +493,34 @@ api/
             ├── coordinates.ts        Input validation for lat and lon
             ├── schema.ts             Zod schemas of the response and of Redis entries
             ├── types.ts              Shared types
-            └── testing/              fake-open-meteo.ts, fake-agent.ts, memory-cache.ts
+            ├── testing/              fake-open-meteo.ts, fake-agent.ts, memory-cache.ts
+            └── monitor/              The background monitor
+                ├── README.md             How it works, what it reuses, how to plug in the other units
+                ├── index.ts              Entry point of npm run monitor
+                ├── verifyJob.ts          Entry point of npm run monitor:verify
+                ├── simulate.ts           Entry point of npm run monitor:simulate
+                ├── container.ts          Wires the climate unit and the three ports
+                ├── ports.ts              WatchedLocationSource, AlertSink, RunLogger, Clock
+                ├── config.ts             MONITOR_* settings, with safe defaults
+                ├── types.ts              Levels, findings, snapshot, cell state
+                ├── cells.ts              Locations to forecast cells (pure)
+                ├── rules.ts              The primary rules (pure)
+                ├── cadence.ts            Level to interval, escalate and step down (pure)
+                ├── verify.ts             hit / false_alarm / missed labelling (pure)
+                ├── agentReview.ts        Optional agent review, raise-only
+                ├── checkCell.ts          One cell: pipeline, rules, agent, decision
+                ├── onSuddenChange.ts     Alert fan-out and the disaster event
+                ├── tick.ts               One full tick: sync, claim, check, release
+                ├── loop.ts               The awaited loop that never overlaps ticks
+                ├── repo.ts               monitored_cells and disaster_events
+                ├── adapters/             JSON locations, console alert sink and logger, clocks
+                └── testing/fixtures.ts   Shared test fixtures and stubs
 ```
 
 Where to change things:
 
 - **A threshold, weight, cache lifetime or grid size**: `src/config/climate.ts`, or `LIMITS` and `HAZARD_CATALOG` in `hazards.ts`.
+- **A monitor interval, rain class or timeout**: the `monitor` section of `src/config/climate.ts`. Heat, gust and cold thresholds are the climate unit's `LIMITS`.
 - **The response shape**: `schema.ts`, then the object built at the end of `run()`. The schema is strict, so an extra key fails with `INVALID_OUTPUT`.
 - **What the agent is told**: `src/prompts/climate.ts`, then bump `CLIMATE.agent.promptVersion`.
 - **A rate limit**: `rateLimit` and `climateRateLimit` in `createApp`'s arguments; the defaults are in `app.ts`.
@@ -465,7 +529,7 @@ Where to change things:
 
 ## Database
 
-Fifteen tables, defined in `api/prisma/schema.prisma`:
+Seventeen tables, defined in `api/prisma/schema.prisma`:
 
 | Table | Holds |
 | --- | --- |
@@ -478,12 +542,14 @@ Fifteen tables, defined in `api/prisma/schema.prisma`:
 | `climate_metrics` | The same data normalised to one row per cell, date and variable |
 | `hazard_scores` | Score history per point |
 | `cell_events` | Events and their status: `open`, `escalated` or `closed` |
-| `request_log` | Cache result and latency of each profile request. The background refresh is not logged |
+| `request_log` | Cache result and latency of each profile request. The background refresh is not logged; monitor checks are, with `requester_id` `climate-monitor` |
 | `idempotency_keys` | One row per `Idempotency-Key`: the request fingerprint and, once finished, the stored response |
 | `alert_outbox` | One row per alert to send, unique on dedupe key, audience and channel, with its status, attempts and lease |
 | `alert_deliveries` | Every send attempt: provider, result, error and the message as rendered |
 | `alert_contacts` | Who can be contacted, their language, and when they consented or opted out |
 | `alert_businesses` | Name, city and sector of a business, as shown in alert messages |
+| `monitored_cells` | One row per watched forecast cell: level, calm count, next check time, the last check's snapshot, and the lease of the monitor checking it |
+| `disaster_events` | One row per sudden change the monitor detected, with the forecast values, and later the observed values and a `hit`, `false_alarm` or `missed` label |
 
 A cached response is identified by cell, API name and a hash of the requested variables. Observed and projection metrics use the Unix epoch as `issued_at`, so refetching history never duplicates a day.
 
@@ -500,7 +566,9 @@ npm test
 - Tests never call OpenAI. `testing/fake-agent.ts` stands in for the agent in pipeline tests, and `agent.test.ts` passes a stub client to `createOpenAiAgent`.
 - `src/services/alerts/worker.test.ts` runs the alert worker against real Postgres with a fake email provider and a controllable clock. Tests never call SMTP.
 - The route tests in `src/routes/climate.test.ts` are integration tests: the real Express app and real Postgres, with a controllable clock. They truncate all climate tables before each test.
-- The full run takes about a minute, because a cache miss stores roughly 30 years of daily metrics.
+- The monitor's tests are in `src/services/climate/monitor/`. The rules, cadence, cells and labelling are pure and need no database. `tick.test.ts` and `verifyJob.test.ts` use real Postgres with the climate pipeline stubbed, and `integration.test.ts` runs the monitor on the real pipeline with `fakeOpenMeteo`.
+- Test files run one after another (`fileParallelism: false`), because the climate and monitor suites empty the same tables.
+- The full run takes about two minutes, because a cache miss stores roughly 30 years of daily metrics.
 
 Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`. All three pass today.
 
@@ -519,10 +587,14 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 
 ## Things that will catch you out
 
-- **Comments mention "README section 12", "section 17" and "Call 7".** They refer to the original climate tool specification, which was never committed, not to this file. Read `src/config/climate.ts` and `schema.ts` instead.
+- **Comments mention "README section 12", "section 17", "Call 6" and "Call 7".** They refer to the original climate tool specification, which was never committed, not to this file. Read `src/config/climate.ts` and `schema.ts` instead.
 - **Fetch the archive before the climate projections, never at the same time.** Open-Meteo counts both against one per-minute limit, and a 30-year request uses all of it. When projections fail, the profile is still returned and they are retried 5 minutes later. A test protects this order.
 - **A first lookup can fail with 503 when another heavy call ran in the same minute.** One 30-year archive request uses most of Open-Meteo's free per-minute allowance. The retries on a 429 all happen within about two seconds, so they cannot outlast the limit. Screening a second new city straight after the first is the usual trigger; waiting a minute and retrying works. Not fixed yet.
 - **The per-cell lock is in-process.** It stops two simultaneous requests for a new cell from both downloading 30 years of history, but only inside one API instance.
+- **So the monitor and the API do not share that lock.** They are separate processes. Both can refetch one cell's forecast at the same moment; the cost is a duplicated upstream call, since the writes are upserts. Two monitor instances are kept apart by leases in `monitored_cells`.
+- **`npm run monitor` is not a dry run.** It calls Open-Meteo and queues alerts in the real outbox; with `ALERTS_MODE=live` and the worker running, those are emailed. Use `npm run monitor:simulate` or `MONITOR_ALERT_SINK=console` to look without sending.
+- **The monitor's first run is slow on a cold cache.** Every new cell needs the 30-year download described above, about one per minute on the free tier. Rate-limited cells are retried on the next tick.
+- **The simulator writes to its own database** (`<name>_sim`), which it creates and migrates on first use. It can be removed at any time.
 - **The refresh job is in-process too.** It is a `setInterval`, not a queue. With several API instances, each one would run it.
 - **Without Redis the agent is asked on every request.** Its forecast scores are cached only in Redis. If Redis is down, each profile request with a forecast calls the model again, which is slower and costs more.
 - **Redis runs with `noeviction`** (set in `docker-compose.yml` for a future BullMQ queue). Cache entries all have a time to live, but if memory fills, writes fail and are dropped instead of evicting old keys.
@@ -540,16 +612,19 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 
 - The frontend. `web/` still shows the default Next.js page. The only UI is the static demo page at `/demo/`.
 - The ML service and the financial side of the score. `ml/` is empty, and the API has no route that talks to it. The climate profile is currently the only output.
-- Authentication. `request_log.requester_id` exists but is always null.
+- Authentication. `request_log.requester_id` is null for every client request; only the monitor sets it.
 - The World Bank flood exposure raster. `createClimateService` accepts an `exposure` provider, but none is passed, so every response carries a `flood_exposure_unavailable` warning and confidence is `med` at best.
 - Evidence for agent decisions. The agent works from its own knowledge with no search or retrieval, so the `evidence_urls` column is always empty.
-- The background monitor that triggers alerts. Nothing calls `enqueue()` except the test CLI. `job.md` section 3 is the contract it must follow.
+- The loans DB. The monitor reads its watched locations from `api/data/monitor-locations.json`, behind the `WatchedLocationSource` interface.
+- The logs system. The monitor logs to the console, behind the `RunLogger` interface.
+- A schedule for `npm run monitor:verify`. It runs once and exits; nothing runs it daily yet.
+- Alerts when a hazard score rises a band. `job.md` section 3 lists that trigger; the monitor acts on forecast thresholds and dormant tripwires only.
 - A way to manage alert contacts and businesses. They are rows written by hand or by `npm run alerts:test -- --seed`.
 - SMS alerts. Removed for now; see `RESOLVE_LATER.md` item 5.
 - Native-speaker review of the Hindi and Marathi alert texts.
 - A job queue. The forecast refresh runs on a timer inside the API process; Redis is configured for BullMQ, but BullMQ is not installed.
 - Handling of Open-Meteo's rate limits: waiting out a 429, queueing heavy calls, or pre-warming the demo cities.
-- Shared state for several API instances: the cell lock, the refresh job and the rate limit counters are all per process.
+- Shared state for several API instances: the cell lock, the refresh job and the rate limit counters are all per process. The same goes for the cell lock between the API and the monitor.
 - `severe` events for anything other than river flood, which would need ensemble forecasts.
 - Dockerfiles, CI and deployment.
 - CORS. A browser on another origin cannot call the API yet.
