@@ -1,0 +1,262 @@
+{
+  "labels": {
+    "flood": { "en": "Flood", "hi": "बाढ़", "mr": "पूर" },
+    "heat": { "en": "Heatwave", "hi": "लू", "mr": "उष्णतेची लाट" },
+    "drought": { "en": "Drought", "hi": "सूखा", "mr": "दुष्काळ" },
+    "storm": { "en": "Storm", "hi": "तूफान", "mr": "वादळ" },
+    "cold_wave": { "en": "Cold wave", "hi": "शीत लहर", "mr": "थंडीची लाट" }
+  },
+  "steps": {
+    "flood": {
+      "en": "Move stock & records higher, protect documents, back up data.",
+      "hi": "सामान व कागज़ात ऊँचाई पर रखें।",
+      "mr": "माल व कागदपत्रे उंचावर ठेवा."
+    },
+    "heat": {
+      "en": "Shift heavy work to cooler hours, keep drinking water ready, check power backup.",
+      "hi": "दोपहर में काम कम करें, पानी रखें।",
+      "mr": "दुपारी काम कमी करा, पाणी ठेवा."
+    },
+    "drought": {
+      "en": "Store water, check stock of water-dependent supplies, plan for shortages.",
+      "hi": "पानी बचाएँ, भंडार जाँचें।",
+      "mr": "पाणी वाचवा, साठा तपासा."
+    },
+    "storm": {
+      "en": "Tie down loose items, close shutters, charge phones, back up data.",
+      "hi": "खुला सामान बाँधें, शटर बंद रखें।",
+      "mr": "सैल वस्तू बांधा, शटर बंद ठेवा."
+    },
+    "cold_wave": {
+      "en": "Protect staff and cold-sensitive stock, check heating and pipes.",
+      "hi": "कर्मचारी व माल ठंड से बचाएँ।",
+      "mr": "कर्मचारी व माल थंडीपासून जपा."
+    }
+  },
+  "hazards": {
+    "flood": {
+      "WATCH": {
+        "owner": [
+          "Check that drains and gutters around the premises are clear",
+          "Note which stock, machines and records sit at floor level",
+          "Keep important documents together in a waterproof bag"
+        ],
+        "bank": [
+          "Note the borrower for follow-up if the forecast worsens",
+          "Check that insurance details for stock and collateral are on file",
+          "No action on the account is needed at this stage"
+        ]
+      },
+      "WARNING": {
+        "owner": [
+          "Move stock, machines and records to a higher shelf or floor",
+          "Keep important documents in a waterproof bag",
+          "Plan to switch off main power if water enters",
+          "Back up billing and stock data to your phone or cloud"
+        ],
+        "bank": [
+          "Call the borrower to confirm they received the warning",
+          "Check insurance cover on stock and collateral",
+          "Pre-approve eligible relief (bridge loan / EMI deferment) per bank policy",
+          "Mark account for follow-up after the event"
+        ]
+      },
+      "CRITICAL": {
+        "owner": [
+          "Move stock, machines and records to the highest safe place now",
+          "Switch off main power before water enters, and do not touch wet equipment",
+          "Take documents, cash and phones with you if you are told to leave",
+          "Do not stay to protect goods: people come first"
+        ],
+        "bank": [
+          "Call the borrower today to confirm they are safe and received the warning",
+          "Review eligibility for relief (bridge loan / EMI deferment) per bank policy",
+          "Prepare the insurance claim checklist for the borrower",
+          "Schedule a follow-up visit after the event"
+        ]
+      }
+    },
+    "heat": {
+      "WATCH": {
+        "owner": [
+          "Check that fans, coolers and drinking water are available for staff",
+          "Note which stock is sensitive to heat",
+          "Check that power backup is working"
+        ],
+        "bank": [
+          "Note the borrower for follow-up if the forecast worsens",
+          "Check whether the business depends on refrigeration or outdoor work",
+          "No action on the account is needed at this stage"
+        ]
+      },
+      "WARNING": {
+        "owner": [
+          "Shift heavy and outdoor work to early morning or evening",
+          "Keep drinking water and shade available for staff",
+          "Move heat-sensitive stock to the coolest place you have",
+          "Test power backup, as outages are more likely"
+        ],
+        "bank": [
+          "Call the borrower to confirm they received the warning",
+          "Ask about spoilage or lost working hours that could affect cash flow",
+          "Review eligibility for short-term working-capital support per bank policy",
+          "Mark account for follow-up after the event"
+        ]
+      },
+      "CRITICAL": {
+        "owner": [
+          "Stop outdoor and heavy work during the hottest hours (12 to 4 pm)",
+          "Make sure every worker has water, shade and rest breaks",
+          "Move or sell heat-sensitive stock before it spoils",
+          "Know the signs of heatstroke and the nearest health centre"
+        ],
+        "bank": [
+          "Call the borrower today to confirm they received the warning",
+          "Review eligibility for relief (working-capital support / EMI deferment) per bank policy",
+          "Check insurance cover on perishable stock",
+          "Schedule a follow-up after the event"
+        ]
+      }
+    },
+    "drought": {
+      "WATCH": {
+        "owner": [
+          "Check how many days of water your business has stored",
+          "Fix leaking taps, tanks and pipes",
+          "List supplies whose price or availability depends on rain"
+        ],
+        "bank": [
+          "Note the borrower for follow-up if conditions worsen",
+          "Check how much the business depends on water or farm inputs",
+          "No action on the account is needed at this stage"
+        ]
+      },
+      "WARNING": {
+        "owner": [
+          "Store extra water and reduce non-essential use",
+          "Stock up on key supplies before prices rise",
+          "Talk to suppliers about delivery during shortages",
+          "Plan for lower sales if your customers depend on farming"
+        ],
+        "bank": [
+          "Call the borrower to confirm they received the warning",
+          "Ask about input costs and expected sales over the next season",
+          "Review eligibility for restructuring or working-capital support per bank policy",
+          "Mark account for follow-up next month"
+        ]
+      },
+      "CRITICAL": {
+        "owner": [
+          "Arrange an alternative water source such as a tanker or shared storage",
+          "Cut water-heavy work to the minimum your business needs",
+          "Agree payment and delivery terms with suppliers early",
+          "Ask your bank about support before cash runs short"
+        ],
+        "bank": [
+          "Call the borrower today to discuss cash flow for the season",
+          "Review eligibility for relief (restructuring / EMI deferment) per bank policy",
+          "Check for government drought-relief schemes the borrower can use",
+          "Schedule a monthly follow-up until conditions ease"
+        ]
+      }
+    },
+    "storm": {
+      "WATCH": {
+        "owner": [
+          "Check the roof, signboards and shutters for loose parts",
+          "Note what is kept outdoors and could be blown away",
+          "Keep a torch and charged power bank ready"
+        ],
+        "bank": [
+          "Note the borrower for follow-up if the forecast worsens",
+          "Check that insurance details for the premises are on file",
+          "No action on the account is needed at this stage"
+        ]
+      },
+      "WARNING": {
+        "owner": [
+          "Tie down or bring inside anything kept outdoors",
+          "Close and secure shutters, windows and roof sheets",
+          "Charge phones and back up billing and stock data",
+          "Keep important documents in a waterproof bag"
+        ],
+        "bank": [
+          "Call the borrower to confirm they received the warning",
+          "Check insurance cover on premises, stock and collateral",
+          "Pre-approve eligible relief (bridge loan / EMI deferment) per bank policy",
+          "Mark account for follow-up after the event"
+        ]
+      },
+      "CRITICAL": {
+        "owner": [
+          "Close the business early and send staff home before the storm arrives",
+          "Secure shutters and switch off main power",
+          "Take documents, cash and phones with you",
+          "Stay indoors, away from windows, trees and power lines"
+        ],
+        "bank": [
+          "Call the borrower today to confirm they are safe and received the warning",
+          "Review eligibility for relief (bridge loan / EMI deferment) per bank policy",
+          "Prepare the insurance claim checklist for the borrower",
+          "Schedule a follow-up visit after the event"
+        ]
+      }
+    },
+    "cold_wave": {
+      "WATCH": {
+        "owner": [
+          "Check that staff have warm clothing and a heated or sheltered place",
+          "Note which stock or machines are sensitive to cold",
+          "Check heaters and wiring for safety"
+        ],
+        "bank": [
+          "Note the borrower for follow-up if the forecast worsens",
+          "Check whether the business depends on outdoor work or cold-sensitive stock",
+          "No action on the account is needed at this stage"
+        ]
+      },
+      "WARNING": {
+        "owner": [
+          "Shift outdoor work to the warmer hours of the day",
+          "Protect cold-sensitive stock, plants or animals with covers",
+          "Insulate exposed water pipes and tanks",
+          "Never use coal or charcoal heaters in a closed room"
+        ],
+        "bank": [
+          "Call the borrower to confirm they received the warning",
+          "Ask about lost working days or damaged stock",
+          "Review eligibility for short-term support per bank policy",
+          "Mark account for follow-up after the event"
+        ]
+      },
+      "CRITICAL": {
+        "owner": [
+          "Stop outdoor work in the early morning and at night",
+          "Make sure every worker has warm clothing and hot drinks",
+          "Move cold-sensitive stock indoors or cover it",
+          "Never use coal or charcoal heaters in a closed room"
+        ],
+        "bank": [
+          "Call the borrower today to confirm they received the warning",
+          "Review eligibility for relief (short-term support / EMI deferment) per bank policy",
+          "Check insurance cover on stock or livestock",
+          "Schedule a follow-up after the event"
+        ]
+      }
+    }
+  },
+  "sectors": {
+    "food": {
+      "flood": ["Move food stock and packaging off the floor and discard anything flood water touches"],
+      "heat": ["Check refrigeration and power backup"],
+      "storm": ["Check refrigeration and power backup"]
+    },
+    "textile": {
+      "flood": ["Wrap fabric and finished goods in plastic and store them off the floor"]
+    },
+    "agri": {
+      "drought": ["Prioritise water for the most valuable crop or stock"],
+      "cold_wave": ["Cover seedlings and young plants overnight"]
+    }
+  }
+}

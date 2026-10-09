@@ -3,6 +3,7 @@ import { connectDb, disconnectDb, prisma } from "./config/db.js";
 import { env } from "./config/env.js";
 import { startClimateRefresh } from "./jobs/climate-refresh.js";
 import { createRedis } from "./config/redis.js";
+import { createAlertReader } from "./services/alerts/reader.js";
 import { createRedisCache } from "./services/cache/cache.js";
 import { createOpenAiAgent } from "./services/climate/agent.js";
 import { createOpenMeteoClient } from "./services/climate/open-meteo.js";
@@ -30,6 +31,7 @@ const refresh = startClimateRefresh(climate);
 const app = createApp({
   idempotency: idempotencyStore,
   climate,
+  alerts: createAlertReader(prisma),
   checkDb: connectDb,
   upstreamStatus: () => openMeteo.status(),
 });

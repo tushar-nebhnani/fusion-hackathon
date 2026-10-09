@@ -1,0 +1,13 @@
+Subject: ClimaCredit इशारा: {businessName} जवळ {hazardLabel} धोका, {window}
+
+नमस्कार,
+
+{window} रोजी {businessName}, {city} जवळ {hazardLabel} धोका आहे.
+
+आत्ता काय करावे: {steps}
+
+तुमची बँक मदतीसाठी तुमच्याशी संपर्क करू शकते.
+
+स्थानिक प्रशासनाच्या सूचना पाळा.
+
+हे संदेश बंद करण्यासाठी या ईमेलला STOP असे उत्तर द्या.

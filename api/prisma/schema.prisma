@@ -263,3 +263,103 @@ model IdempotencyKey {
   @@index([expiresAt])
   @@map("idempotency_keys")
 }
+
+enum AlertAudience {
+  owner
+  bank
+}
+
+enum AlertChannel {
+  email
+  sms
+}
+
+enum AlertSeverity {
+  WATCH
+  WARNING
+  CRITICAL
+}
+
+enum AlertStatus {
+  pending
+  sending
+  sent
+  failed
+  dead
+  suppressed
+}
+
+// Name, city and sector that alert messages show for a business. Owned by
+// the alert system until a real business table exists.
+model AlertBusiness {
+  id     String  @id
+  name   String
+  city   String
+  sector String?
+
+  @@map("alert_businesses")
+}
+
+// What needs to be sent. Producers only insert here; the alert worker claims
+// rows with `claimed_by` + `lease_until` and does the sending.
+model AlertOutbox {
+  id         Int           @id @default(autoincrement())
+  dedupeKey  String        @map("dedupe_key")
+  businessId String        @map("business_id")
+  audience   AlertAudience
+  channel    AlertChannel
+  hazard     String
+  severity   AlertSeverity
+  payload    Json          @map("payload_json")
+  status     AlertStatus   @default(pending)
+  attempts   Int           @default(0)
+  nextTryAt  DateTime      @map("next_try_at") @db.Timestamptz
+  claimedBy  String?       @map("claimed_by")
+  leaseUntil DateTime?     @map("lease_until") @db.Timestamptz
+  lastError  String?       @map("last_error")
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  deliveries AlertDelivery[]
+
+  @@unique([dedupeKey, audience, channel])
+  @@index([status, nextTryAt])
+  @@index([businessId, hazard, audience, channel])
+  @@map("alert_outbox")
+}
+
+// Every send attempt, for the dashboard and audit. `subject` and `body` are
+// the message as rendered, so the dashboard can preview it.
+model AlertDelivery {
+  id          Int      @id @default(autoincrement())
+  outboxId    Int      @map("outbox_id")
+  provider    String
+  providerRef String?  @map("provider_ref")
+  result      String
+  error       String?
+  subject     String?
+  body        String?
+  sentAt      DateTime @map("sent_at") @db.Timestamptz
+
+  outbox AlertOutbox @relation(fields: [outboxId], references: [id])
+
+  @@index([outboxId])
+  @@index([sentAt])
+  @@map("alert_deliveries")
+}
+
+// Who can be contacted, and whether they agreed. No `consent_at` means no
+// message, ever. Bank users have no `business_id`.
+model AlertContact {
+  id         Int           @id @default(autoincrement())
+  businessId String?       @map("business_id")
+  audience   AlertAudience
+  name       String?
+  email      String?
+  phoneE164  String?       @map("phone_e164")
+  language   String        @default("en")
+  consentAt  DateTime?     @map("consent_at") @db.Timestamptz
+  optedOutAt DateTime?     @map("opted_out_at") @db.Timestamptz
+
+  @@index([audience, businessId])
+  @@map("alert_contacts")
+}

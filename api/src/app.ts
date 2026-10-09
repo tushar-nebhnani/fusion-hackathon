@@ -7,8 +7,10 @@ import {
   type IdempotencyStore,
 } from "./middleware/idempotency.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
+import { alertsRouter } from "./routes/alerts.js";
 import { climateRouter } from "./routes/climate.js";
 import { healthRouter, type HealthDeps } from "./routes/health.js";
+import type { AlertReader } from "./services/alerts/reader.js";
 import type { ClimateService } from "./services/climate/profile.service.js";
 
 // api/public, whether this runs from src/ or dist/
@@ -16,6 +18,8 @@ const DEMO_DIR = fileURLToPath(new URL("../public", import.meta.url));
 
 export interface AppDeps extends HealthDeps {
   climate: ClimateService;
+  // Read side of the alert system. /alerts is mounted only when it is given
+  alerts?: AlertReader;
   // Defaults to an in-process store, which only suits tests and one instance
   idempotency?: IdempotencyStore;
   // Requests per minute per client across the whole API
@@ -37,6 +41,7 @@ export function createApp(deps: AppDeps): Express {
   app.use("/demo", express.static(DEMO_DIR));
   app.use("/health", healthRouter(deps));
   app.use("/climate", rateLimiter(deps.climateRateLimit ?? 60), climateRouter(deps.climate));
+  if (deps.alerts) app.use("/alerts", alertsRouter(deps.alerts));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

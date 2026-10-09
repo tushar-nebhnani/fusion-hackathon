@@ -1,0 +1,14 @@
+Subject: ClimaCredit alert: {hazardLabel} risk near {businessName}, {window}
+
+Hello,
+
+A {hazardLabel} risk is forecast near {businessName}, {city}, on {window}.
+
+What you can do now:
+{guidelines}
+
+Your bank may contact you with support.
+
+Follow instructions from local authorities.
+
+To stop these alerts, reply to this email with STOP.

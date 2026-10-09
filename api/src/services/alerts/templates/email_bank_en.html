@@ -1,0 +1,18 @@
+Subject: [{severity}] {hazardLabel} risk — {businessId} {businessName}, {city} — {window}
+
+<p><strong>{severity}: {hazardLabel} risk for {businessId} {businessName}, {city}</strong></p>
+<table cellpadding="4">
+  <tr><td>Borrower</td><td>{businessId} {businessName}</td></tr>
+  <tr><td>Location</td><td>{city}</td></tr>
+  <tr><td>Hazard</td><td>{hazardLabel}</td></tr>
+  <tr><td>Severity</td><td>{severity}</td></tr>
+  <tr><td>Forecast window</td><td>{window}</td></tr>
+  <tr><td>Evidence</td><td>{evidence}</td></tr>
+</table>
+<p>Suggested actions to review. These are suggestions for a loan officer, not automatic decisions:</p>
+<ul>
+{guidelines}
+</ul>
+<p><a href="{dashboardUrl}">Open the borrower page on the dashboard</a></p>
+<p>The business owner is sent a warning with preventive steps if they have agreed to receive alerts.</p>
+<p><small>You receive this because you are listed as a ClimaCredit alert contact. To stop these alerts, reply to this email with STOP.</small></p>

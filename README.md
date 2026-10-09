@@ -8,8 +8,9 @@ This README is the handover document for anyone, human or AI agent, picking up t
 
 | Part | Folder | State |
 | --- | --- | --- |
-| Climate risk API | `api/` | Built and tested. 229 tests pass; typecheck and lint are clean. |
+| Climate risk API | `api/` | Built and tested. 281 tests pass; typecheck and lint are clean. |
 | Climate agent | `api/src/services/climate/agent.ts` | Built. Optional: an OpenAI model reviews the screening and scores the forecast. Off without an API key. |
+| Alert system | `api/src/services/alerts/` | Built. Email warnings to business owners and banks, sent by a separate worker process. SMS was removed (see `RESOLVE_LATER.md`). Nothing triggers it yet: the background monitor is not built. |
 | Demo page | `api/public/index.html` | Built. A single static page served by the API at `/demo/`. |
 | Web frontend | `web/` | Untouched `create-next-app` scaffold. No project UI yet. |
 | ML service | `ml/` | Dependencies declared only. No code, models, data or tests. |
@@ -78,7 +79,7 @@ The climate agent is off until you put an `OPENAI_API_KEY` in `api/.env`. Withou
 | `CLIMATE_AGENT_ENABLED` | `true` | Set to `false` to switch the agent off while keeping the key |
 | `CLIMATE_AGENT_MODEL` | `gpt-5-nano` | OpenAI model the agent uses |
 
-They are validated at startup by `api/src/config/env.ts`; the process exits if one is invalid. Open-Meteo needs no key: its free tier is used without one.
+They are validated at startup by `api/src/config/env.ts`; the process exits if one is invalid. The alert system's variables (`ALERTS_*`, `SMTP_*`) are listed under [The alert system](#the-alert-system) and are read separately, so a bad one never stops the API. Open-Meteo needs no key: its free tier is used without one.
 
 ### API commands (run inside `api/`)
 
@@ -94,6 +95,8 @@ They are validated at startup by `api/src/config/env.ts`; the process exits if o
 | `npm run db:generate` | Regenerates the Prisma client |
 | `npm run db:migrate` | Creates and applies migrations in development |
 | `npm run db:studio` | Opens Prisma Studio |
+| `npm run alerts:worker` | Runs the alert worker, a separate process that sends queued alerts |
+| `npm run alerts:test` | Queues a test alert. Add `-- --seed` to create the demo business and contacts first |
 
 ## What the API does
 
@@ -117,6 +120,7 @@ When the climate agent is on, an OpenAI model does two jobs on top of the rules:
 | `POST` | `/climate/profile` | Full risk profile. Body: `{"lat": number, "lon": number}` |
 | `GET` | `/climate/events?lat=..&lon=..` | Same pipeline, returning only location, active events, freshness, cache and warnings |
 | `GET` | `/climate/cell/:cellId` | Debug view of what is stored for one grid cell, without raw payloads |
+| `GET` | `/alerts?limit=..&business_id=..&status=..` | Recent alerts, newest first, each with its send attempts and the message as rendered. Never includes who it was sent to |
 
 Request bodies are limited to 10 kB. There is no authentication.
 
@@ -347,12 +351,55 @@ Limits placed on it:
 
 Events are still detected by the fixed thresholds in step 5. The agent has no say in them.
 
+## The alert system
+
+It warns a business owner and the bank when a sudden climate change is detected near a business, each with preventive steps. The full design is in `api/src/services/alerts/job.md`; this section says what was built and where it differs. The biggest difference: **alerts go out by email only.** The SMS channel in `job.md` was built and then removed, because the Twilio trial account refuses custom message text. `RESOLVE_LATER.md` item 5 says how to bring it back.
+
+**Nothing triggers it yet.** The trigger is a background monitor that is not built. Until it exists, queue alerts with the CLI:
+
+```bash
+cd api
+npm run alerts:test -- --seed --business SME-0142 --hazard flood --severity WARNING
+npm run alerts:worker     # in a second terminal; Ctrl+C stops it cleanly
+curl 'http://localhost:4000/alerts?limit=5'
+```
+
+How it works:
+
+- **Producers call one function.** `import { enqueue } from "./services/alerts/index.js"` and call `void enqueue(event)`. It does one `INSERT` into `alert_outbox`, resolves to `true` or `false` within milliseconds and never rejects, even when Postgres is down.
+- **A separate process sends.** `npm run alerts:worker` polls the outbox every 15 seconds, claims up to 20 rows with a 2-minute lease, and sends them one at a time. The API never talks to SMTP.
+- **Each event becomes two emails.** The owner gets one in their language (`en`, `hi` or `mr`) with preventive steps. The bank gets one with the borrower, the evidence and suggested actions; its `WATCH` alerts wait for one daily digest at 09:00 IST.
+- **Rules applied by the worker** (`policy.ts`): no message without `consent_at`, or after `opted_out_at`; a 6-hour cooldown per business, hazard and audience that only a higher severity breaks; retries after 1, 2, 4 and 8 minutes, then `dead`.
+- **Content is not code.** Guidelines are in `guidelines.json` and messages in `templates/`, read when the worker starts.
+- **`ALERTS_MODE=dry_run` is the default.** Messages are logged and stored as sent without calling a provider. `ALERTS_ENABLED=false` turns `enqueue()` into a no-op and idles the worker.
+
+An event is `{ businessId, hazard, severity, windowStart, windowEnd, evidence, sourceRunId }`. `hazard` is one of the six climate hazards or a generic `flood`; `severity` is `WATCH`, `WARNING` or `CRITICAL`. The same business, hazard, severity and `windowStart` is sent once however often it is queued.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `ALERTS_ENABLED` | `true` | `false` switches the whole alert system off |
+| `ALERTS_MODE` | `dry_run` | `live` sends through SMTP |
+| `ALERTS_POLL_SECONDS` | `15` | |
+| `ALERTS_COOLDOWN_HOURS` | `6` | |
+| `ALERTS_TZ` | `Asia/Kolkata` | Timezone of the digest time |
+| `ALERTS_DIGEST_TIME` | `09:00` | When the bank's daily `WATCH` digest goes out |
+| `ALERTS_DASHBOARD_URL` | `http://localhost:3000` | Base of the borrower link in bank emails |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_APP_PASSWORD`, `ALERTS_FROM_EMAIL` | `smtp.gmail.com`, `587`, none | Needed in `live` mode |
+
+Differences from `job.md`:
+
+- No SMS: no Twilio sender, no SMS templates, no quiet hours and no email fallback. The `sms` channel value and the `phone_e164` column are still in the database, unused; the worker suppresses any `sms` row it finds.
+- The code is in `api/src/services/alerts/`, not `src/alerts/`, and tests sit next to the code as `*.test.ts`.
+- Storage is Postgres through Prisma, not SQLite. `alert_deliveries` also stores the rendered `subject` and `body`.
+- A fourth table, `alert_businesses`, holds the name, city and sector that messages show, because the project has no business table yet.
+- `Sender.send` takes one message object instead of `(to, subject, body)`, so it can say whether the body is HTML.
+
 ## Code map (`api/`)
 
 ```
 api/
 ├── prisma/schema.prisma          Database schema
-├── prisma/migrations/            Two migrations: climate_tool, idempotency_keys
+├── prisma/migrations/            Three migrations: climate_tool, idempotency_keys, alerts
 ├── prisma.config.ts              Prisma 7 config; the datasource URL lives here
 ├── public/index.html             Demo page, served at /demo/
 ├── vitest.config.ts              Points tests at a *_test database and Redis database 1
@@ -370,14 +417,27 @@ api/
     │   ├── error-handler.ts      404 handler and the single error formatter
     │   ├── rate-limit.ts         rateLimiter(limit): per-client, one minute window
     │   └── idempotency.ts        Idempotency-Key handling and the in-memory store
-    ├── routes/                   health.ts, climate.ts
-    ├── controllers/climate.controller.ts   Parses input and calls the service
+    ├── routes/                   health.ts, climate.ts, alerts.ts
+    ├── controllers/              climate.controller.ts, alerts.controller.ts: parse input, call the service
     ├── jobs/climate-refresh.ts   Six-hourly forecast refresh of every known location
     ├── prompts/climate.ts        The agent's two system prompts
     ├── generated/prisma/         Generated client. Gitignored; never edit
     └── services/
         ├── cache/cache.ts        Cache interface, Redis implementation, no-op cache
         ├── idempotency/prisma-store.ts   Postgres store for idempotency keys
+        ├── alerts/
+        │   ├── job.md                The design document
+        │   ├── index.ts              enqueue(), the only function other modules call
+        │   ├── enqueue.ts            Builds outbox rows; fast, never rejects
+        │   ├── worker.ts             Entry point of npm run alerts:worker: claim, check, send, record
+        │   ├── policy.ts             Cooldown, backoff, digest timing
+        │   ├── render.ts             Templates + guidelines to message text
+        │   ├── reader.ts             Read side behind GET /alerts
+        │   ├── config.ts             ALERTS_* and SMTP_* settings, with safe defaults
+        │   ├── cli.ts                npm run alerts:test
+        │   ├── senders/              Sender interface, emailSmtp, dryRun
+        │   ├── guidelines.json       Preventive steps by hazard, severity and audience
+        │   └── templates/            One email per audience and language
         └── climate/
             ├── profile.service.ts    The pipeline: cache, fetch, review, score, save
             ├── agent.ts              ClimateAgent interface and the OpenAI agent
@@ -405,7 +465,7 @@ Where to change things:
 
 ## Database
 
-Eleven tables, defined in `api/prisma/schema.prisma`:
+Fifteen tables, defined in `api/prisma/schema.prisma`:
 
 | Table | Holds |
 | --- | --- |
@@ -420,6 +480,10 @@ Eleven tables, defined in `api/prisma/schema.prisma`:
 | `cell_events` | Events and their status: `open`, `escalated` or `closed` |
 | `request_log` | Cache result and latency of each profile request. The background refresh is not logged |
 | `idempotency_keys` | One row per `Idempotency-Key`: the request fingerprint and, once finished, the stored response |
+| `alert_outbox` | One row per alert to send, unique on dedupe key, audience and channel, with its status, attempts and lease |
+| `alert_deliveries` | Every send attempt: provider, result, error and the message as rendered |
+| `alert_contacts` | Who can be contacted, their language, and when they consented or opted out |
+| `alert_businesses` | Name, city and sector of a business, as shown in alert messages |
 
 A cached response is identified by cell, API name and a hash of the requested variables. Observed and projection metrics use the Unix epoch as `issued_at`, so refetching history never duplicates a day.
 
@@ -434,6 +498,7 @@ npm test
 - Redis is separated the same way: tests use logical database 1 and development uses 0. Only `src/services/cache/cache.test.ts` talks to the real Redis, so Redis must be running too. Other tests use the in-memory cache in `testing/memory-cache.ts`.
 - Tests never call Open-Meteo. `fakeOpenMeteo` generates synthetic history and forecasts, records which APIs were called, and can simulate outages through its `failing` option.
 - Tests never call OpenAI. `testing/fake-agent.ts` stands in for the agent in pipeline tests, and `agent.test.ts` passes a stub client to `createOpenAiAgent`.
+- `src/services/alerts/worker.test.ts` runs the alert worker against real Postgres with a fake email provider and a controllable clock. Tests never call SMTP.
 - The route tests in `src/routes/climate.test.ts` are integration tests: the real Express app and real Postgres, with a controllable clock. They truncate all climate tables before each test.
 - The full run takes about a minute, because a cache miss stores roughly 30 years of daily metrics.
 
@@ -465,6 +530,10 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 - **The `stale` value of `climate_responses.status` is unused.** Nothing writes it since stale data stopped being served. Expired screening rows stay in Postgres until the next re-screening overwrites them, and nothing reads them.
 - **Prisma 7.** The client is generated into `src/generated/prisma` and uses the `@prisma/adapter-pg` driver adapter. The database URL is in `prisma.config.ts`, not in `schema.prisma`.
 - **`web/` uses Next.js 16, which has breaking changes.** Read `web/AGENTS.md` and the guides in `web/node_modules/next/dist/docs/` before writing frontend code.
+- **Run `npm run db:generate` after pulling a migration.** `prisma migrate dev` applied the alerts migration without regenerating the client, and every `prisma.alert*` call then fails to typecheck.
+- **Alert content files are not copied to `dist/`.** `tsc` leaves `guidelines.json` and `templates/` behind, so a compiled worker reads them from `src/`. Ship `src/services/alerts/` content with any deployment.
+- **Replying STOP does not update the database.** Emails tell people to reply STOP, but nothing reads replies. Set `alert_contacts.opted_out_at` by hand until an inbound webhook exists.
+- **A bank digest covers at most 20 alerts.** The worker claims 20 rows per batch; more `WATCH` alerts than that go out as a second digest email.
 - **Never commit `.env` files or `src/generated/`.** Both are gitignored.
 
 ## Not built yet
@@ -474,6 +543,10 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 - Authentication. `request_log.requester_id` exists but is always null.
 - The World Bank flood exposure raster. `createClimateService` accepts an `exposure` provider, but none is passed, so every response carries a `flood_exposure_unavailable` warning and confidence is `med` at best.
 - Evidence for agent decisions. The agent works from its own knowledge with no search or retrieval, so the `evidence_urls` column is always empty.
+- The background monitor that triggers alerts. Nothing calls `enqueue()` except the test CLI. `job.md` section 3 is the contract it must follow.
+- A way to manage alert contacts and businesses. They are rows written by hand or by `npm run alerts:test -- --seed`.
+- SMS alerts. Removed for now; see `RESOLVE_LATER.md` item 5.
+- Native-speaker review of the Hindi and Marathi alert texts.
 - A job queue. The forecast refresh runs on a timer inside the API process; Redis is configured for BullMQ, but BullMQ is not installed.
 - Handling of Open-Meteo's rate limits: waiting out a 429, queueing heavy calls, or pre-warming the demo cities.
 - Shared state for several API instances: the cell lock, the refresh job and the rate limit counters are all per process.
