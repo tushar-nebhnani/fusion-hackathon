@@ -363,3 +363,133 @@ model AlertContact {
   @@index([audience, businessId])
   @@map("alert_contacts")
 }
+
+// ── Advisor (api/src/services/advisor/) ─────────────────────────────────────
+
+enum LoanStateName {
+  PRE_LOAN
+  ACTIVE
+  ALERT
+  IMPACTED
+  RECOVERY
+}
+
+enum AdvisorMode {
+  preLoan
+  alert
+  recovery
+}
+
+enum FactSource {
+  owner_chat
+  form
+  bank
+}
+
+enum ProposalStatus {
+  pending_bank
+  accepted
+  rejected
+  superseded
+}
+
+model AdvisorConversation {
+  id         String      @id @default(uuid())
+  businessId String      @map("business_id")
+  loanId     String?     @map("loan_id")
+  mode       AdvisorMode
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  messages  AdvisorMessage[]
+  toolCalls AdvisorToolCall[]
+
+  @@index([businessId, createdAt])
+  @@map("advisor_conversations")
+}
+
+model AdvisorMessage {
+  id               Int      @id @default(autoincrement())
+  conversationId   String   @map("conversation_id")
+  // user | assistant
+  role             String
+  content          String
+  structuredOutput Json?    @map("structured_output")
+  // ["call_3.revenueLoss", ...]: tool results the message relies on
+  citations        Json     @default("[]")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  conversation AdvisorConversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId, id])
+  @@map("advisor_messages")
+}
+
+// Every tool run, so each number shown to a user traces back to a row here
+model AdvisorToolCall {
+  id             Int      @id @default(autoincrement())
+  conversationId String   @map("conversation_id")
+  // call_1, call_2, ... unique within the conversation
+  callId         String   @map("call_id")
+  tool           String
+  input          Json
+  output         Json?
+  error          String?
+  durationMs     Int      @map("duration_ms")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  conversation AdvisorConversation @relation(fields: [conversationId], references: [id])
+
+  @@unique([conversationId, callId])
+  @@map("advisor_tool_calls")
+}
+
+model BusinessFact {
+  businessId String     @map("business_id")
+  key        String
+  value      String
+  source     FactSource
+  updatedAt  DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@id([businessId, key])
+  @@map("business_facts")
+}
+
+model LoanState {
+  loanId    String        @id @map("loan_id")
+  state     LoanStateName
+  // [{ from, to, reason, at }]
+  history   Json          @default("[]")
+  // Latest damage report while IMPACTED or RECOVERY
+  damage    Json?
+  // Alert that put the loan in ALERT; cleared when it leaves ALERT
+  alertId   String?       @map("alert_id")
+  updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("loan_states")
+}
+
+model RepaymentProposal {
+  id               String         @id @default(uuid())
+  loanId           String         @map("loan_id")
+  conversationId   String?        @map("conversation_id")
+  options          Json
+  recommendedIndex Int            @map("recommended_index")
+  explanation      String
+  status           ProposalStatus @default(pending_bank)
+  decidedBy        String?        @map("decided_by")
+  decidedAt        DateTime?      @map("decided_at") @db.Timestamptz
+  note             String?
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([loanId, status])
+  @@map("repayment_proposals")
+}
+
+// Alert events handed to the advisor (by the monitor, or dev/fakeAlert.ts)
+model AdvisorAlertEvent {
+  id        String   @id
+  payload   Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("advisor_alert_events")
+}

@@ -3,6 +3,7 @@ import { connectDb, disconnectDb, prisma } from "./config/db.js";
 import { env } from "./config/env.js";
 import { startClimateRefresh } from "./jobs/climate-refresh.js";
 import { createRedis } from "./config/redis.js";
+import { createAdvisorFromEnv } from "./services/advisor/bootstrap.js";
 import { createAlertReader } from "./services/alerts/reader.js";
 import { createRedisCache } from "./services/cache/cache.js";
 import { createOpenAiAgent } from "./services/climate/agent.js";
@@ -27,11 +28,13 @@ console.log(
 
 const climate = createClimateService({ prisma, openMeteo, cache: createRedisCache(redis), agent });
 const refresh = startClimateRefresh(climate);
+const advisor = createAdvisorFromEnv({ prisma, climate });
 
 const app = createApp({
   idempotency: idempotencyStore,
   climate,
   alerts: createAlertReader(prisma),
+  advisor: { service: advisor.advisor, devRoutes: advisor.config.enableDevRoutes },
   checkDb: connectDb,
   upstreamStatus: () => openMeteo.status(),
 });
@@ -43,6 +46,7 @@ const server = app.listen(env.PORT, () => {
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     refresh.stop();
+    advisor.stop();
     server.close(() => {
       redis.disconnect();
       void disconnectDb().then(() => process.exit(0));

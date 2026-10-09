@@ -7,9 +7,11 @@ import {
   type IdempotencyStore,
 } from "./middleware/idempotency.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
+import { advisorRouter } from "./routes/advisor.js";
 import { alertsRouter } from "./routes/alerts.js";
 import { climateRouter } from "./routes/climate.js";
 import { healthRouter, type HealthDeps } from "./routes/health.js";
+import type { Advisor } from "./services/advisor/index.js";
 import type { AlertReader } from "./services/alerts/reader.js";
 import type { ClimateService } from "./services/climate/profile.service.js";
 
@@ -20,12 +22,16 @@ export interface AppDeps extends HealthDeps {
   climate: ClimateService;
   // Read side of the alert system. /alerts is mounted only when it is given
   alerts?: AlertReader;
+  // Chat advisor. /advisor is mounted only when it is given
+  advisor?: { service: Advisor; devRoutes: boolean };
   // Defaults to an in-process store, which only suits tests and one instance
   idempotency?: IdempotencyStore;
   // Requests per minute per client across the whole API
   rateLimit?: number;
   // Stricter limit on /climate; each request can cost upstream calls
   climateRateLimit?: number;
+  // Stricter limit on /advisor; each request can cost several model calls
+  advisorRateLimit?: number;
 }
 
 export function createApp(deps: AppDeps): Express {
@@ -42,6 +48,13 @@ export function createApp(deps: AppDeps): Express {
   app.use("/health", healthRouter(deps));
   app.use("/climate", rateLimiter(deps.climateRateLimit ?? 60), climateRouter(deps.climate));
   if (deps.alerts) app.use("/alerts", alertsRouter(deps.alerts));
+  if (deps.advisor) {
+    app.use(
+      "/advisor",
+      rateLimiter(deps.advisorRateLimit ?? 30),
+      advisorRouter(deps.advisor.service, { devRoutes: deps.advisor.devRoutes }),
+    );
+  }
 
   app.use(notFoundHandler);
   app.use(errorHandler);

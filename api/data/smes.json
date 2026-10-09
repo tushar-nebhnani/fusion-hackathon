@@ -1,0 +1,177 @@
+{
+  "_comment": "Synthetic demo businesses. Stand-in for the finance unit and the input service until they exist; see api/src/services/advisor/NOTES.md. Money is INR, monthlyRevenue is Jan..Dec.",
+  "businesses": [
+    {
+      "id": "SME-0101",
+      "name": "Maa Tarini Kirana Store",
+      "ownerName": "Sujata Behera",
+      "sector": "kirana",
+      "description": "Neighbourhood grocery in a low-lying lane near the Puri market. Rice, dal, oil, packaged goods and some vegetables.",
+      "city": "Puri",
+      "state": "Odisha",
+      "lat": 19.8,
+      "lon": 85.82,
+      "contacts": {
+        "ownerEmail": "sujata.kirana@example.com",
+        "ownerPhone": "+910000000101",
+        "bankEmail": "msme-desk@example-bank.in",
+        "consent": true
+      },
+      "finance": {
+        "monthlyRevenue": [175000, 170000, 180000, 185000, 180000, 170000, 160000, 158000, 165000, 205000, 210000, 190000],
+        "variableCostShare": 0.76,
+        "fixedMonthlyCosts": 18000,
+        "otherDebtMonthly": 2500
+      },
+      "loans": [
+        {
+          "loanId": "LN-0101",
+          "principal": 300000,
+          "annualRatePct": 14,
+          "tenureMonths": 24,
+          "disbursedOn": null,
+          "initialState": "PRE_LOAN"
+        }
+      ],
+      "formFacts": {},
+      "weatherImpact": {
+        "river_flood": { "effect": "unfavourable", "sensitivity": 0.8, "reason": "Lane floods and the shop shuts; ground-floor stock is at risk." },
+        "flash_flood": { "effect": "unfavourable", "sensitivity": 0.6, "reason": "Waterlogging keeps customers away for a day or two." },
+        "storm": { "effect": "unfavourable", "sensitivity": 0.9, "reason": "Cyclone warnings close the market and cut power." },
+        "heat": { "effect": "neutral", "sensitivity": 0.1, "reason": "Daily essentials sell regardless of heat." },
+        "drought": { "effect": "neutral", "sensitivity": 0.05, "reason": "Urban demand is not tied to the harvest." },
+        "cold_wave": { "effect": "neutral", "sensitivity": 0, "reason": "Cold waves are rare on this coast." }
+      }
+    },
+    {
+      "id": "SME-0142",
+      "name": "Sri Ganesh Bakery",
+      "ownerName": "R. Ganesan",
+      "sector": "food",
+      "description": "Bakery and snacks counter with two ovens and a cold display, on a main road in Chennai.",
+      "city": "Chennai",
+      "state": "Tamil Nadu",
+      "lat": 13.08,
+      "lon": 80.27,
+      "contacts": {
+        "ownerEmail": "ganesh.bakery@example.com",
+        "ownerPhone": "+910000000142",
+        "bankEmail": "msme-desk@example-bank.in",
+        "consent": true
+      },
+      "finance": {
+        "monthlyRevenue": [255000, 250000, 260000, 245000, 235000, 240000, 250000, 255000, 260000, 270000, 265000, 290000],
+        "variableCostShare": 0.6,
+        "fixedMonthlyCosts": 55000,
+        "otherDebtMonthly": 0
+      },
+      "loans": [
+        {
+          "loanId": "LN-0142",
+          "principal": 500000,
+          "annualRatePct": 13,
+          "tenureMonths": 36,
+          "disbursedOn": "2026-03-01",
+          "initialState": "ACTIVE"
+        }
+      ],
+      "formFacts": {
+        "stock_perishable": "yes, baked goods and dairy",
+        "storage_level": "ground floor, cold display on the floor",
+        "insurance": "shop policy covers fire only, not flood"
+      },
+      "weatherImpact": {
+        "river_flood": { "effect": "unfavourable", "sensitivity": 0.7, "reason": "Road flooding stops walk-in trade." },
+        "flash_flood": { "effect": "unfavourable", "sensitivity": 0.7, "reason": "Waterlogging on the main road stops walk-in trade." },
+        "storm": { "effect": "unfavourable", "sensitivity": 0.8, "reason": "Power cuts spoil cold stock and stop the ovens." },
+        "heat": { "effect": "unfavourable", "sensitivity": 0.3, "reason": "Afternoon footfall drops and cooling costs rise." },
+        "drought": { "effect": "neutral", "sensitivity": 0.05, "reason": "City water supply is the main exposure." },
+        "cold_wave": { "effect": "neutral", "sensitivity": 0, "reason": "Not a hazard in Chennai." }
+      }
+    },
+    {
+      "id": "SME-0203",
+      "name": "Patil Agro Inputs",
+      "ownerName": "Vithal Patil",
+      "sector": "agri-inputs",
+      "description": "Seeds, fertiliser and pesticide dealer selling to farmers on credit around Latur. Sales follow the kharif and rabi sowing seasons.",
+      "city": "Latur",
+      "state": "Maharashtra",
+      "lat": 18.4,
+      "lon": 76.58,
+      "contacts": {
+        "ownerEmail": "patil.agro@example.com",
+        "ownerPhone": "+910000000203",
+        "bankEmail": "msme-desk@example-bank.in",
+        "consent": true
+      },
+      "finance": {
+        "monthlyRevenue": [60000, 50000, 45000, 40000, 90000, 260000, 220000, 110000, 90000, 180000, 160000, 80000],
+        "variableCostShare": 0.82,
+        "fixedMonthlyCosts": 22000,
+        "otherDebtMonthly": 9000
+      },
+      "loans": [
+        {
+          "loanId": "LN-0203",
+          "principal": 400000,
+          "annualRatePct": 15,
+          "tenureMonths": 24,
+          "disbursedOn": null,
+          "initialState": "PRE_LOAN"
+        }
+      ],
+      "formFacts": {
+        "revenue_pattern": "seasonal: kharif sowing Jun-Jul, rabi Oct-Nov"
+      }
+    },
+    {
+      "id": "SME-0307",
+      "name": "Rathore Tailoring & Alterations",
+      "ownerName": "Meena Rathore",
+      "sector": "tailoring",
+      "description": "Tailoring shop with four machines on the first floor of a market building in Jaipur. Busy in the wedding season.",
+      "city": "Jaipur",
+      "state": "Rajasthan",
+      "lat": 26.91,
+      "lon": 75.79,
+      "contacts": {
+        "ownerEmail": "rathore.tailors@example.com",
+        "ownerPhone": "+910000000307",
+        "bankEmail": "msme-desk@example-bank.in",
+        "consent": true
+      },
+      "finance": {
+        "monthlyRevenue": [160000, 150000, 120000, 115000, 110000, 105000, 105000, 110000, 120000, 140000, 165000, 170000],
+        "variableCostShare": 0.3,
+        "fixedMonthlyCosts": 35000,
+        "otherDebtMonthly": 0
+      },
+      "loans": [
+        {
+          "loanId": "LN-0307",
+          "principal": 200000,
+          "annualRatePct": 15,
+          "tenureMonths": 24,
+          "disbursedOn": null,
+          "initialState": "PRE_LOAN"
+        }
+      ],
+      "formFacts": {
+        "stock_perishable": "no, fabric and thread",
+        "storage_level": "first floor, raised shelves",
+        "insurance": "shop and stock insured, including flood",
+        "revenue_pattern": "steady, peaks in the Nov-Feb wedding season",
+        "road_power_dependency": "inverter backup for machines; shop is on a main road"
+      },
+      "weatherImpact": {
+        "heat": { "effect": "neutral", "sensitivity": 0.15, "reason": "Indoor work; some afternoon footfall is lost in May-June." },
+        "storm": { "effect": "unfavourable", "sensitivity": 0.3, "reason": "Dust storms close the market for a few hours." },
+        "flash_flood": { "effect": "neutral", "sensitivity": 0.2, "reason": "First-floor shop; customers stay away during heavy rain." },
+        "river_flood": { "effect": "neutral", "sensitivity": 0.1, "reason": "No river exposure at this site." },
+        "drought": { "effect": "neutral", "sensitivity": 0.05, "reason": "Urban trade is not tied to rainfall." },
+        "cold_wave": { "effect": "neutral", "sensitivity": 0.05, "reason": "Winter is the busy season." }
+      }
+    }
+  ]
+}
