@@ -17,7 +17,7 @@ import {
 } from "../types.js";
 import { recomputeCashflow, type CompleteDamage } from "./cashflow.js";
 import { getClimateProfile, hazardSeasons } from "./climate.js";
-import { getFinanceProfile } from "./finance.js";
+import { getFinanceProfile, type FinanceScore } from "./finance.js";
 import { getBusinessFacts, saveBusinessFact } from "./memory.js";
 import type { Channel, Messenger } from "./messaging.js";
 import { outstanding } from "./money.js";
@@ -29,6 +29,9 @@ export interface ToolDeps {
   repo: AdvisorRepository;
   climate: Pick<ClimateService, "getProfile">;
   messenger: Messenger;
+  // The finance service's latest stored score for a business, read only.
+  // Without it, or for a demo business, the finance tool carries no score.
+  financeScore?: (businessId: string) => Promise<FinanceScore | null>;
 }
 
 // What a tool may touch. The business and loan come from the request, never
@@ -139,11 +142,14 @@ export const TOOLS: ToolDefinition<unknown>[] = [
   tool({
     name: "getFinanceProfile",
     description:
-      "Revenue by month, costs, monthly net operating income, other debt and loan details for this business.",
+      "Revenue by month, costs, monthly net operating income, other debt and loan details for this business, and the finance unit's latest credit score (0-100, higher is safer) when it has one.",
     schema: empty,
     modes: ALL,
-    run: async (_input, ctx, deps) =>
-      getFinanceProfile(ctx.business, await loanStates(ctx, deps.repo), istToday(ctx.now)),
+    run: async (_input, ctx, deps) => ({
+      ...getFinanceProfile(ctx.business, await loanStates(ctx, deps.repo), istToday(ctx.now)),
+      riskScore:
+        ctx.business.origin === "input" && deps.financeScore ? await deps.financeScore(ctx.business.id) : null,
+    }),
   }),
   tool({
     name: "getClimateProfile",

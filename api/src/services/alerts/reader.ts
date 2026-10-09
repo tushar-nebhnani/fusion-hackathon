@@ -1,4 +1,5 @@
 import type { PrismaClient } from "../../generated/prisma/client.js";
+import { businessNames } from "./businesses.js";
 import { alertEventSchema } from "./types.js";
 
 export const ALERT_STATUSES = ["pending", "sending", "sent", "failed", "dead", "suppressed"] as const;
@@ -54,10 +55,7 @@ export function createAlertReader(prisma: PrismaClient): AlertReader {
         take: limit,
         include: { deliveries: { orderBy: { id: "asc" } } },
       });
-      const businesses = await prisma.alertBusiness.findMany({
-        where: { id: { in: [...new Set(rows.map((row) => row.businessId))] } },
-      });
-      const names = new Map(businesses.map((business) => [business.id, business.name]));
+      const names = await businessNames(prisma, rows.map((row) => row.businessId));
 
       const alerts = rows.map((row): AlertView => {
         const event = alertEventSchema.safeParse(row.payload);

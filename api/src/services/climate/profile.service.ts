@@ -86,6 +86,10 @@ export interface ProfileOptions {
   // Refetch the two forecast layers (weather and river) even while they are
   // fresh. History, projections, static features and screening stay cached.
   forceFreshForecast?: boolean;
+  // Screen a cell seen for the first time on this many years of history
+  // instead of from CLIMATE.historyStart. A cell already screened keeps its
+  // screening until it is reviewed again.
+  historyYears?: number;
 }
 
 // The daily values the forecast scores and events were computed from, for a
@@ -153,6 +157,13 @@ export const istDate = (date: Date) =>
 
 const toIstIso = (date: Date) =>
   `${new Date(date.getTime() + IST_OFFSET_MS).toISOString().slice(0, 19)}+05:30`;
+
+// Never earlier than CLIMATE.historyStart
+export function historyStartFor(today: string, years?: number): string {
+  if (!years) return CLIMATE.historyStart;
+  const start = `${Number(today.slice(0, 4)) - years}-01-01`;
+  return start > CLIMATE.historyStart ? start : CLIMATE.historyStart;
+}
 
 export const addDays = (isoDate: string, days: number) =>
   new Date(Date.parse(isoDate) + days * DAY_MS).toISOString().slice(0, 10);
@@ -233,6 +244,7 @@ export function createClimateService(
     };
     let upstreamCalls = 0;
     let miss = false;
+    const historyStart = historyStartFor(today, options.historyYears);
 
     const call = <T>(request: () => Promise<T>): Promise<T> => {
       upstreamCalls += 1;
@@ -497,7 +509,7 @@ export function createClimateService(
         archive = await call(() =>
           om.archive(
             cells.historical,
-            CLIMATE.historyStart,
+            historyStart,
             addDays(today, -(CLIMATE.era5DelayDays + 1)),
           ),
         );
@@ -559,7 +571,7 @@ export function createClimateService(
 
       let history: UpstreamResult | null = null;
       try {
-        history = await call(() => om.floodHistory(cells.flood, CLIMATE.historyStart, today));
+        history = await call(() => om.floodHistory(cells.flood, historyStart, today));
       } catch (error) {
         logger.warn("climate: river discharge history failed", error);
         warnings.add("river_discharge_history_unavailable: river flood treated as secondary");
@@ -1006,6 +1018,7 @@ export function createClimateService(
     return withCellLock(lockKey(cells), () =>
       run(point, cells, requesterId, startedAt, {
         forceFreshForecast: options.forceFreshForecast ?? false,
+        historyYears: options.historyYears,
       }),
     );
   }

@@ -15,7 +15,12 @@ export interface AdvisorConfig {
   maxIterations: number;
   enableDevRoutes: boolean;
   smesPath: string;
-  // How often loans in ALERT are checked for an ended window
+  // The smes.json businesses, behind the input service's. Never in production
+  demoBusinesses: boolean;
+  // Advise owners after each alert the alert system sent them (monitorAlerts.ts)
+  monitorAlerts: boolean;
+  // How often loans in ALERT are checked for an ended window, and sent
+  // alerts for new ones
   sweepSeconds: number;
 }
 
@@ -36,6 +41,8 @@ const schema = z.object({
   ADVISOR_MAX_ITERATIONS: z.coerce.number().int().min(2).max(20).catch(8),
   ADVISOR_ENABLE_DEV_ROUTES: z.enum(["true", "false"]).catch("true"),
   ADVISOR_SMES_PATH: optional,
+  ADVISOR_DEMO_BUSINESSES: z.enum(["true", "false"]).catch("true"),
+  ADVISOR_MONITOR_ALERTS: z.enum(["true", "false"]).catch("true"),
   ADVISOR_SWEEP_SECONDS: z.coerce.number().int().min(5).max(3600).catch(60),
 });
 
@@ -52,6 +59,8 @@ export function loadAdvisorConfig(source: Record<string, string | undefined> = p
     // Dev routes never run in production, whatever the flag says
     enableDevRoutes: env.ADVISOR_ENABLE_DEV_ROUTES === "true" && env.NODE_ENV !== "production",
     smesPath: env.ADVISOR_SMES_PATH ?? DEFAULT_SMES,
+    demoBusinesses: env.ADVISOR_DEMO_BUSINESSES === "true" && env.NODE_ENV !== "production",
+    monitorAlerts: env.ADVISOR_MONITOR_ALERTS === "true",
     sweepSeconds: env.ADVISOR_SWEEP_SECONDS,
   };
 }

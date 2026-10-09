@@ -148,14 +148,14 @@ export function createAdvisor(deps: AdvisorDeps) {
 
   // ── Lookups ───────────────────────────────────────────────────────────────
 
-  function requireBusiness(businessId: string): BusinessRecord {
-    const business = directory.getBusiness(businessId);
+  async function requireBusiness(businessId: string): Promise<BusinessRecord> {
+    const business = await directory.getBusiness(businessId);
     if (!business) throw new NotFoundError(`Business ${businessId} not found`);
     return business;
   }
 
-  function requireLoan(loanId: string): { business: BusinessRecord; loan: LoanRecord } {
-    const found = directory.findLoan(loanId);
+  async function requireLoan(loanId: string): Promise<{ business: BusinessRecord; loan: LoanRecord }> {
+    const found = await directory.findLoan(loanId);
     if (!found) throw new NotFoundError(`Loan ${loanId} not found`);
     return found;
   }
@@ -163,6 +163,12 @@ export function createAdvisor(deps: AdvisorDeps) {
   // A loan the advisor has not seen starts in its smes.json initial state
   async function loanState(loan: LoanRecord): Promise<LoanStateRecord> {
     const stored = await repo.getLoanState(loan.loanId);
+    // The input service marked the loan active since the advisor last saw it
+    if (stored?.state === "PRE_LOAN" && loan.initialState === "ACTIVE") {
+      const disbursed = transition(stored, "disbursed", "loan marked active by the bank", now());
+      await repo.saveLoanState(disbursed);
+      return disbursed;
+    }
     if (stored) return stored;
     const fresh: LoanStateRecord = {
       loanId: loan.loanId,
@@ -490,7 +496,7 @@ export function createAdvisor(deps: AdvisorDeps) {
   // ── Mode entry points ────────────────────────────────────────────────────
 
   async function handleChat(request: ChatRequest): Promise<TurnResult> {
-    const business = requireBusiness(request.businessId);
+    const business = await requireBusiness(request.businessId);
     let conversation: ConversationRow | null = null;
     if (request.conversationId) {
       conversation = await repo.getConversation(request.conversationId);
@@ -501,7 +507,7 @@ export function createAdvisor(deps: AdvisorDeps) {
     const loanId = request.loanId ?? conversation?.loanId ?? null;
     let loan: LoanRecord | null = null;
     if (loanId) {
-      const found = requireLoan(loanId);
+      const found = await requireLoan(loanId);
       if (found.business.id !== business.id) {
         throw new BadRequestError(`Loan ${loanId} does not belong to ${business.id}`);
       }
@@ -529,7 +535,7 @@ export function createAdvisor(deps: AdvisorDeps) {
     const results: Record<string, unknown>[] = [];
 
     for (const loanId of event.loanIds) {
-      const found = directory.findLoan(loanId);
+      const found = await directory.findLoan(loanId);
       if (!found) {
         results.push({ loanId, status: "skipped", reason: "unknown loan" });
         continue;
@@ -632,7 +638,7 @@ export function createAdvisor(deps: AdvisorDeps) {
       const issue = parsed.error.issues[0];
       throw new BadRequestError(`Invalid damage report: ${issue?.path.join(".") ?? ""} ${issue?.message ?? ""}`);
     }
-    const { business, loan } = requireLoan(loanId);
+    const { business, loan } = await requireLoan(loanId);
     const current = await loanState(loan);
     const damage: Damage = { ...current.damage, ...parsed.data, reportedOn: parsed.data.reportedOn ?? istToday(now()) };
     const state = transition(current, "damageReported", "damage report submitted", now(), { damage, alertId: null });
@@ -674,7 +680,7 @@ export function createAdvisor(deps: AdvisorDeps) {
     const proposal = await repo.getProposal(id);
     if (!proposal) throw new NotFoundError(`Proposal ${id} not found`);
     if (proposal.status !== "pending_bank") throw new ConflictError(`Proposal ${id} is already ${proposal.status}`);
-    const { loan } = requireLoan(proposal.loanId);
+    const { loan } = await requireLoan(proposal.loanId);
     const state = await loanState(loan);
     if (decision.decision === "accept" && state.state !== "IMPACTED") {
       throw new ConflictError(`Loan ${loan.loanId} is ${state.state}; only an IMPACTED loan can enter RECOVERY`);
@@ -695,7 +701,7 @@ export function createAdvisor(deps: AdvisorDeps) {
   }
 
   async function getLoanState(loanId: string) {
-    const { business, loan } = requireLoan(loanId);
+    const { business, loan } = await requireLoan(loanId);
     const state = await loanState(loan);
     return {
       loanId,
@@ -709,14 +715,14 @@ export function createAdvisor(deps: AdvisorDeps) {
   }
 
   async function bankTransition(loanId: string, event: "disbursed" | "recoveryClosed", note?: string) {
-    const { loan } = requireLoan(loanId);
+    const { loan } = await requireLoan(loanId);
     const patch = event === "recoveryClosed" ? { damage: null } : {};
     await repo.saveLoanState(transition(await loanState(loan), event, note ?? `bank: ${event}`, now(), patch));
     return getLoanState(loanId);
   }
 
   async function getConversations(businessId: string) {
-    requireBusiness(businessId);
+    await requireBusiness(businessId);
     const conversations = await repo.listConversations(businessId);
     return {
       businessId,
@@ -765,8 +771,10 @@ export function createAdvisor(deps: AdvisorDeps) {
     getLoanState,
     getConversations,
     sweepAlerts,
-    listBusinesses: () =>
-      directory.list().map((b) => ({
+    // Which business a loan belongs to, so the caller can check access first
+    businessOfLoan: async (loanId: string) => (await requireLoan(loanId)).business.id,
+    listBusinesses: async () =>
+      (await directory.list()).map((b) => ({
         id: b.id,
         name: b.name,
         sector: b.sector,

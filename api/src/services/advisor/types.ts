@@ -70,6 +70,8 @@ export const businessRecordSchema = z.object({
   formFacts: z.record(z.string(), z.string()).default({}),
   // Output of the input service's weather-impact classifier, when it has run
   weatherImpact: z.partialRecord(z.enum(HAZARDS), weatherImpactEntrySchema).optional(),
+  // Where the record came from; absent means the demo file smes.json
+  origin: z.enum(["demo", "input"]).optional(),
 });
 export type BusinessRecord = z.infer<typeof businessRecordSchema>;
 

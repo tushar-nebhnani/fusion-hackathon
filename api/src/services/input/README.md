@@ -10,9 +10,7 @@ The entry point for all data in ClimaCredit. A business owner (or a bank officer
 
 Built and tested as a standalone unit. The routes in §6 are mounted in the API, and everything inside this folder works end to end: validation, consent, derived ratios, versioned storage, the weather-impact classifier, the seed loader.
 
-**Connected:** the finance service. `server.ts` passes it as the `FinancePort`, so an authorised loan and a new snapshot on a live loan each store a finance profile (`api/src/services/finance/README.md`, §9).
-
-**Not connected yet:** the climate unit. The service calls it through a small interface (`ClimatePort` in `triggers.ts`). Until something is plugged in, each climate trigger is saved as a pending job and responses say `scoring: "pending"`. Nothing is lost: connecting the port and calling `retryPending()` delivers the backlog. See §5 and §10.
+**Connected:** the finance service and the climate unit. `server.ts` passes the finance service as the `FinancePort`, so an authorised loan and a new snapshot on a live loan each store a finance profile (`api/src/services/finance/README.md`, §9). It passes the climate unit as the `ClimatePort`: `warm(point)` calls `getProfile` with 15 years of history (`CLIMATE.warmHistoryYears`) instead of the usual 30, so a first screening uses less of Open-Meteo's allowance. A warm-up that fails stays a pending job and `retryPending()` delivers it later. The monitor, the alert system and the chat advisor read this service's tables too; the root `README.md` ("How the services connect") says how.
 
 To run it:
 
@@ -586,8 +584,6 @@ The model and the climate and finance services are stand-ins in tests (`testing/
 
 ## 10. Open items
 
-- **Connect the climate trigger.** The finance port is connected in `server.ts`. Add `climate` to the same `ports`; `climate.warm(point)` can call the climate service's `getProfile`. Pending jobs are delivered on the next `retryPending()`. Until then every response says `scoring: "pending"`, because the climate job of each business is still waiting.
-- **Active cells.** The background monitor still reads its locations from `data/monitor-locations.json`. `service.activeLocations()` is the replacement once the two are joined.
 - **Handing a business to an owner.** A business the bank or the seed created has no owner, and nothing in the API sets one; edit `businesses.owner_user_id` by hand until there is an invite or claim step.
 - **`smes.json`** is not in the repo, and its field layout was not available when the loader was written. If it differs from the entry shape in §6, convert the file or adjust `seedEntrySchema`.
 - **Ratios when a loan arrives after the snapshot.** A snapshot's `dscr` is fixed when it is saved. Decide whether applying for a loan should write a fresh snapshot, or whether finance recomputes with `deriveFinancials`.

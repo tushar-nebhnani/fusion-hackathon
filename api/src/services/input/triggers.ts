@@ -4,8 +4,8 @@ import type { LatLon } from "../climate/types.js";
 import * as store from "./store.js";
 
 // Flow step 6: what the input service asks of the other units after a save.
-// It only knows these two interfaces. Nothing is connected to them yet; a
-// trigger whose port is missing waits as a pending job until one is.
+// It only knows these two interfaces; server.ts connects both. A trigger
+// whose port is missing, or whose call fails, waits as a pending job.
 
 export interface ClimatePort {
   // The climate entry function; called so the location's cell is cached
