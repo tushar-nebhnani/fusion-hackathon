@@ -18,6 +18,7 @@ import {
   consentRequired,
   invalidStatusTransition,
   loanNotFound,
+  lockedByLoan,
   snapshotNotFound,
   type FieldErrors,
 } from "./errors.js";
@@ -87,12 +88,15 @@ export interface InputServiceDeps {
 export interface InputService {
   createBusiness(body: unknown, options?: CreateBusinessOptions): Promise<BusinessDetail>;
   // Rejects with BUSINESS_NOT_FOUND unless the business exists and the
-  // actor is a bank officer or the owner who created it
+  // actor is the owner who created it, or a bank officer it is shared with
   assertAccess(id: string, actor: Actor): Promise<void>;
   getBusiness(id: string): Promise<BusinessDetail>;
-  patchBusiness(id: string, body: unknown): Promise<BusinessDetail>;
-  replaceLocations(id: string, body: unknown): Promise<BusinessDetail>;
-  replaceSuppliers(id: string, body: unknown): Promise<BusinessDetail>;
+  // The three below change what the risk is worked out from. Once a loan is
+  // authorised or active they are the bank's to make (LOCKED_BY_LOAN);
+  // an owner can still change contacts.
+  patchBusiness(id: string, body: unknown, actor: Actor): Promise<BusinessDetail>;
+  replaceLocations(id: string, body: unknown, actor: Actor): Promise<BusinessDetail>;
+  replaceSuppliers(id: string, body: unknown, actor: Actor): Promise<BusinessDetail>;
   createSnapshot(id: string, body: unknown): Promise<{ snapshot: store.SnapshotView; scoring: Scoring }>;
   listSnapshots(id: string): Promise<store.SnapshotView[]>;
   verifySnapshot(id: string, version: string, actor: Actor): Promise<store.SnapshotView>;
@@ -158,6 +162,17 @@ export function createInputService(deps: InputServiceDeps): InputService {
   async function lockAndLoad(tx: Parameters<typeof store.lockBusiness>[0], id: string) {
     if (!(await store.lockBusiness(tx, id))) throw businessNotFound(id);
     return required(tx, id);
+  }
+
+  // Inside the save, after the business is locked: an owner cannot move
+  // the premises or restate the business from under a loan the bank made
+  async function assertUnlocked(
+    tx: Parameters<typeof store.lockBusiness>[0],
+    id: string,
+    actor: Actor,
+    what: string,
+  ): Promise<void> {
+    if (actor.role !== "bank" && (await store.hasMonitoredLoan(tx, id))) throw lockedByLoan(what);
   }
 
   async function scoringOf(id: string): Promise<Scoring> {
@@ -278,20 +293,26 @@ export function createInputService(deps: InputServiceDeps): InputService {
 
     async assertAccess(id, actor) {
       const business = await store.businessOwner(prisma, id);
+      // The bank sees what it entered itself and what the owner agreed to
+      // share (consent.share_with_bank)
+      const allowed =
+        business !== null &&
+        (actor.role === "bank"
+          ? business.ownerUserId === null || business.sharedWithBank
+          : business.ownerUserId === actor.id);
       // Someone else's business looks the same as one that does not exist
-      if (!business || (actor.role !== "bank" && business.ownerUserId !== actor.id)) {
-        throw businessNotFound(id);
-      }
+      if (!allowed) throw businessNotFound(id);
     },
 
     getBusiness(id) {
       return detail(id);
     },
 
-    async patchBusiness(id, body) {
+    async patchBusiness(id, body, actor) {
       const patch = parseBody(patchBusinessSchema, body);
       const scheduled = await prisma.$transaction(async (tx) => {
         const current = await lockAndLoad(tx, id);
+        if (patch.profile || patch.operations) await assertUnlocked(tx, id, actor, "profile or operations");
         const errors: FieldErrors = {};
         const next: Parameters<typeof store.updateBusiness>[2] = {};
         if (patch.profile) {
@@ -315,13 +336,14 @@ export function createInputService(deps: InputServiceDeps): InputService {
       return detail(id, await runTriggers(id));
     },
 
-    async replaceLocations(id, body) {
+    async replaceLocations(id, body, actor) {
       const errors: FieldErrors = {};
       const locations = checkLocations(parseBody(locationsSchema, body), errors, "");
       assertValid(errors);
 
       const scheduled = await prisma.$transaction(async (tx) => {
         await lockAndLoad(tx, id);
+        await assertUnlocked(tx, id, actor, "locations");
         await store.replaceLocations(tx, id, locations);
         const { lat, lon } = locations.primary;
         await store.dropPendingJobs(tx, id, "climate_warm");
@@ -334,13 +356,14 @@ export function createInputService(deps: InputServiceDeps): InputService {
       return detail(id, await runTriggers(id));
     },
 
-    async replaceSuppliers(id, body) {
+    async replaceSuppliers(id, body, actor) {
       const errors: FieldErrors = {};
       const suppliers = checkSuppliers(parseBody(replaceSuppliersSchema, body).suppliers, errors);
       assertValid(errors);
 
       await prisma.$transaction(async (tx) => {
         await lockAndLoad(tx, id);
+        await assertUnlocked(tx, id, actor, "suppliers");
         await store.replaceSuppliers(tx, id, suppliers);
       });
       return detail(id, await runTriggers(id));

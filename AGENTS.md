@@ -11,6 +11,7 @@ Instructions for any AI coding agent working here. `README.md` is the reference:
 | `api/src/services/climate/monitor/` | The background monitor. Has its own `README.md` | Yes |
 | `api/src/services/alerts/` | The email alert system. Design in `job.md` | Yes |
 | `api/src/services/auth/` | Sign in with Google, sessions and roles | Yes |
+| `api/src/services/finance/` | The finance service: baseline and climate-adjusted scores. Has its own `README.md` | Yes |
 | `api/src/services/input/` | The input service, still being built | Only when asked. It is not documented here or in `README.md` yet |
 | `web/` | Untouched Next.js 16 scaffold | Read `web/AGENTS.md` first |
 | `ml/` | Python project with dependencies only | Nothing to work on yet |
@@ -53,10 +54,11 @@ All three must pass before you say a task is done. If one fails, say so and show
 - **Show a major change to existing code before making it.** If a fix or update rewrites behaviour that already works, describe the change and wait for the owner's approval. New files and small, local fixes do not need this.
 - **Every endpoint is rate limited and honours `Idempotency-Key`.** Both are mounted once in `createApp` (`src/app.ts`). Mount new routes below them, and add a stricter limit there if a request is expensive.
 - **Every endpoint needs a signed-in user unless it is meant to be public.** Mount new routes with `requireAuth` or `requireBank` from `src/middleware/auth.ts`; without one a route is open. Only `/health`, `/demo` and `/auth` are public.
+- **Every write and every refusal is audited.** `auditTrail` in `src/middleware/audit.ts` records them for all routes. In a new handler, call `auditNote(res, { target })` to name the record it changes. Never put a request body, token or financial value in an event, and never update or delete `audit_events`.
 - **Do not commit or push unless asked.** Never commit `.env` files or `src/generated/`.
 - **Do not read out or copy secrets** from `api/.env`. `api/.env.example` lists every variable.
 - **Keep `README.md` true.** When you change a threshold, endpoint, table, setting or command, update the README in the same piece of work. It is the handover document.
-- **Do not weaken a safety limit to make something pass**: the agent's raise-only rule, the alert consent and cooldown checks, the test database name check, the strict response schema, or the sign-in, ownership and `Origin` checks.
+- **Do not weaken a safety limit to make something pass**: the agent's raise-only rule, the finance score's uplift cap, the alert consent and cooldown checks, the test database name check, the strict response schema, the loan lock on an owner's changes, or the sign-in, ownership, sharing-consent and `Origin` checks.
 
 ## Commands that reach outside this machine
 
@@ -81,7 +83,7 @@ Do not change `ALERTS_MODE`, `MONITOR_ALERT_SINK` or the OpenAI key in `api/.env
 - **Names:** snake_case in API responses and database columns (through Prisma `@map`), camelCase in TypeScript. Unused arguments start with `_`.
 - **Dates and timestamps are in IST** (`Asia/Kolkata`).
 - **Tunable numbers live in `src/config/climate.ts`**, or `LIMITS` and `HAZARD_CATALOG` in `hazards.ts`. Do not put a threshold in the middle of a function.
-- **Settings that must not stop the API** (`ALERTS_*`, `SMTP_*`, `MONITOR_*`) are read by their own `config.ts` and fall back to defaults. Only `src/config/env.ts` may exit the process.
+- **Settings that must not stop the API** (`ALERTS_*`, `SMTP_*`, `MONITOR_*`, `INPUT_*`, `FINANCE_*`) are read by their own `config.ts` and fall back to defaults. Only `src/config/env.ts` may exit the process.
 - **Comments are short** and say why, not what. Write code that reads like the code around it.
 
 ## Where to make a change
@@ -90,6 +92,8 @@ Do not change `ALERTS_MODE`, `MONITOR_ALERT_SINK` or the OpenAI key in `api/.env
 | --- | --- |
 | A threshold, weight, cache lifetime or grid size | `src/config/climate.ts`, or `LIMITS` / `HAZARD_CATALOG` in `services/climate/hazards.ts` |
 | A monitor interval, rain class or timeout | The `monitor` section of `src/config/climate.ts` |
+| A finance weight, score band, stress cap or penalty | `FINANCE` in `src/services/finance/config.ts`, then bump `FINANCE.modelVersion` |
+| The finance profile's shape | `services/finance/profile/schema.ts`, then `buildProfile` in `profile/build.ts`. The schema is strict |
 | The profile response shape | `services/climate/schema.ts`, then the object built at the end of `run()` in `profile.service.ts`. The schema is strict: an extra key fails with `INVALID_OUTPUT` |
 | What the climate agent is told | `src/prompts/climate.ts`, then bump `CLIMATE.agent.promptVersion` |
 | An endpoint | A handler in `src/controllers/`, registered in `src/routes/`, mounted in `src/app.ts` with `requireAuth` or `requireBank` |

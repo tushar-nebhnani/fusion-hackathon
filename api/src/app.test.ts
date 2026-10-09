@@ -239,6 +239,28 @@ describe("app", () => {
     expect(res.headers).not.toHaveProperty("x-powered-by");
   });
 
+  it("sends the security headers on every answer, errors included", async () => {
+    for (const path of ["/health", "/climate/cell/x", "/nowhere"]) {
+      const res = await request(app()).get(path);
+
+      expect(res.headers).toMatchObject({
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "referrer-policy": "no-referrer",
+        "cache-control": "no-store",
+      });
+      expect(res.headers).not.toHaveProperty("strict-transport-security");
+    }
+  });
+
+  it("adds HSTS only when the session cookie is Secure", async () => {
+    const res = await request(
+      app({ auth: { service: fakeAuth(), cookie: { sameSite: "none", secure: true } } }),
+    ).get("/health");
+
+    expect(res.headers["strict-transport-security"]).toBe("max-age=31536000; includeSubDomains");
+  });
+
   it("rejects request bodies over 10kb", async () => {
     const res = await request(app())
       .post("/climate/profile")

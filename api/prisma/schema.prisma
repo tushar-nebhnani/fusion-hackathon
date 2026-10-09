@@ -461,6 +461,7 @@ model Business {
   loans          Loan[]
   impactProfiles WeatherImpactProfile[]
   triggerJobs    InputTriggerJob[]
+  financeProfiles FinanceProfile[]
 
   @@index([ownerUserId])
   @@map("businesses")
@@ -609,6 +610,55 @@ model InputRequestLog {
   @@map("input_request_log")
 }
 
+// ---- Finance service ----
+
+// One row per generated finance profile. Append only: the history is kept
+// for comparisons and as future ML training labels.
+model FinanceProfile {
+  id              Int      @id @default(autoincrement())
+  businessId      String   @map("business_id")
+  snapshotVersion Int      @map("snapshot_version")
+  // request | first_profile | recompute
+  trigger         String
+  baselineScore   Int      @map("baseline_score")
+  // Null when the climate unit could not be reached
+  adjustedScore   Int?     @map("adjusted_score")
+  scorerSource    String   @map("scorer_source")
+  modelVersion    String   @map("model_version")
+  // The raw numbers the metrics were computed from
+  inputs          Json
+  // The validated response, as it was returned
+  profile         Json
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, createdAt])
+  @@map("finance_profiles")
+}
+
+model FinanceRequestLog {
+  id                Int      @id @default(autoincrement())
+  requestId         String   @map("request_id")
+  // profile | scenario | evaluate_location | repayment_capacity
+  operation         String
+  businessId        String?  @map("business_id")
+  ok                Boolean
+  errorCode         String?  @map("error_code")
+  sensitivitySource String?  @map("sensitivity_source")
+  scorerSource      String?  @map("scorer_source")
+  // What was used in place of the usual source, e.g. "climate_unavailable"
+  fallbacks         Json
+  // Milliseconds per pipeline stage
+  stageMs           Json     @map("stage_ms")
+  latencyMs         Int      @map("latency_ms")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([createdAt])
+  @@index([businessId, createdAt])
+  @@map("finance_request_log")
+}
+
 // ---- Authentication (Sign in with Google) ----
 
 // One row per Google account that has signed in. The role is not stored: it
@@ -641,4 +691,33 @@ model Session {
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+// ---- Security audit trail ----
+
+// One row per security-relevant request: who did what to which record, and
+// how it ended. Append only: a trigger refuses UPDATE and DELETE. It never
+// holds request bodies, tokens or financial values.
+model AuditEvent {
+  id         Int      @id @default(autoincrement())
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz
+  // Also sent to the client as X-Request-Id
+  requestId  String   @map("request_id")
+  // User id; null when nobody was signed in
+  actorId    String?  @map("actor_id")
+  actorRole  String?  @map("actor_role")
+  // Method and route pattern, e.g. "PUT /businesses/:id/locations"
+  action     String
+  targetType String?  @map("target_type")
+  targetId   String?  @map("target_id")
+  // success | denied | failure
+  outcome    String
+  status     Int
+  // Error code of a request that did not succeed
+  reason     String?
+
+  @@index([occurredAt])
+  @@index([actorId, occurredAt])
+  @@index([targetType, targetId, occurredAt])
+  @@map("audit_events")
 }

@@ -114,8 +114,14 @@ export async function insertBusiness(
 }
 
 // Null when the business does not exist
-export function businessOwner(db: Db, id: string): Promise<{ ownerUserId: string | null } | null> {
-  return db.business.findUnique({ where: { id }, select: { ownerUserId: true } });
+export async function businessOwner(
+  db: Db,
+  id: string,
+): Promise<{ ownerUserId: string | null; sharedWithBank: boolean } | null> {
+  const row = await db.business.findUnique({ where: { id }, select: { ownerUserId: true, consent: true } });
+  if (!row) return null;
+  const consent = row.consent as Partial<Consent> | null;
+  return { ownerUserId: row.ownerUserId, sharedWithBank: consent?.share_with_bank === true };
 }
 
 export async function getBusiness(db: Db, id: string): Promise<BusinessView | null> {

@@ -19,6 +19,9 @@ export interface AuthEnv {
   // Lower-cased emails and domains whose users are bank officers
   bankEmails: string[];
   bankDomains: string[];
+  // False while the owner/bank split is switched off: every signed-in user
+  // is then a bank officer. Always true in production.
+  rolesEnforced: boolean;
   // Browser origins, other than the API's own, that may call it with the cookie
   allowedOrigins: string[];
   // `none` is needed when the frontend is on a different site from the API
@@ -38,6 +41,9 @@ const schema = z.object({
   GOOGLE_CLIENT_ID: z.string().catch(""),
   AUTH_BANK_EMAILS: z.string().catch(""),
   AUTH_BANK_DOMAINS: z.string().catch(""),
+  // Anything but an explicit "false" keeps the roles on, and production
+  // keeps them on whatever this says
+  AUTH_ROLES_ENFORCED: z.enum(["true", "false"]).catch("true"),
   AUTH_ALLOWED_ORIGINS: z.string().catch("http://localhost:3000"),
   AUTH_COOKIE_SAMESITE: z.enum(["lax", "none"]).catch("lax"),
   NODE_ENV: z.string().catch("development"),
@@ -50,6 +56,7 @@ export function loadAuthEnv(source: NodeJS.ProcessEnv = process.env): AuthEnv {
     googleClientId: parsed.GOOGLE_CLIENT_ID.trim() || null,
     bankEmails: list(parsed.AUTH_BANK_EMAILS),
     bankDomains: list(parsed.AUTH_BANK_DOMAINS).map((domain) => domain.replace(/^@/, "")),
+    rolesEnforced: parsed.AUTH_ROLES_ENFORCED === "true" || parsed.NODE_ENV === "production",
     // Origins are compared as the browser sends them, without a trailing slash
     allowedOrigins: list(parsed.AUTH_ALLOWED_ORIGINS).map((origin) => origin.replace(/\/+$/, "")),
     cookieSameSite,

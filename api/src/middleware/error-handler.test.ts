@@ -89,22 +89,11 @@ describe("error handling middleware", () => {
     const res = await request(buildApp()).get("/boom");
 
     expect(res.status).toBe(500);
-    expect(res.body).toEqual({
-      error: { code: "INTERNAL_ERROR", message: "kaboom" },
-    });
-    expect(console.error).toHaveBeenCalledOnce();
-  });
-
-  it("hides unexpected error messages in production", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    vi.resetModules();
-    const production = await import("./error-handler.js");
-
-    const res = await request(buildApp(production.errorHandler)).get("/boom");
-
-    expect(res.status).toBe(500);
+    // The message stays in the log, in development as well as production
     expect(res.body).toEqual({
       error: { code: "INTERNAL_ERROR", message: "Internal server error" },
     });
+    expect(JSON.stringify(res.body)).not.toContain("kaboom");
+    expect(console.error).toHaveBeenCalledOnce();
   });
 });

@@ -8,10 +8,11 @@ This README is the handover document for anyone, human or AI agent, picking up t
 
 | Part | Folder | State |
 | --- | --- | --- |
-| Climate risk API | `api/` | Built and tested. 686 tests pass across `api/`; typecheck and lint are clean. |
+| Climate risk API | `api/` | Built and tested. 789 tests pass across `api/`; typecheck and lint are clean. |
 | Climate agent | `api/src/services/climate/agent.ts` | Built. Optional: an OpenAI model reviews the screening and scores the forecast. Off without an API key. |
 | Alert system | `api/src/services/alerts/` | Built. Email warnings to business owners and banks, sent by a separate worker process. SMS was removed (see `RESOLVE_LATER.md`). Triggered by the background monitor. |
 | Background monitor | `api/src/services/climate/monitor/` | Built. Part of the climate unit, run as its own process. Watches locations with active loans, checks them more often when the forecast worsens, queues alerts and records events for the ML model. The loans DB and logs system it will read from and write to are stand-ins. |
+| Finance service | `api/src/services/finance/` | Built. Baseline financial health score and a climate-adjusted score per business, from the input service's data and the climate profile. Rule-based; the ML scorer is a stub. Has its own `README.md`. |
 | Demo page | `api/public/index.html` | Built. A single static page served by the API at `/demo/`. |
 | Web frontend | `web/` | Untouched `create-next-app` scaffold. No project UI yet. |
 | ML service | `ml/` | Dependencies declared only. No code, models, data or tests. |
@@ -78,16 +79,21 @@ The climate agent is off until you put an `OPENAI_API_KEY` in `api/.env`. Withou
 | `PORT` | `4000` | |
 | `DATABASE_URL` | none, required | `postgresql://fusion:fusion@localhost:5432/fusion?schema=public` matches Docker Compose |
 | `REDIS_URL` | `redis://localhost:6379` | Matches Docker Compose. The API still works when Redis is unreachable |
+| `TRUST_PROXY` | `0` | Number of reverse proxies in front of the API. Set it when deployed behind one; at `0` there, every client shares one rate limit |
 | `OPENAI_API_KEY` | none | Enables the climate agent. Blank means not set |
 | `CLIMATE_AGENT_ENABLED` | `true` | Set to `false` to switch the agent off while keeping the key |
 | `CLIMATE_AGENT_MODEL` | `gpt-5-nano` | OpenAI model the agent uses |
 | `GOOGLE_CLIENT_ID` | none | OAuth client ID for Sign in with Google. Blank means nobody can sign in, so every protected route answers 401 |
 | `AUTH_BANK_EMAILS` | none | Comma-separated emails of bank officers |
 | `AUTH_BANK_DOMAINS` | none | Comma-separated email domains whose users are all bank officers |
+| `AUTH_ROLES_ENFORCED` | `true` | `false` gives every signed-in user the bank role and ignores the two lists above. Only an exact `false` switches roles off, and it is ignored when `NODE_ENV=production` |
 | `AUTH_ALLOWED_ORIGINS` | `http://localhost:3000` | Comma-separated frontend origins allowed to call the API with the session cookie |
 | `AUTH_COOKIE_SAMESITE` | `lax` | `lax` or `none`. Use `none` when the frontend is on a different site from the API; the cookie is then also `Secure`, so it needs HTTPS |
 
-The first seven are validated at startup by `api/src/config/env.ts`; the process exits if one is invalid. The sign-in variables (`GOOGLE_CLIENT_ID`, `AUTH_*`) are read by `api/src/services/auth/config.ts` and are described under [Authentication](#authentication). The alert system's variables (`ALERTS_*`, `SMTP_*`) are listed under [The alert system](#the-alert-system), and the monitor's (`MONITOR_*`) under [The background monitor](#the-background-monitor). All of these are read separately, so a bad one never stops the API. Open-Meteo needs no key: its free tier is used without one.
+| `FINANCE_SCORER` | `rules` | `rules` or `ml`. `ml` sends the metrics to `FINANCE_ML_URL` and falls back to the rules if the call fails |
+| `FINANCE_ML_URL` | none | Scoring endpoint of the Python model, which is not built yet |
+
+The first seven are validated at startup by `api/src/config/env.ts`; the process exits if one is invalid. The sign-in variables (`GOOGLE_CLIENT_ID`, `AUTH_*`) are read by `api/src/services/auth/config.ts` and are described under [Authentication](#authentication). The finance service's (`FINANCE_*`) are read by `api/src/services/finance/config.ts`. The alert system's variables (`ALERTS_*`, `SMTP_*`) are listed under [The alert system](#the-alert-system), and the monitor's (`MONITOR_*`) under [The background monitor](#the-background-monitor). All of these are read separately, so a bad one never stops the API. Open-Meteo needs no key: its free tier is used without one.
 
 ### API commands (run inside `api/`)
 
@@ -137,7 +143,14 @@ When the climate agent is on, an OpenAI model does two jobs on top of the rules:
 | `GET` | `/climate/cell/:cellId` | signed in | Debug view of what is stored for one grid cell, without raw payloads |
 | `GET` | `/alerts?limit=..&business_id=..&status=..` | bank | Recent alerts, newest first, each with its send attempts and the message as rendered. Never includes who it was sent to |
 
-The input service's routes (`/businesses`, `/loans`, `/seed`) are listed in `api/src/services/input/README.md`. All of them need a signed-in user.
+| `GET` | `/finance/business/:id/profile` | owner of it, bank | Finance profile: baseline score, stress test per hazard, climate-adjusted score and drivers. Stores each one |
+| `GET` | `/finance/business/:id/profiles` | owner of it, bank | Stored finance profiles of a business, newest first |
+| `POST` | `/finance/business/:id/scenario` | owner of it, bank | Stress test for a hypothetical event. Body: `{"hazard", "severity", "duration_months"?}` |
+| `POST` | `/finance/business/:id/repayment-capacity` | owner of it, bank | Largest affordable EMI and monthly shortfall. Body: `{"revenue_drop_pct", "months"}` |
+| `POST` | `/finance/evaluate-location` | signed in | Scores an unsaved business at a candidate location. Body: `{"business", "lat", "lon"}` |
+| `GET` | `/finance/demo` | signed in | Runs a built-in sample business through the finance pipeline |
+
+The input service's routes (`/businesses`, `/loans`, `/seed`) are listed in `api/src/services/input/README.md`. All of them need a signed-in user. The finance routes, their bodies and the profile's shape are described in `api/src/services/finance/README.md`.
 
 Request bodies are limited to 10 kB.
 
@@ -157,13 +170,19 @@ Users sign in with Google. There are no passwords and no API keys.
 
 **Roles.** A user is either an `owner` or a `bank` officer. The role is not stored: on every request it is worked out from the user's email and the `AUTH_BANK_EMAILS` and `AUTH_BANK_DOMAINS` settings, so changing those settings and restarting the API changes existing sessions too. Everyone not listed is an owner.
 
+With `AUTH_ROLES_ENFORCED=false` there is no split: every signed-in user is a bank officer, so they can call every route and open every business. Signing in is still required. The API prints a warning at startup while this is on, and ignores the setting when `NODE_ENV=production`. It is meant for the period before bank officers are named, not for a deployment that holds real data.
+
 | Role | Can do |
 | --- | --- |
 | Not signed in | `/health`, `/demo/`, `/auth/config`, `/auth/google`, `/auth/logout` |
 | `owner` | `/climate/*`, and the businesses they created through `POST /businesses` |
-| `bank` | Everything an owner can, every business, `/alerts`, the bank-only input routes and `POST /seed/smes` |
+| `bank` | Everything an owner can, every business shared with the bank, `/alerts`, the bank-only input routes and `POST /seed/smes` |
 
-An owner who asks for another owner's business gets 404 `BUSINESS_NOT_FOUND`, the same answer as for a business that does not exist. Seeded businesses and businesses created by a bank officer have no owner, so only bank officers can open them.
+An owner who asks for another owner's business gets 404 `BUSINESS_NOT_FOUND`, the same answer as for a business that does not exist. Seeded businesses and businesses created by a bank officer have no owner, so only bank officers can open them. A bank officer who asks for a business whose owner did not agree to share it (`consent.share_with_bank` is `false`) gets the same 404.
+
+**Once a loan is authorised or active**, the business's profile, operations, locations and suppliers can be changed by a bank officer only; the owner gets 403 `LOCKED_BY_LOAN`. These are what the risk is worked out from, and the primary location decides which cell the monitor watches. The owner can still change contacts and add financial snapshots.
+
+**Audit trail.** Every answer carries an `X-Request-Id`. One row goes to `audit_events` for each write (`POST`, `PUT`, `PATCH`, `DELETE`), each refusal (401 or 403) and each failed attempt to open a business: the request id, the user id and role, the action as method and route (`PUT /businesses/:id/locations`), the record it was about, the outcome (`success`, `denied` or `failure`), the status and the error code. Request bodies, tokens and financial values are never stored. Plain reads and rate-limited requests are not recorded. The table is append only: a database trigger refuses `UPDATE` and `DELETE`. There is no endpoint that reads it; query the database.
 
 **Requests from other websites.** Because the session is a cookie, the API checks the `Origin` header that browsers attach. Origins in `AUTH_ALLOWED_ORIGINS` get CORS headers with credentials allowed. A `POST`, `PUT`, `PATCH` or `DELETE` from any other origin is refused with 403 `ORIGIN_NOT_ALLOWED`. Requests with no `Origin` header (curl, other servers) and pages the API serves itself are not affected.
 
@@ -182,7 +201,7 @@ curl -X POST http://localhost:4000/climate/profile \
 
 Both are applied to the whole app in `createApp`, so a new route gets them without extra code.
 
-**Rate limits** are per client, over one minute. Every route allows 120 requests. `/climate/*` also has its own limit of 60, because one request there can cost several upstream calls, and `/auth/*` has a limit of 20. Responses carry the standard `RateLimit` headers. Over the limit, the answer is 429 `RATE_LIMITED`.
+**Rate limits** are per client, over one minute. Every route allows 120 requests. `/climate/*` also has its own limit of 60, because one request there can cost several upstream calls, `/auth/*` has a limit of 20, and `/finance/*` has a limit of 30, because a profile can cost a climate lookup. Responses carry the standard `RateLimit` headers. Over the limit, the answer is 429 `RATE_LIMITED`.
 
 **Idempotency** applies to `POST`, `PUT`, `PATCH` and `DELETE`. Send an `Idempotency-Key` header (1 to 255 printable ASCII characters, no spaces) and a retry with the same key gets the first response back, with `Idempotency-Replayed: true`, without running the request again. The header is optional.
 
@@ -281,12 +300,14 @@ Every error has the same shape:
 | 403 | `FORBIDDEN` | A bank-only route was called by an owner |
 | 403 | `ORIGIN_NOT_ALLOWED` | A write came from a website that is not in `AUTH_ALLOWED_ORIGINS` |
 | 404 | `NOT_FOUND` | Unknown route or method, or a valid cell with no data |
-| 429 | `RATE_LIMITED` | Over 120 requests per minute, over 60 on `/climate/*`, or over 20 on `/auth/*` |
+| 409 | `NO_FINANCIALS` | A finance profile was asked for a business with no financial snapshot |
+| 429 | `RATE_LIMITED` | Over 120 requests per minute, over 60 on `/climate/*`, over 20 on `/auth/*`, or over 30 on `/finance/*` |
 | 503 | `AUTH_NOT_CONFIGURED` | `GOOGLE_CLIENT_ID` is not set |
 | 503 | `AUTH_UNAVAILABLE` | Google's signing keys could not be downloaded |
 | 503 | `UPSTREAM_UNAVAILABLE` | Weather history could not be fetched and nothing is cached |
 | 500 | `INVALID_OUTPUT` | The generated profile failed its own schema check |
-| 500 | `INTERNAL_ERROR` | Anything unexpected. The message is hidden in production |
+| 403 | `LOCKED_BY_LOAN` | An owner tried to change the profile, operations, locations or suppliers of a business with an authorised or active loan |
+| 500 | `INTERNAL_ERROR` | Anything unexpected. The message is always `Internal server error`; the detail is in the server log beside the request id |
 
 Validation runs in a fixed order: presence, type, range, coverage. Coordinates are rounded to 4 decimal places, about 10 metres.
 
@@ -494,7 +515,7 @@ Two things it depends on are not built, so they sit behind small interfaces in `
 ```
 api/
 ├── prisma/schema.prisma          Database schema
-├── prisma/migrations/            Six migrations: climate_tool, idempotency_keys, alerts, climate_monitor, input_service, auth
+├── prisma/migrations/            Eight migrations: climate_tool, idempotency_keys, alerts, climate_monitor, input_service, auth, finance_service, audit_events
 ├── data/monitor-locations.json   Locations the monitor watches, until the loans DB exists
 ├── prisma.config.ts              Prisma 7 config; the datasource URL lives here
 ├── public/index.html             Demo page, served at /demo/
@@ -502,7 +523,7 @@ api/
 ├── vitest.global-setup.ts        Applies migrations to the test database
 └── src/
     ├── server.ts                 Entry point: connects, wires dependencies, listens
-    ├── app.ts                    createApp(deps): rate limits, CORS, sessions, idempotency, routes
+    ├── app.ts                    createApp(deps): security headers, audit trail, rate limits, CORS, sessions, idempotency, routes
     ├── config/
     │   ├── env.ts                Validated environment variables
     │   ├── db.ts                 Prisma client, connectDb, disconnectDb
@@ -513,10 +534,12 @@ api/
     │   ├── error-handler.ts      404 handler and the single error formatter
     │   ├── rate-limit.ts         rateLimiter(limit): per-client, one minute window
     │   ├── cors.ts               CORS for the allowed frontends, and the Origin check on writes
+    │   ├── security-headers.ts   No caching, framing or type sniffing on any answer; HSTS when the cookie is Secure
+    │   ├── audit.ts              auditTrail: the request id and one audit event per write or refusal; auditNote names the record
     │   ├── auth.ts               loadSession, requireAuth, requireBank: who is calling and who may
     │   └── idempotency.ts        Idempotency-Key handling and the in-memory store
-    ├── routes/                   health.ts, auth.ts, climate.ts, alerts.ts
-    ├── controllers/              auth, climate and alerts controllers: parse input, call the service
+    ├── routes/                   health.ts, auth.ts, climate.ts, alerts.ts, finance.ts
+    ├── controllers/              auth, climate, alerts and finance controllers: parse input, call the service
     ├── jobs/climate-refresh.ts   Six-hourly forecast refresh of every known location
     ├── prompts/climate.ts        The agent's two system prompts
     ├── generated/prisma/         Generated client. Gitignored; never edit
@@ -528,6 +551,14 @@ api/
         │   ├── google.ts         Verifies a Google ID token
         │   ├── service.ts        Sign-in, session lookup, sign-out, roles
         │   └── testing/fake-auth.ts   Stand-ins for the auth service and for Google
+        ├── finance/              The finance service; see its README.md
+        │   ├── service.ts            The pipeline and the four tool-ready functions
+        │   ├── config.ts             FINANCE: every weight, band, cap and limit; FINANCE_* settings
+        │   ├── metrics/compute.ts    Financial ratios and the amortisation formula
+        │   ├── scoring/              baseline, scorer (rules and the ML stub), sensitivity, stress, adjusted
+        │   ├── profile/              Output schema; assembling and validating the profile
+        │   ├── store.ts              finance_profiles and finance_request_log
+        │   └── testing/fixtures.ts   Sample inputs and a stand-in climate unit
         ├── alerts/
         │   ├── job.md                The design document
         │   ├── index.ts              enqueue(), the only function other modules call
@@ -584,13 +615,14 @@ Where to change things:
 - **A monitor interval, rain class or timeout**: the `monitor` section of `src/config/climate.ts`. Heat, gust and cold thresholds are the climate unit's `LIMITS`.
 - **The response shape**: `schema.ts`, then the object built at the end of `run()`. The schema is strict, so an extra key fails with `INVALID_OUTPUT`.
 - **What the agent is told**: `src/prompts/climate.ts`, then bump `CLIMATE.agent.promptVersion`.
+- **A finance weight, score band, stress cap or penalty**: `FINANCE` in `src/services/finance/config.ts`, then bump `FINANCE.modelVersion`.
 - **A rate limit**: `rateLimit` and `climateRateLimit` in `createApp`'s arguments; the defaults are in `app.ts`.
 - **A new endpoint**: add a handler in a controller and register it in `routes/`. Throw an `AppError`; do not format error responses by hand. It inherits the global rate limit and idempotency; add a stricter limit in `app.ts` if a request is expensive.
 - **A database column**: edit `schema.prisma`, then run `npm run db:migrate`.
 
 ## Database
 
-Nineteen tables are described here, all defined in `api/prisma/schema.prisma`. The input service's tables are described in `api/src/services/input/README.md`.
+Twenty-two tables are described here, all defined in `api/prisma/schema.prisma`. The input service's tables are described in `api/src/services/input/README.md`.
 
 | Table | Holds |
 | --- | --- |
@@ -613,6 +645,9 @@ Nineteen tables are described here, all defined in `api/prisma/schema.prisma`. T
 | `sessions` | One row per signed-in browser: the hash of the session token, the user and the expiry |
 | `monitored_cells` | One row per watched forecast cell: level, calm count, next check time, the last check's snapshot, and the lease of the monitor checking it |
 | `disaster_events` | One row per sudden change the monitor detected, with the forecast values, and later the observed values and a `hit`, `false_alarm` or `missed` label |
+| `finance_profiles` | Every finance profile generated, append only: the response, the raw inputs behind it, the snapshot version, both scores, the scorer and the model version |
+| `audit_events` | The security audit trail, append only: who (user id and role) did what (method and route) to which record, the outcome and the request id. See [Authentication](#authentication) |
+| `finance_request_log` | One row per finance call: request id, operation, business, outcome, sources, fallbacks used and milliseconds per stage |
 
 A cached response is identified by cell, API name and a hash of the requested variables. Observed and projection metrics use the Unix epoch as `issued_at`, so refetching history never duplicates a day.
 
@@ -631,6 +666,7 @@ npm test
 - `src/services/alerts/worker.test.ts` runs the alert worker against real Postgres with a fake email provider and a controllable clock. Tests never call SMTP.
 - The route tests in `src/routes/climate.test.ts` are integration tests: the real Express app and real Postgres, with a controllable clock. They truncate all climate tables before each test.
 - The monitor's tests are in `src/services/climate/monitor/`. The rules, cadence, cells and labelling are pure and need no database. `tick.test.ts` and `verifyJob.test.ts` use real Postgres with the climate pipeline stubbed, and `integration.test.ts` runs the monitor on the real pipeline with `fakeOpenMeteo`.
+- The finance service's unit tests are in `src/services/finance/` and need no database. `src/routes/finance.test.ts` runs every finance route against real Postgres and the real input service, with a stand-in climate unit (`finance/testing/fixtures.ts`) and, in one test, the real climate pipeline on `fakeOpenMeteo`.
 - Test files run one after another (`fileParallelism: false`), because the climate and monitor suites empty the same tables.
 - The full run takes about two minutes, because a cache miss stores roughly 30 years of daily metrics.
 
@@ -678,7 +714,9 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 ## Not built yet
 
 - The frontend. `web/` still shows the default Next.js page. The only UI is the static demo page at `/demo/`.
-- The ML service and the financial side of the score. `ml/` is empty, and the API has no route that talks to it. The climate profile is currently the only output.
+- The ML service. `ml/` is empty. The finance service scores with rules; its ML scorer is a stub that would call a model over HTTP (`FINANCE_SCORER=ml`), and no model exists.
+- The advisory chat. The finance service exports four tool-ready functions for it; nothing calls them as tools yet.
+- `smes.json`, the synthetic SME data. The input service's seed loader and the finance tests are written without it.
 - A way to manage users. Bank officers are named in `api/.env`; there is no admin screen, and no way to hand a business to a different owner except by editing `businesses.owner_user_id`.
 - `request_log.requester_id` for signed-in users. It is still null for every client request; only the monitor sets it.
 - The World Bank flood exposure raster. `createClimateService` accepts an `exposure` provider, but none is passed, so every response carries a `flood_exposure_unavailable` warning and confidence is `med` at best.

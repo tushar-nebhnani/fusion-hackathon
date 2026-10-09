@@ -39,6 +39,8 @@ export interface AuthServiceDeps {
   verifier?: GoogleVerifier;
   bankEmails?: readonly string[];
   bankDomains?: readonly string[];
+  // False makes every signed-in user a bank officer. On unless switched off.
+  rolesEnforced?: boolean;
   now?: () => Date;
 }
 
@@ -57,10 +59,12 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
   const now = deps.now ?? (() => new Date());
   const bankEmails = new Set(deps.bankEmails ?? []);
   const bankDomains = new Set(deps.bankDomains ?? []);
+  const rolesEnforced = deps.rolesEnforced ?? true;
 
   // Worked out on every request, so a change to the allowlist applies to
   // sessions that already exist
   function roleOf(email: string): Role {
+    if (!rolesEnforced) return "bank";
     const address = email.toLowerCase();
     const domain = address.slice(address.lastIndexOf("@") + 1);
     return bankEmails.has(address) || bankDomains.has(domain) ? "bank" : "owner";

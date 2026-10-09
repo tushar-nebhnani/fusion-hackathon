@@ -10,7 +10,9 @@ The entry point for all data in ClimaCredit. A business owner (or a bank officer
 
 Built and tested as a standalone unit. The routes in §6 are mounted in the API, and everything inside this folder works end to end: validation, consent, derived ratios, versioned storage, the weather-impact classifier, the seed loader.
 
-**Not connected yet:** the climate unit and the finance service. The service calls them through two small interfaces (`ClimatePort`, `FinancePort` in `triggers.ts`). Until something is plugged in, each trigger is saved as a pending job and responses say `scoring: "pending"`. Nothing is lost: connecting a port and calling `retryPending()` delivers the backlog. See §5 and §10.
+**Connected:** the finance service. `server.ts` passes it as the `FinancePort`, so an authorised loan and a new snapshot on a live loan each store a finance profile (`api/src/services/finance/README.md`, §9).
+
+**Not connected yet:** the climate unit. The service calls it through a small interface (`ClimatePort` in `triggers.ts`). Until something is plugged in, each climate trigger is saved as a pending job and responses say `scoring: "pending"`. Nothing is lost: connecting the port and calling `retryPending()` delivers the backlog. See §5 and §10.
 
 To run it:
 
@@ -182,7 +184,7 @@ Transitions go forward one step at a time: `applied → authorised | rejected`, 
 | Field | Type | R/O | Notes |
 |---|---|---|---|
 | `consent.data_processing` | bool | R | Must be `true`, otherwise 403 and nothing is saved |
-| `consent.share_with_bank` | bool | R | Must be `true` to have a loan; creating a loan without it is a 403 |
+| `consent.share_with_bank` | bool | R | Must be `true` to have a loan; creating a loan without it is a 403. While `false`, bank officers cannot open a business its owner created |
 | `consent.alerts` | bool | R | If `false`, owner gets no alerts (bank still does) |
 | `consent.timestamp` | datetime | — | Set by server; rejected if sent |
 | `consent.version` | string | — | Consent text version (`consent-1`), set by server; rejected if sent |
@@ -434,9 +436,9 @@ Saves to one business are serialised with a row lock, so two submissions at once
 |---|---|---|---|
 | `POST` | `/businesses` | Create business (A–D, G, H). The caller becomes its owner | signed in |
 | `GET` | `/businesses/:id` | Business + latest snapshot + loans + current impact profile | owner of it, bank |
-| `PATCH` | `/businesses/:id` | Update profile / operations / contacts | owner of it, bank |
-| `PUT` | `/businesses/:id/locations` | Replace locations (triggers climate) | owner of it, bank |
-| `PUT` | `/businesses/:id/suppliers` | Replace supplier list | owner of it, bank |
+| `PATCH` | `/businesses/:id` | Update profile / operations / contacts | owner of it, bank. With a live loan, profile and operations: bank only |
+| `PUT` | `/businesses/:id/locations` | Replace locations (triggers climate) | owner of it, bank. With a live loan: bank only |
+| `PUT` | `/businesses/:id/suppliers` | Replace supplier list | owner of it, bank. With a live loan: bank only |
 | `POST` | `/businesses/:id/snapshots` | New financial snapshot (E) | owner of it, bank |
 | `GET` | `/businesses/:id/snapshots` | Snapshot history, newest first | owner of it, bank |
 | `POST` | `/businesses/:id/snapshots/:v/verify` | Bank marks verified | bank |
@@ -450,7 +452,9 @@ Saves to one business are serialised with a row lock, so two submissions at once
 **Who is calling.** Every route needs a signed-in user: the session cookie set by `POST /auth/google` (main `README.md`, "Authentication"). Without it the answer is 401 `UNAUTHORIZED`. The role, `owner` or `bank`, comes from the session and cannot be claimed by the caller.
 
 - An owner reaches only the businesses they created; the creator is stored in `businesses.owner_user_id`. Any other business answers 404 `BUSINESS_NOT_FOUND`, exactly like one that does not exist. One check in `inputRouter` covers every path under `/businesses/:id`.
-- A bank officer reaches every business. A business created by a bank officer, or by the seed, has no owner, so only bank officers can open it.
+- A bank officer reaches the businesses the bank entered itself and those whose owner agreed to share (`consent.share_with_bank`). Any other answers the same 404. A business created by a bank officer, or by the seed, has no owner, so only bank officers can open it.
+- Once a business has a loan that is `authorised` or `active`, its profile, operations, locations and suppliers are the bank's to change: an owner gets 403 `LOCKED_BY_LOAN`. The owner can still change `contacts` and add snapshots. The lock ends when the loan is `closed` or `rejected`.
+- Each write and each refused request leaves a row in `audit_events` with the user id, the route and the business, snapshot or loan it was about (main `README.md`, "Authentication").
 - `verified_by` and `overridden_by` hold the bank officer's user id.
 
 `PATCH /businesses/:id` takes any of `profile`, `operations`, `contacts`. Fields of `profile` and `operations` are merged one by one into what is stored. Inside `contacts`, each of `owner`, `bank_officer` and `alerts` is replaced whole. The cross-field checks run on the merged result. Consent cannot be changed through it.
@@ -485,7 +489,8 @@ Errors go through the API's one error handler, so they have the same envelope as
 | `UNAUTHORIZED` | 401 | No session, or it has ended |
 | `FORBIDDEN` | 403 | A bank route called by an owner |
 | `INVALID_STATUS_TRANSITION` | 409 | `details` has `from`, `to` and the `allowed` next statuses |
-| `BUSINESS_NOT_FOUND` | 404 | Also for a business that belongs to another owner |
+| `BUSINESS_NOT_FOUND` | 404 | Also for a business that belongs to another owner, or that is not shared with the bank |
+| `LOCKED_BY_LOAN` | 403 | An owner changing profile, operations, locations or suppliers while a loan is authorised or active |
 | `LOAN_NOT_FOUND` | 404 | |
 | `SNAPSHOT_NOT_FOUND` | 404 | |
 | `SEED_FILE_NOT_FOUND` | 404 | |
@@ -581,7 +586,7 @@ The model and the climate and finance services are stand-ins in tests (`testing/
 
 ## 10. Open items
 
-- **Connect the triggers.** Pass `ports: { climate, finance }` to `createInputService` in `server.ts`. `climate.warm(point)` can call the climate service's `getProfile`; the finance port waits for the finance service. Pending jobs are delivered on the next `retryPending()`.
+- **Connect the climate trigger.** The finance port is connected in `server.ts`. Add `climate` to the same `ports`; `climate.warm(point)` can call the climate service's `getProfile`. Pending jobs are delivered on the next `retryPending()`. Until then every response says `scoring: "pending"`, because the climate job of each business is still waiting.
 - **Active cells.** The background monitor still reads its locations from `data/monitor-locations.json`. `service.activeLocations()` is the replacement once the two are joined.
 - **Handing a business to an owner.** A business the bank or the seed created has no owner, and nothing in the API sets one; edit `businesses.owner_user_id` by hand until there is an invite or claim step.
 - **`smes.json`** is not in the repo, and its field layout was not available when the loader was written. If it differs from the entry shape in §6, convert the file or adjust `seedEntrySchema`.

@@ -3,6 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
 import { disconnectDb, prisma } from "../config/db.js";
 import type { AuthCookieOptions } from "../controllers/auth.controller.js";
+import { memoryAuditRecorder } from "../services/audit/testing/memory-recorder.js";
 import { AUTH, loadAuthEnv } from "../services/auth/config.js";
 import type { GoogleIdentity } from "../services/auth/google.js";
 import { createAuthService } from "../services/auth/service.js";
@@ -27,7 +28,14 @@ const IDENTITIES: Record<string, GoogleIdentity> = {
   "unverified-token": { ...ASHA, sub: "g-4", email: "ceo@bank.example", emailVerified: false },
 };
 
-function setup(options: { configured?: boolean; cookie?: AuthCookieOptions; rateLimit?: number } = {}) {
+interface SetupOptions {
+  configured?: boolean;
+  cookie?: AuthCookieOptions;
+  rateLimit?: number;
+  rolesEnforced?: boolean;
+}
+
+function setup(options: SetupOptions = {}) {
   const configured = options.configured ?? true;
   const service = createAuthService({
     prisma,
@@ -35,10 +43,13 @@ function setup(options: { configured?: boolean; cookie?: AuthCookieOptions; rate
     verifier: configured ? fakeGoogle(IDENTITIES) : undefined,
     bankEmails: ["meera@example.org"],
     bankDomains: ["bank.example"],
+    rolesEnforced: options.rolesEnforced,
     now: () => clock,
   });
+  const audit = memoryAuditRecorder();
   const app = createApp({
     auth: { service, cookie: options.cookie, rateLimit: options.rateLimit },
+    audit,
     climate: {
       getProfile: () => Promise.resolve({ grade: "C" } as never),
       getCell: () => Promise.reject(new Error("not used")),
@@ -47,7 +58,7 @@ function setup(options: { configured?: boolean; cookie?: AuthCookieOptions; rate
     upstreamStatus: () => ({ state: "unknown", checked_at: null }),
   });
   const signIn = (credential: string) => request(app).post("/auth/google").send({ credential });
-  return { app, service, signIn };
+  return { app, service, signIn, audit };
 }
 
 const setCookie = (res: request.Response) => (res.headers["set-cookie"] as unknown as string[] | undefined) ?? [];
@@ -128,6 +139,36 @@ describe("POST /auth/google", () => {
 
     expect(byDomain.body).toMatchObject({ user: { role: "bank", email: "Ravi@Bank.Example" } });
     expect(byEmail.body).toMatchObject({ user: { role: "bank" } });
+  });
+
+  it("makes everyone a bank officer while roles are switched off", async () => {
+    const { app, signIn } = setup({ rolesEnforced: false });
+
+    const res = await signIn("asha-token");
+    const me = await request(app).get("/auth/me").set("Cookie", sessionOf(res));
+
+    expect(res.body).toMatchObject({ user: { email: "asha@example.com", role: "bank" } });
+    expect(me.body).toMatchObject({ user: { role: "bank" } });
+    // Signing in is still required
+    expect((await request(app).get("/auth/me")).status).toBe(401);
+  });
+
+  it("leaves an audit event for a sign-in, a failed one and a sign-out, without the credential", async () => {
+    const { app, signIn, audit } = setup();
+
+    await signIn("forged-token");
+    const res = await signIn("asha-token");
+    await request(app).post("/auth/logout").set("Cookie", sessionOf(res));
+
+    const user = await prisma.user.findFirstOrThrow();
+    expect(audit.events).toMatchObject([
+      { action: "POST /auth/google", actorId: null, outcome: "denied", reason: "INVALID_CREDENTIAL" },
+      { action: "POST /auth/google", actorId: user.id, actorRole: "owner", targetType: "user", outcome: "success" },
+      { action: "POST /auth/logout", actorId: user.id, outcome: "success" },
+    ]);
+    const stored = JSON.stringify(audit.events);
+    expect(stored).not.toContain("token");
+    expect(stored).not.toContain(sessionOf(res).split("=")[1]);
   });
 
   it("refuses a credential Google did not issue for this app", async () => {
@@ -271,6 +312,7 @@ describe("loadAuthEnv", () => {
       googleClientId: "abc.apps.googleusercontent.com",
       bankEmails: ["meera@example.org", "ravi@example.org"],
       bankDomains: ["bank.example"],
+      rolesEnforced: true,
       allowedOrigins: ["http://localhost:3000", "https://app.example.com"],
       cookieSameSite: "lax",
       cookieSecure: false,
@@ -284,10 +326,15 @@ describe("loadAuthEnv", () => {
       googleClientId: null,
       bankEmails: [],
       bankDomains: [],
+      rolesEnforced: true,
       allowedOrigins: ["http://localhost:3000"],
       cookieSameSite: "lax",
       cookieSecure: false,
     });
+    expect(loadAuthEnv({ AUTH_ROLES_ENFORCED: "no" }).rolesEnforced).toBe(true);
+    expect(loadAuthEnv({ AUTH_ROLES_ENFORCED: "false" }).rolesEnforced).toBe(false);
+    // Roles cannot be switched off where real data is held
+    expect(loadAuthEnv({ AUTH_ROLES_ENFORCED: "false", NODE_ENV: "production" }).rolesEnforced).toBe(true);
     expect(loadAuthEnv({ NODE_ENV: "production" }).cookieSecure).toBe(true);
     expect(loadAuthEnv({ AUTH_COOKIE_SAMESITE: "none" }).cookieSecure).toBe(true);
   });

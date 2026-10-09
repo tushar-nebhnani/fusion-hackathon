@@ -1,6 +1,7 @@
 import type { CookieOptions, RequestHandler } from "express";
 import { z } from "zod";
 import { BadRequestError } from "../errors/app-error.js";
+import { auditNote } from "../middleware/audit.js";
 import { requireUser, sessionToken } from "../middleware/auth.js";
 import { AUTH } from "../services/auth/config.js";
 import type { AuthService } from "../services/auth/service.js";
@@ -28,6 +29,7 @@ export function authController(auth: AuthService, cookie: AuthCookieOptions) {
       throw new BadRequestError("Body must be { credential }: the ID token from Sign in with Google");
     }
     const { user, token, expiresAt } = await auth.signIn(body.data.credential);
+    auditNote(res, { actor: user, target: { type: "user", id: user.id } });
     res.cookie(AUTH.cookieName, token, { ...cookieOptions, expires: expiresAt });
     res.json({ user });
   };

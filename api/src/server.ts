@@ -4,6 +4,7 @@ import { env } from "./config/env.js";
 import { startClimateRefresh } from "./jobs/climate-refresh.js";
 import { createRedis } from "./config/redis.js";
 import { createAlertReader } from "./services/alerts/reader.js";
+import { createPrismaAuditRecorder } from "./services/audit/recorder.js";
 import { loadAuthEnv } from "./services/auth/config.js";
 import { createGoogleVerifier } from "./services/auth/google.js";
 import { createAuthService } from "./services/auth/service.js";
@@ -11,6 +12,7 @@ import { createRedisCache } from "./services/cache/cache.js";
 import { createOpenAiAgent } from "./services/climate/agent.js";
 import { createOpenMeteoClient } from "./services/climate/open-meteo.js";
 import { createClimateService } from "./services/climate/profile.service.js";
+import { chooseScorer, createFinanceService, loadFinanceEnv } from "./services/finance/index.js";
 import { createPrismaIdempotencyStore } from "./services/idempotency/prisma-store.js";
 import { createOpenAiClassifier } from "./services/input/classifier/openai.js";
 import { INPUT, loadInputEnv } from "./services/input/config.js";
@@ -30,6 +32,7 @@ const auth = createAuthService({
   verifier: authEnv.googleClientId ? createGoogleVerifier(authEnv.googleClientId) : undefined,
   bankEmails: authEnv.bankEmails,
   bankDomains: authEnv.bankDomains,
+  rolesEnforced: authEnv.rolesEnforced,
 });
 await auth.purgeExpired();
 console.log(
@@ -37,6 +40,10 @@ console.log(
     ? "Sign in with Google: on"
     : "Sign in with Google: off (set GOOGLE_CLIENT_ID; protected routes answer 401 until then)",
 );
+
+if (!authEnv.rolesEnforced) {
+  console.warn("Roles: off (AUTH_ROLES_ENFORCED=false). Every signed-in user has bank access");
+}
 
 const agent =
   env.OPENAI_API_KEY && env.CLIMATE_AGENT_ENABLED === "true"
@@ -59,9 +66,24 @@ console.log(
     ? `Weather-impact classifier: ${classifier.model}`
     : "Weather-impact classifier: off (sector defaults)",
 );
-// The input service runs on its own: the climate unit and the finance
-// service are not connected to its triggers yet, so those wait as jobs
-const input = createInputService({ prisma, llm: classifier });
+// The finance service is connected to the input service's triggers: an
+// authorised loan and a new snapshot on a live loan each store a fresh
+// finance profile. The climate trigger is not connected, so it waits as a job.
+const input = createInputService({
+  prisma,
+  llm: classifier,
+  ports: {
+    finance: {
+      firstProfile: ({ businessId }) =>
+        finance.getFinanceProfile(businessId, { trigger: "first_profile" }),
+      recompute: ({ businessId }) => finance.getFinanceProfile(businessId, { trigger: "recompute" }),
+    },
+  },
+});
+const financeEnv = loadFinanceEnv();
+const scorer = chooseScorer(financeEnv);
+console.log(`Finance scorer: ${scorer.name}`);
+const finance = createFinanceService({ prisma, businesses: input, climate, scorer });
 const inputRetry = setInterval(() => {
   input.retryPending().catch((error: unknown) => {
     console.error("input: retry of pending work failed", error);
@@ -75,11 +97,14 @@ const app = createApp({
     cookie: { sameSite: authEnv.cookieSameSite, secure: authEnv.cookieSecure },
   },
   idempotency: idempotencyStore,
+  audit: createPrismaAuditRecorder(prisma),
+  trustProxy: env.TRUST_PROXY,
   climate,
   input: {
     service: input,
     options: { seed: { enabled: env.NODE_ENV !== "production", file: inputEnv.seedFile } },
   },
+  finance: { service: finance, assertAccess: (id, actor) => input.assertAccess(id, actor) },
   alerts: createAlertReader(prisma),
   checkDb: connectDb,
   upstreamStatus: () => openMeteo.status(),

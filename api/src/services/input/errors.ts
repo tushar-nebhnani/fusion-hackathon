@@ -43,6 +43,15 @@ export function snapshotNotFound(businessId: string, version: string): AppError 
   );
 }
 
+// The bank relies on these details once it has authorised a loan
+export function lockedByLoan(what: string): AppError {
+  return new AppError(
+    `This business has an authorised or active loan, so only a bank officer can change its ${what}`,
+    403,
+    "LOCKED_BY_LOAN",
+  );
+}
+
 export function bankOnly(): AppError {
   return new AppError("Only a bank officer can do this", 403, "FORBIDDEN");
 }

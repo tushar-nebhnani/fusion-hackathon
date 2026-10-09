@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import express, { type Express } from "express";
 import type { AuthCookieOptions } from "./controllers/auth.controller.js";
+import { auditTrail } from "./middleware/audit.js";
 import { loadSession, requireAuth, requireBank, sessionUser } from "./middleware/auth.js";
 import { cors } from "./middleware/cors.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
@@ -10,14 +11,18 @@ import {
   type IdempotencyStore,
 } from "./middleware/idempotency.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
+import { securityHeaders } from "./middleware/security-headers.js";
 import { alertsRouter } from "./routes/alerts.js";
 import { authRouter } from "./routes/auth.js";
 import { climateRouter } from "./routes/climate.js";
+import { financeRouter, type FinanceRouterDeps } from "./routes/finance.js";
 import { healthRouter, type HealthDeps } from "./routes/health.js";
 import type { AlertReader } from "./services/alerts/reader.js";
+import type { AuditRecorder } from "./services/audit/recorder.js";
 import { AUTH } from "./services/auth/config.js";
 import type { AuthService } from "./services/auth/service.js";
 import type { ClimateService } from "./services/climate/profile.service.js";
+import { FINANCE } from "./services/finance/index.js";
 import { inputRouter, type InputRouterOptions } from "./services/input/index.js";
 import type { InputService } from "./services/input/service.js";
 
@@ -35,6 +40,12 @@ export interface AppDeps extends HealthDeps {
     rateLimit?: number;
   };
   climate: ClimateService;
+  // Where security audit events go. Without one, requests still get an id
+  // but nothing is recorded.
+  audit?: AuditRecorder;
+  // Reverse proxies in front of the API. Needed for per-client rate limits
+  // there; left at 0, a client could otherwise forge its address.
+  trustProxy?: number;
   // Read side of the alert system. /alerts is mounted only when it is given
   alerts?: AlertReader;
   // Defaults to an in-process store, which only suits tests and one instance
@@ -45,11 +56,21 @@ export interface AppDeps extends HealthDeps {
   climateRateLimit?: number;
   // Input service. /businesses, /loans and /seed are mounted only when it is given
   input?: { service: InputService; options?: InputRouterOptions };
+  // Finance service. /finance is mounted only when it is given
+  finance?: FinanceRouterDeps & {
+    // Requests per minute per client on /finance; a profile can cost a climate lookup
+    rateLimit?: number;
+  };
 }
 
 export function createApp(deps: AppDeps): Express {
   const app = express();
   app.disable("x-powered-by");
+  // First, so that errors and rate-limited answers carry them too
+  app.use(securityHeaders({ hsts: deps.auth.cookie?.secure }));
+  if (deps.trustProxy) app.set("trust proxy", deps.trustProxy);
+  // Above everything that can refuse a request, so refusals are recorded too
+  app.use(auditTrail(deps.audit));
   // Every endpoint is rate limited and honours Idempotency-Key. New routes
   // mounted below inherit both.
   app.use(rateLimiter(deps.rateLimit ?? 120));
@@ -86,6 +107,14 @@ export function createApp(deps: AppDeps): Express {
   );
   // Every business's alerts, so bank officers only
   if (deps.alerts) app.use("/alerts", requireBank, alertsRouter(deps.alerts));
+  if (deps.finance) {
+    app.use(
+      "/finance",
+      rateLimiter(deps.finance.rateLimit ?? FINANCE.rateLimit),
+      requireAuth,
+      financeRouter(deps.finance),
+    );
+  }
   // Guards its own paths: it is mounted at the root
   if (deps.input) app.use(inputRouter(deps.input.service, deps.input.options));
 

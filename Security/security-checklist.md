@@ -4,24 +4,25 @@ Use the status values `Not started`, `In progress`, `Implemented`, and `Tested`.
 
 | Priority | Control | Status | Owner / code location | Evidence / test |
 |---|---|---|---|---|
-| P0 | Secrets excluded from Git; `.env.example` uses placeholders | Not started | TBD | Secret scan and repo review |
-| P0 | Authentication on protected endpoints | Not started | TBD | Missing/invalid token tests |
-| P0 | Server-side RBAC and deny-by-default access | Not started | TBD | Role matrix tests |
-| P0 | Object-level authorization for each business record | Not started | TBD | Cross-business read/write tests |
-| P0 | Server-side input validation | Not started | TBD | Invalid type/range/schema tests |
-| P0 | Safe database access; no raw string-concatenated SQL | Not started | TBD | Code review and injection tests |
-| P0 | Safe error responses | Not started | TBD | Confirm no stack traces/secrets returned |
-| P0 | Rate limiting and request-size limits | Not started | TBD | Controlled limit test |
-| P0 | Restrictive CORS configuration | Not started | TBD | Allowed/disallowed origin tests |
-| P0 | Sensitive data excluded from logs and demo fixtures | Not started | TBD | Log review and fixture review |
-| P1 | Audit events for sensitive changes and score generation | Not started | TBD | Event assertions in tests |
-| P1 | Audit log access restricted | Not started | TBD | Permission review |
-| P1 | Climate data schema/freshness validation | Not started | TBD | Malformed/stale provider response tests |
-| P1 | Timeout/retry/fallback behavior for external APIs | Not started | TBD | Simulated provider failure |
-| P1 | Score provenance includes input timestamps/model version | Not started | TBD | Score traceability test |
-| P1 | Dependency vulnerability review | Not started | TBD | Package audit output |
-| P2 | Automated security checks in CI | Not started | TBD | CI run |
-| P2 | Backup/recovery and secret rotation plan | Not started | TBD | Documented procedure |
+| P0 | Secrets excluded from Git; `.env.example` uses placeholders | Implemented | `.gitignore` (`.env*`, `!.env.example`); `api/.env.example` | Reviewed 2026-10-09: only `.env.example` was ever committed; a pattern scan of tracked files found no keys. No automated secret scan yet |
+| P0 | Authentication on protected endpoints | Tested | `api/src/middleware/auth.ts`, mounted in `api/src/app.ts`; `api/src/services/auth/` | `app.test.ts` "answers 401 on protected routes without a session"; `input/index.test.ts` "needs a signed-in user on every route"; `routes/auth.test.ts` |
+| P0 | Server-side RBAC and deny-by-default access | Tested | `requireBank` in `middleware/auth.ts`; `requireBank(actor)` in `services/input/service.ts` | `routes/alerts.test.ts` "is for bank officers only"; `input/index.test.ts` bank-only tests; `routes/auth.test.ts` "reads the allowlists…" (roles cannot be switched off in production) |
+| P0 | Object-level authorization for each business record | Tested | `assertAccess` in `services/input/service.ts`, applied to `/businesses/:id` in `services/input/index.ts` | `input/index.test.ts` "lets an owner reach only the businesses they created", "hides a business from the bank until its owner agrees to share it" |
+| P0 | Server-side input validation | Tested | Strict zod schemas in `services/input/schemas/`; `services/climate/coordinates.ts` | `input/validation.test.ts`, `climate/coordinates.test.ts`. Self-reported values are locked once a loan is live: "locks the profile, operations, locations and suppliers to the owner once a loan is authorised" |
+| P0 | Safe database access; no raw string-concatenated SQL | Implemented | Prisma throughout; raw SQL only as tagged templates (`config/db.ts`, `input/store.ts`, `climate/repository.ts`) | Code review 2026-10-09; no `Unsafe` raw calls. No injection test |
+| P0 | Safe error responses | Tested | `api/src/middleware/error-handler.ts` | `error-handler.test.ts` "returns 500 and logs unexpected errors": the message is generic in every environment |
+| P0 | Rate limiting and request-size limits | Tested | `middleware/rate-limit.ts`; `express.json({ limit: "10kb" })` in `app.ts` | `app.test.ts` "rejects request bodies over 10kb"; rate-limit tests in `alerts.test.ts`, `input/index.test.ts`. `TRUST_PROXY` must be set behind a proxy (not tested) |
+| P0 | Restrictive CORS configuration | Tested | `api/src/middleware/cors.ts`; `AUTH_ALLOWED_ORIGINS` | `app.test.ts` allowed and refused origin tests |
+| P0 | Sensitive data excluded from logs and demo fixtures | In progress | `api/data/monitor-locations.json`, `services/input/testing/fixtures.ts` | Fixtures reviewed: synthetic. Audit events hold no payloads (tested). Other server logs not reviewed line by line |
+| P0 | Security response headers (added in this review) | Tested | `api/src/middleware/security-headers.ts` | `app.test.ts` "sends the security headers on every answer, errors included" |
+| P1 | Audit events for sensitive changes and score generation | Tested | `api/src/middleware/audit.ts`, `api/src/services/audit/recorder.ts`, table `audit_events` | `middleware/audit.test.ts`, `services/audit/recorder.test.ts`, "audit trail" in `input/index.test.ts`, sign-in events in `routes/auth.test.ts`. Not covered: the monitor and the alert worker, which are not HTTP requests |
+| P1 | Audit log access restricted | In progress | No API route reads `audit_events`; a database trigger refuses `UPDATE` and `DELETE` | `recorder.test.ts` "is append only". The API's database user still owns the table, so it could drop the trigger: not tamper-proof |
+| P1 | Climate data schema/freshness validation | Tested | `payloadSchema` in `services/climate/open-meteo.ts`; `data_freshness` and `warnings` in `services/climate/schema.ts` | `routes/climate.test.ts` "leaves a forecast out rather than serving it stale", "returns 503 rather than an expired screening" |
+| P1 | Timeout/retry/fallback behavior for external APIs | Tested | `services/climate/open-meteo.ts` (timeout, three tries) | `open-meteo.test.ts` retry tests; `climate.test.ts` "returns 503 when the history is unavailable and nothing is cached" |
+| P1 | Score provenance includes input timestamps/model version | In progress | Climate responses carry freshness and agent version; `finance_profiles` (not finished) stores inputs and model version | Not verified end to end; the finance service is still being built |
+| P1 | Dependency vulnerability review | In progress | `api/package.json` | `npm audit` 2026-10-09: 4 high, all `mysql2` reached through the `prisma` package. See F-08 |
+| P2 | Automated security checks in CI | Not started | No CI in the repository | — |
+| P2 | Backup/recovery and secret rotation plan | Not started | TBD | — |
 
 ## Findings log
 
@@ -35,3 +36,20 @@ For each finding, record:
 - Retest result and date
 
 Do not include real credentials, tokens, or customer financial data in this file.
+
+### Findings from the review of 2026-10-09
+
+Reviewed: `api/src` at commit `4727418` plus uncommitted work. Not reviewed: `web/` (scaffold), `ml/`, the unfinished `api/src/services/finance/`, and the 47 KB demo page beyond a search for unsafe HTML sinks. Fixes were made and retested the same day; the Status column says which.
+
+| ID | Severity | Component | Finding | Proposed fix | Status |
+|---|---|---|---|---|---|
+| F-01 | High | `services/auth/service.ts` `roleOf`; `AUTH_ROLES_ENFORCED` | With `AUTH_ROLES_ENFORCED=false` every Google account that signs in is a bank officer: it can read and change every business, verify its own financial snapshot, authorise loans and override impact profiles. The local `api/.env` has it set to `false`. This removes E-01, T-01 and I-01 at once | Set it to `true` and name officers in `AUTH_BANK_EMAILS`. Make the switch ignored when `NODE_ENV=production` | Fixed 2026-10-09: the switch is ignored when `NODE_ENV=production`, and the local `.env` is back to `true`. No bank officers are listed locally yet |
+| F-02 | High | All write routes | No audit trail. `input_request_log` records method, route, status and role, but not the user id or a request id, so R-01 cannot be answered: nobody can show who changed a location or verified a snapshot. Sign-in failures and 403s are not recorded | An append-only `audit_events` table (actor id, role, action, target type and id, outcome, request id, reason code; no payloads), written from sign-in, access denials, input writes, verification, loan status, overrides and score generation | Fixed 2026-10-09: `audit_events`, written for every write, every 401/403 and every failed attempt to open a business. Tested |
+| F-03 | High | `services/input/service.ts` `patchBusiness`, `replaceLocations`, `replaceSuppliers` | An owner can change sector, description, primary location and suppliers at any time, including after a loan is authorised or active. Moving the primary location moves the cell the monitor watches, so the bank stops getting alerts for the real premises; changing sector or description changes the impact profile (T-02, ML-01). Old values are overwritten, not kept | Once a loan is `authorised` or `active`, allow these changes from the bank only, or keep them as pending until a bank officer accepts them. Keep location history | Fixed 2026-10-09: bank only once a loan is `authorised` or `active` (403 `LOCKED_BY_LOAN`). Tested. Old values are still overwritten; the audit trail says who changed them, not what they were |
+| F-04 | Medium | `assertAccess` | A bank officer can open every business, including one whose owner set `consent.share_with_bank` to `false`. Consent is checked only when a loan is created, and cannot be withdrawn later | Hide owner-created businesses without that consent from the bank; add a consent update route | Partly fixed 2026-10-09: hidden from the bank, tested. There is still no route to change consent |
+| F-05 | Medium | `createSnapshot`; finance trigger | A new snapshot is unverified, yet it becomes `latest_snapshot` and queues `finance_recompute`. An owner with an active loan can post better numbers and move the score before any officer looks | The finance service should score from the latest verified snapshot, or mark a result built on unverified numbers | Open; for the finance work in progress |
+| F-06 | Low | `middleware/error-handler.ts` | Outside production a 500 returns the internal error message, and `NODE_ENV` defaults to `development`, so a deployment that forgets it leaks database error text. `console.error(err)` can also print query values | Return the generic message unless a debug setting is on; log the error name and code, not the object | Fixed 2026-10-09: always generic, tested. The log line still prints the error object, now with the request id |
+| F-07 | Low | `middleware/rate-limit.ts` | `trust proxy` is not set. Behind a reverse proxy all clients share one address, so one caller can use up everyone's limit | A `TRUST_PROXY` setting applied in `createApp` | Fixed 2026-10-09 (setting added; not tested behind a real proxy) |
+| F-08 | Low | `prisma` package | `npm audit` reports 4 high advisories in `mysql2`. The API connects to PostgreSQL only, so that code is not used; the offered fix is a breaking downgrade of Prisma | Recheck when Prisma publishes a fixed release | Open |
+| F-09 | Low | `contacts.bank_officer` in `schemas/contacts.ts` | The owner types the bank officer's email. Alerts do not read it today (they use `alert_contacts`), but anything that later sends bank alerts to it would let an owner redirect them | Never use this field as a recipient; take the officer from the signed-in bank user | Note |
+

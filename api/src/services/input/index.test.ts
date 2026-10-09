@@ -11,6 +11,7 @@ import {
   userRow,
 } from "../auth/testing/fake-auth.js";
 import { connectDb, disconnectDb, prisma } from "../../config/db.js";
+import { memoryAuditRecorder } from "../audit/testing/memory-recorder.js";
 import type { UpstreamStatus } from "../climate/open-meteo.js";
 import type { ClimateService } from "../climate/profile.service.js";
 import type { ClassifierLlm } from "./classifier/index.js";
@@ -46,8 +47,10 @@ function setup(options: SetupOptions = {}) {
     triggerTimeoutMs: 100,
   });
   services.push(service);
+  const audit = memoryAuditRecorder();
   const app = createApp({
     auth: { service: fakeAuth() },
+    audit,
     // The climate routes are not exercised here
     climate: {} as ClimateService,
     checkDb: connectDb,
@@ -76,7 +79,7 @@ function setup(options: SetupOptions = {}) {
     const res = await signedIn(app).get(`/businesses/${id}/impact-profile`);
     return res.body as ImpactProfileView;
   };
-  return { app, service, send, create, profile };
+  return { app, service, send, create, profile, audit };
 }
 
 const errorOf = (res: request.Response) =>
@@ -389,6 +392,28 @@ describe("GET /businesses/:id", () => {
     expect((await signedIn(app).get(path)).status).toBe(200);
     expect((await signedIn(app, BANK_USER).get(path)).status).toBe(200);
     expect(await prisma.financialSnapshot.count()).toBe(0);
+  });
+
+  it("hides a business from the bank until its owner agrees to share it", async () => {
+    const { app, create, send } = setup();
+    const { id } = await create({
+      consent: { data_processing: true, share_with_bank: false, alerts: true },
+    });
+    const path = `/businesses/${id}`;
+
+    const results = await Promise.all([
+      signedIn(app, BANK_USER).get(path),
+      signedIn(app, BANK_USER).get(`${path}/snapshots`),
+      send("post", `${path}/loans`, loanBody(), BANK),
+      send("patch", path, { profile: { employees: 1 } }, BANK),
+    ]);
+
+    for (const res of results) {
+      expect(res.status).toBe(404);
+      expect(errorOf(res).code).toBe("BUSINESS_NOT_FOUND");
+    }
+    expect((await signedIn(app).get(path)).status).toBe(200);
+    expect(await prisma.loan.count()).toBe(0);
   });
 
   it("records the owner, and leaves a bank-created business to the bank", async () => {
@@ -710,16 +735,55 @@ describe("loans", () => {
   });
 
   it("needs the owner's consent to share with the bank", async () => {
-    const { create, send } = setup();
-    const { id } = await create({
-      consent: { data_processing: true, share_with_bank: false, alerts: true },
-    });
+    const { send } = setup();
+    const consent = { data_processing: true, share_with_bank: false, alerts: true };
+    const entered = await send("post", "/businesses", businessBody({ consent }), BANK);
+    const { id } = entered.body as BusinessDetail;
 
     const res = await send("post", `/businesses/${id}/loans`, loanBody(), BANK);
 
     expect(res.status).toBe(403);
     expect(errorOf(res).code).toBe("CONSENT_REQUIRED");
     expect(await prisma.loan.count()).toBe(0);
+  });
+
+  it("locks the profile, operations, locations and suppliers to the owner once a loan is authorised", async () => {
+    const { create, send } = setup();
+    const { id } = await create();
+    const path = `/businesses/${id}`;
+    const loan = loanOf(await send("post", `${path}/loans`, loanBody(), BANK));
+    const locations = {
+      ...(businessBody().locations as object),
+      primary: { lat: 28.6139, lon: 77.209, address: "Somewhere drier", pincode: "110001" },
+    };
+
+    // A loan that is only applied for locks nothing
+    expect((await send("patch", path, { profile: { employees: 9 } })).status).toBe(200);
+    await send("patch", `/loans/${loan.id}/status`, { status: "authorised" }, BANK);
+
+    const refused = await Promise.all([
+      send("patch", path, { profile: { sector: "retail" } }),
+      send("patch", path, { operations: { has_insurance: true } }),
+      send("put", `${path}/locations`, locations),
+      send("put", `${path}/suppliers`, { suppliers: businessBody().suppliers }),
+    ]);
+    for (const res of refused) {
+      expect(res.status).toBe(403);
+      expect(errorOf(res).code).toBe("LOCKED_BY_LOAN");
+    }
+    const stored = await prisma.businessLocation.findFirst({ where: { businessId: id, isPrimary: true } });
+    expect(stored).toMatchObject({ lat: 19.076, lon: 72.8777 });
+
+    // The owner's own contact details stay theirs to change, and the bank can change the rest
+    const contacts = await send("patch", path, { contacts: { alerts: { channels: ["email"] } } });
+    const byBank = await send("put", `${path}/locations`, locations, BANK);
+    expect(contacts.status).toBe(200);
+    expect(byBank.status).toBe(200);
+    expect((byBank.body as BusinessDetail).locations.primary).toMatchObject({ lat: 28.6139, lon: 77.209 });
+
+    // Unlocked again when the loan has ended
+    await send("patch", `/loans/${loan.id}/status`, { status: "rejected" }, BANK);
+    expect((await send("patch", path, { profile: { employees: 10 } })).status).toBe(200);
   });
 
   it("refuses an invalid loan", async () => {
@@ -1075,6 +1139,53 @@ describe("weather-impact profile", () => {
     expect(await service.retryPending()).toMatchObject({ profiles: 1 });
 
     expect(await profile(id)).toMatchObject({ version: 1, status: "ok" });
+  });
+});
+
+describe("audit trail", () => {
+  it("names the business, snapshot or loan each change was made to, and who made it", async () => {
+    const { create, send, audit } = setup();
+    const { id } = await create();
+    await send("post", `/businesses/${id}/snapshots`, financialsBody());
+    await send("post", `/businesses/${id}/snapshots/1/verify`, undefined, BANK);
+    const applied = await send("post", `/businesses/${id}/loans`, loanBody(), BANK);
+    const { loan } = applied.body as { loan: LoanView };
+    await send("patch", `/loans/${loan.id}/status`, { status: "authorised" }, BANK);
+    await send("put", `/businesses/${id}/locations`, businessBody().locations as object);
+
+    const owner = { actorId: OWNER.id, actorRole: "owner" };
+    const bank = { actorId: BANK_USER.id, actorRole: "bank" };
+    expect(audit.events).toMatchObject([
+      { ...owner, action: "POST /businesses", targetType: "business", targetId: id, outcome: "success" },
+      { ...owner, action: "POST /businesses/:id/snapshots", targetId: id, outcome: "success" },
+      { ...bank, action: "POST /businesses/:id/snapshots/:v/verify", targetType: "snapshot", targetId: `${id}/1` },
+      { ...bank, action: "POST /businesses/:id/loans", targetId: id, outcome: "success" },
+      { ...bank, action: "PATCH /loans/:id/status", targetType: "loan", targetId: loan.id, outcome: "success" },
+      { ...owner, action: "PUT /businesses/:id/locations", outcome: "denied", reason: "LOCKED_BY_LOAN" },
+    ]);
+    // What was entered is in the tables it belongs to, not in the trail
+    expect(JSON.stringify(audit.events)).not.toContain("Sharma");
+  });
+
+  it("records an attempt to open someone else's business, although it is only a read", async () => {
+    const { app, create, audit } = setup();
+    const { id } = await create();
+    audit.events.length = 0;
+
+    await signedIn(app, OTHER_OWNER).get(`/businesses/${id}`);
+    await signedIn(app).get(`/businesses/${id}`);
+
+    expect(audit.events).toMatchObject([
+      {
+        actorId: OTHER_OWNER.id,
+        action: `GET /businesses/${id}`,
+        targetType: "business",
+        targetId: id,
+        outcome: "failure",
+        status: 404,
+        reason: "BUSINESS_NOT_FOUND",
+      },
+    ]);
   });
 });
 

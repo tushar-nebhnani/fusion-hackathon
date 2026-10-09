@@ -1,6 +1,7 @@
 import { Router, type Request, type RequestHandler, type Response } from "express";
 import { z } from "zod";
 import { NotFoundError } from "../../errors/app-error.js";
+import { auditNote } from "../../middleware/audit.js";
 import { requireAuth, requireBank, requireUser } from "../../middleware/auth.js";
 import { requireIdempotencyKey } from "../../middleware/idempotency.js";
 import { rateLimiter } from "../../middleware/rate-limit.js";
@@ -64,9 +65,10 @@ export function inputRouter(service: InputService, options: InputRouterOptions =
     requestLog,
   );
   // One check for every route under a business: an owner reaches only the
-  // businesses they created, a bank officer reaches all of them
+  // businesses they created, a bank officer those shared with the bank
   router.use("/businesses/:id", async (req, res, next) => {
     res.locals.businessId = param(req, "id");
+    auditNote(res, { target: { type: "business", id: param(req, "id") } });
     await service.assertAccess(param(req, "id"), actorOf(res));
     next();
   });
@@ -77,6 +79,7 @@ export function inputRouter(service: InputService, options: InputRouterOptions =
       ownerUserId: actor.role === "owner" ? actor.id : null,
     });
     res.locals.businessId = business.id;
+    auditNote(res, { target: { type: "business", id: business.id } });
     res.status(201).json(business);
   });
 
@@ -85,15 +88,15 @@ export function inputRouter(service: InputService, options: InputRouterOptions =
   });
 
   router.patch("/businesses/:id", async (req, res) => {
-    res.json(await service.patchBusiness(param(req, "id"), req.body));
+    res.json(await service.patchBusiness(param(req, "id"), req.body, actorOf(res)));
   });
 
   router.put("/businesses/:id/locations", async (req, res) => {
-    res.json(await service.replaceLocations(param(req, "id"), req.body));
+    res.json(await service.replaceLocations(param(req, "id"), req.body, actorOf(res)));
   });
 
   router.put("/businesses/:id/suppliers", async (req, res) => {
-    res.json(await service.replaceSuppliers(param(req, "id"), req.body));
+    res.json(await service.replaceSuppliers(param(req, "id"), req.body, actorOf(res)));
   });
 
   router.post("/businesses/:id/snapshots", async (req, res) => {
@@ -105,6 +108,7 @@ export function inputRouter(service: InputService, options: InputRouterOptions =
   });
 
   router.post("/businesses/:id/snapshots/:v/verify", async (req, res) => {
+    auditNote(res, { target: { type: "snapshot", id: `${param(req, "id")}/${param(req, "v")}` } });
     res.json(await service.verifySnapshot(param(req, "id"), param(req, "v"), actorOf(res)));
   });
 
@@ -113,6 +117,7 @@ export function inputRouter(service: InputService, options: InputRouterOptions =
   });
 
   router.patch("/loans/:id/status", async (req, res) => {
+    auditNote(res, { target: { type: "loan", id: param(req, "id") } });
     const result = await service.changeLoanStatus(param(req, "id"), req.body, actorOf(res));
     res.locals.businessId = result.loan.business_id;
     res.json(result);
