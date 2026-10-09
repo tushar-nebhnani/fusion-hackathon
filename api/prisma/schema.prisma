@@ -874,3 +874,30 @@ model Evaluation {
   @@index([businessId, createdAt])
   @@map("evaluations")
 }
+
+// ---- Application logs ----
+
+// One row per log line the API wrote at LOG_DB_LEVEL or above
+// (services/logs). The same line also goes to stdout. Secrets are redacted
+// before a line gets here, and request bodies are never logged. Rows older
+// than LOGS.retentionDays are removed at startup.
+model AppLog {
+  id        BigInt   @id @default(autoincrement())
+  // When the line was written, not when it was stored: rows arrive in batches
+  time      DateTime @db.Timestamptz
+  // debug | info | warn | error
+  level     String
+  // Which process wrote it: api, monitor, alerts-worker
+  service   String
+  message   String
+  // Also sent to the client as X-Request-Id, and stored in audit_events
+  requestId String?  @map("request_id")
+  userId    String?  @map("user_id")
+  // Everything else on the line: method, path, status, ms, detail, err
+  fields    Json?
+
+  @@index([time])
+  @@index([level, time])
+  @@index([requestId])
+  @@map("app_logs")
+}

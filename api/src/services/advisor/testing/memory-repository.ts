@@ -27,8 +27,13 @@ export function createMemoryAdvisorRepository() {
       return Promise.resolve(copy(created));
     },
     getConversation: (id) => Promise.resolve(copy(conversations.get(id) ?? null)),
-    listConversations: (businessId) =>
-      Promise.resolve([...conversations.values()].filter((c) => c.businessId === businessId).map(copy)),
+    listConversations: (businessId, limit) =>
+      Promise.resolve(
+        [...conversations.values()]
+          .filter((c) => c.businessId === businessId)
+          .slice(-limit)
+          .map(copy),
+      ),
 
     addMessage(row) {
       const created = { ...copy(row), id: messages.length + 1, createdAt: new Date() };
@@ -37,6 +42,8 @@ export function createMemoryAdvisorRepository() {
     },
     listMessages: (conversationId) =>
       Promise.resolve(messages.filter((m) => m.conversationId === conversationId).map(copy)),
+    listMessagesOf: (conversationIds) =>
+      Promise.resolve(messages.filter((m) => conversationIds.includes(m.conversationId)).map(copy)),
 
     addToolCall(row) {
       toolCalls.push(copy(row));
@@ -44,6 +51,8 @@ export function createMemoryAdvisorRepository() {
     },
     listToolCalls: (conversationId) =>
       Promise.resolve(toolCalls.filter((c) => c.conversationId === conversationId).map(copy)),
+    listToolCallsOf: (conversationIds) =>
+      Promise.resolve(toolCalls.filter((c) => conversationIds.includes(c.conversationId)).map(copy)),
 
     getFacts: (businessId) => Promise.resolve([...(facts.get(businessId)?.values() ?? [])].map(copy)),
     saveFact(businessId, key, value, source) {

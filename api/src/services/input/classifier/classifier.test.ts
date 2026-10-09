@@ -6,7 +6,7 @@ import { businessBody, fakeLlm, validReply } from "../testing/fixtures.js";
 import { defaultCondition, fallbackConditions, sectorPhysical } from "./defaults.js";
 import { applyGuards } from "./guard.js";
 import { classifierInputs, classify, hashInputs, type ClassifierInputs } from "./index.js";
-import { EXAMPLES, SYSTEM_PROMPT } from "./prompt.js";
+import { EXAMPLES, SYSTEM_PROMPT } from "../../../prompts/classifier.js";
 import { REFERENCE } from "./reference.js";
 import {
   MECHANISMS,

@@ -1,0 +1,13 @@
+requests>=2.32
+pandas>=2.2
+# Models (ml/features, ml/training, ml/app). Saved .joblib models only load
+# with the scikit-learn they were trained on, so it is pinned exactly.
+scikit-learn==1.9.1
+joblib==1.6.0
+numpy>=2.2
+scipy>=1.14
+matplotlib>=3.9
+fastapi>=0.115
+uvicorn>=0.30
+pytest>=8
+httpx>=0.27

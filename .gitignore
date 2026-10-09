@@ -397,8 +397,6 @@ api/src/generated/
 !.env.example
 
 # ML artifacts and datasets (keep the folders)
-ml/models/*
-ml/data/*
 !ml/models/.gitkeep
 !ml/data/.gitkeep
 

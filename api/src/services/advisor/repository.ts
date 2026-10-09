@@ -62,11 +62,15 @@ export interface ProposalDecision {
 export interface AdvisorRepository {
   createConversation(row: Omit<ConversationRow, "id" | "createdAt">): Promise<ConversationRow>;
   getConversation(id: string): Promise<ConversationRow | null>;
-  listConversations(businessId: string): Promise<ConversationRow[]>;
+  // The most recent `limit` conversations, oldest of them first
+  listConversations(businessId: string, limit: number): Promise<ConversationRow[]>;
   addMessage(row: Omit<MessageRow, "id" | "createdAt">): Promise<MessageRow>;
   listMessages(conversationId: string): Promise<MessageRow[]>;
+  // Messages of several conversations in one read, in order within each
+  listMessagesOf(conversationIds: string[]): Promise<MessageRow[]>;
   addToolCall(row: ToolCallRow): Promise<void>;
   listToolCalls(conversationId: string): Promise<ToolCallRow[]>;
+  listToolCallsOf(conversationIds: string[]): Promise<ToolCallRow[]>;
 
   getFacts(businessId: string): Promise<BusinessFactView[]>;
   saveFact(businessId: string, key: string, value: string, source: FactSource): Promise<BusinessFactView>;
@@ -125,8 +129,14 @@ export function createPrismaAdvisorRepository(prisma: PrismaClient): AdvisorRepo
   return {
     createConversation: (row) => prisma.advisorConversation.create({ data: row }),
     getConversation: (id) => prisma.advisorConversation.findUnique({ where: { id } }),
-    listConversations: (businessId) =>
-      prisma.advisorConversation.findMany({ where: { businessId }, orderBy: { createdAt: "asc" } }),
+    async listConversations(businessId, limit) {
+      const rows = await prisma.advisorConversation.findMany({
+        where: { businessId },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      });
+      return rows.reverse();
+    },
 
     async addMessage(row) {
       const created = await prisma.advisorMessage.create({
@@ -139,6 +149,14 @@ export function createPrismaAdvisorRepository(prisma: PrismaClient): AdvisorRepo
       return rows.map(toMessage);
     },
 
+    async listMessagesOf(conversationIds) {
+      const rows = await prisma.advisorMessage.findMany({
+        where: { conversationId: { in: conversationIds } },
+        orderBy: { id: "asc" },
+      });
+      return rows.map(toMessage);
+    },
+
     async addToolCall(row) {
       await prisma.advisorToolCall.create({
         data: { ...row, input: json(row.input ?? {}), output: nullableJson(row.output) },
@@ -146,6 +164,11 @@ export function createPrismaAdvisorRepository(prisma: PrismaClient): AdvisorRepo
     },
     listToolCalls: (conversationId) =>
       prisma.advisorToolCall.findMany({ where: { conversationId }, orderBy: { id: "asc" } }),
+    listToolCallsOf: (conversationIds) =>
+      prisma.advisorToolCall.findMany({
+        where: { conversationId: { in: conversationIds } },
+        orderBy: { id: "asc" },
+      }),
 
     async getFacts(businessId) {
       const rows = await prisma.businessFact.findMany({ where: { businessId }, orderBy: { key: "asc" } });

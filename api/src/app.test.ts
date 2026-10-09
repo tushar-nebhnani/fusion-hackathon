@@ -60,7 +60,6 @@ describe("rate limiting", () => {
     expect(res.body).toMatchObject({ error: { code: "RATE_LIMITED" } });
     expect(res.headers).toHaveProperty("ratelimit");
   });
-
 });
 
 describe("rate limiting per user", () => {

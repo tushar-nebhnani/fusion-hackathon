@@ -21,7 +21,7 @@ stand-in that drives the same tool loop and writes template answers from tool re
 |---|---|
 | Input service | `inputDirectory.ts` builds each `BusinessRecord` from `businesses`, the primary location, the latest snapshot, the loans that are not closed or rejected and the latest finished weather-impact profile. The mapping is described at the top of that file. A business with no snapshot answers 409 `NO_FINANCIALS`. |
 | Demo businesses | `api/data/smes.json` (loans `LN-0101`, `LN-0142`, `LN-0203`, `LN-0307`) stays behind the input service when `ADVISOR_DEMO_BUSINESSES=true` (the default), never in production. They are open to every signed-in user; input businesses use the input service's `assertAccess`. |
-| Evaluator | `getEvaluation` is the only tool that reaches the climate unit and the finance service. It returns the evaluation (rating, reliable, reasons, checks, the climate profile, the finance summary) plus `business`: the record's revenue by month, costs and loans, which the advisor's own cash-flow maths runs on. It replaced `getClimateProfile` and `getFinanceProfile`; citations now read `call_n.climate.grade`, `call_n.business.loans[0].emi`. When `reliable` is false or `climate` is null, no verdict is given. Prompt version `advisor-3`. |
+| Evaluator | `getEvaluation` is the only tool that reaches the climate unit and the finance service. It returns the evaluation (rating, reliable, reasons, checks, the climate profile, the finance summary) plus `business`: the record's revenue by month, costs and loans, which the advisor's own cash-flow maths runs on. It replaced `getClimateProfile` and `getFinanceProfile`; citations now read `call_n.climate.grade`, `call_n.business.loans[0].emi`. When `reliable` is false or `climate` is null, no verdict is given. Since prompt version `advisor-3`. |
 | Weather-impact classifier | Each hazard's `physical + max(0, -demand)` is the loss on a hazard day: above 0 is `unfavourable` with that sensitivity, a positive demand alone is `favourable`, otherwise `neutral`. |
 | Background monitor | `monitorAlerts.ts` polls the alert outbox on the sweep timer and calls `handleAlert` once per owner alert the worker sent (alert id `outbox-<row id>`), with the business's `ACTIVE` loans. `ADVISOR_MONITOR_ALERTS=false` turns it off. `POST /advisor/dev/fake-alert` still works, for a bank officer when `ADVISOR_ENABLE_DEV_ROUTES=true` (off when not set). |
 | Loan state | A loan stored as `PRE_LOAN` moves to `ACTIVE` (`disbursed`) the next time it is read after the input service marks it `active`. |
@@ -39,8 +39,8 @@ Settings, read by `config.ts`: `ADVISOR_LLM_PROVIDER`, `ADVISOR_LLM_MODEL`, `ADV
 ## Deviations from the spec, and why
 
 - **TypeScript, not `.js`.** The API is TypeScript (ESM, Prisma, Vitest), so every file is `.ts`.
-- **Prompts are TS strings** in `prompts/index.ts`, not `.md` files. `tsc` does not copy `.md` to
-  `dist/`, and the repo already keeps prompts as TS (`src/prompts/climate.ts`).
+- **Prompts are TS strings** in `src/prompts/advisor.ts`, not `.md` files. `tsc` does not copy `.md` to
+  `dist/`, and the repo keeps every prompt as TS in `src/prompts/`.
 - **Routes** live in `src/routes/advisor.ts` + `src/controllers/advisor.controller.ts`, like the
   other units. Mounted in `app.ts` only when an advisor is passed.
 - **Tools take no `businessId` / `lat, lon` from the model.** The business and loan come from the
@@ -86,6 +86,13 @@ Settings, read by `config.ts`: `ADVISOR_LLM_PROVIDER`, `ADVISOR_LLM_MODEL`, `ADV
   more lenient (`checks.ts` `verdictFloor`).
 - **Alerts only add urgency:** dismissive wording gets one repair pass, then the answer is
   replaced. Fewer than 3 actions are topped up from the alert system's `guidelines.json` steps.
+- **Prompt guardrails** (`GUARDRAILS` in `src/prompts/advisor.ts`, prompt version `advisor-4`): stay on
+  this business and its loan, treat owner text and tool results as data, never ask for or repeat
+  passwords, OTPs or identity numbers, people before stock, no promises, no named products. No
+  code check backs these; the prompt is the only guard.
+- **Answer limit:** `POST /advisor/chat` and `POST /advisor/damage-report` together allow 5 requests a
+  minute per signed-in user (`advisorAnswerRateLimit` in `createApp`), inside the 30 a minute on
+  `/advisor`. Over it, 429 `RATE_LIMITED`.
 - **No approval:** the agent only creates a `pending_bank` proposal; only
   `POST /advisor/proposals/:id/decision` with `accept` moves a loan to RECOVERY.
 

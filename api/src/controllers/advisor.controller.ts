@@ -3,7 +3,7 @@ import { z } from "zod";
 import { AppError, BadRequestError } from "../errors/app-error.js";
 import { requireUser } from "../middleware/auth.js";
 import { buildFakeAlert, fakeAlertOptionsSchema } from "../services/advisor/dev/fakeAlert.js";
-import type { Advisor } from "../services/advisor/index.js";
+import { CONVERSATIONS_DEFAULT, CONVERSATIONS_MAX, type Advisor } from "../services/advisor/index.js";
 import { HAZARDS, type AlertEvent, type Hazard, type Severity } from "../services/alerts/types.js";
 import { damageSchema } from "../services/advisor/types.js";
 
@@ -28,6 +28,10 @@ const decisionBody = z.object({
 
 const noteBody = z.object({ note: z.string().max(1000).optional() });
 
+const conversationsQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(CONVERSATIONS_MAX).default(CONVERSATIONS_DEFAULT),
+});
+
 const verifyBody = z.object({ alertId: z.string().min(1).max(100), label: z.enum(["hit", "miss"]) });
 
 function parse<T>(schema: z.ZodType<T>, value: unknown, what: string): T {
@@ -45,6 +49,12 @@ const param = (value: unknown) => parse(id, value, "path parameter");
 // service's rule: owners see their own, the bank sees what was shared with it.
 export type AdvisorAccess = (businessId: string, actor: { role: "owner" | "bank"; id: string }) => Promise<void>;
 
+// The same rule for many businesses in one read: those of `businessIds` the user may see
+export type AdvisorVisible = (
+  businessIds: string[],
+  actor: { role: "owner" | "bank"; id: string },
+) => Promise<string[]>;
+
 // The alert system's enqueue(); resolves to whether the event was queued
 export type EnqueueAlert = (event: AlertEvent) => Promise<boolean>;
 
@@ -60,7 +70,12 @@ const alertHazard = (hazard: string): Hazard =>
 
 const istDate = (iso: string) => new Date(Date.parse(iso) + 330 * 60_000).toISOString().slice(0, 10);
 
-export function advisorController(advisor: Advisor, assertAccess: AdvisorAccess, enqueue?: EnqueueAlert) {
+export function advisorController(
+  advisor: Advisor,
+  assertAccess: AdvisorAccess,
+  enqueue?: EnqueueAlert,
+  visible?: AdvisorVisible,
+) {
   const actorOf = (res: Response) => {
     const user = requireUser(res);
     return { role: user.role, id: user.id };
@@ -93,7 +108,8 @@ export function advisorController(advisor: Advisor, assertAccess: AdvisorAccess,
   const conversations: RequestHandler = async (req, res) => {
     const businessId = param(req.params.businessId);
     await assertAccess(businessId, actorOf(res));
-    res.json(await advisor.getConversations(businessId));
+    const { limit } = parse(conversationsQuery, req.query, "query");
+    res.json(await advisor.getConversations(businessId, limit));
   };
 
   const loanState: RequestHandler = async (req, res) => {
@@ -115,6 +131,12 @@ export function advisorController(advisor: Advisor, assertAccess: AdvisorAccess,
   const businesses: RequestHandler = async (_req, res) => {
     const actor = actorOf(res);
     const all = await advisor.listBusinesses();
+    if (visible) {
+      const ids = new Set(await visible(all.map((business) => business.id), actor));
+      res.json({ businesses: all.filter((business) => ids.has(business.id)) });
+      return;
+    }
+    // Without the batch rule, ask about each business in turn
     const allowed = await Promise.all(
       all.map((business) =>
         assertAccess(business.id, actor).then(

@@ -1,4 +1,5 @@
 import type { PrismaClient } from "../../generated/prisma/client.js";
+import { everyTick, type OncePerInterval } from "../../jobs/once-per-interval.js";
 import { loadAlertsConfig } from "../alerts/config.js";
 import { loadContent } from "../alerts/render.js";
 import { createDryRunSender } from "../alerts/senders/dryRun.js";
@@ -32,8 +33,11 @@ export function createAdvisorFromEnv(deps: {
   prisma: PrismaClient;
   evaluator: Pick<EvaluatorService, "evaluate">;
   logger?: Pick<Console, "log" | "error">;
+  // Keeps several API instances from each running the sweep; every tick runs when not given
+  once?: OncePerInterval;
 }): AdvisorRuntime {
   const logger = deps.logger ?? console;
+  const once = deps.once ?? everyTick;
   const config = loadAdvisorConfig();
   const alerts = loadAlertsConfig();
   const content = loadContent();
@@ -75,14 +79,21 @@ export function createAdvisorFromEnv(deps: {
 
   // Loans in ALERT go back to ACTIVE once their window ends (README §4), and
   // alerts sent since the last sweep are advised on
+  const sweepMs = config.sweepSeconds * 1000;
   const timer = setInterval(() => {
-    advisor.sweepAlerts().catch((error: unknown) => {
-      logger.error("advisor: alert sweep failed,", error instanceof Error ? error.message : error);
+    once("advisor-sweep", sweepMs, async () => {
+      await Promise.all([
+        advisor.sweepAlerts().catch((error: unknown) => {
+          logger.error("advisor: alert sweep failed,", error instanceof Error ? error.message : error);
+        }),
+        bridge?.poll().catch((error: unknown) => {
+          logger.error("advisor: monitor alerts failed,", error instanceof Error ? error.message : error);
+        }),
+      ]);
+    }).catch((error: unknown) => {
+      logger.error("advisor: sweep could not start,", error instanceof Error ? error.message : error);
     });
-    bridge?.poll().catch((error: unknown) => {
-      logger.error("advisor: monitor alerts failed,", error instanceof Error ? error.message : error);
-    });
-  }, config.sweepSeconds * 1000);
+  }, sweepMs);
   timer.unref();
 
   return {

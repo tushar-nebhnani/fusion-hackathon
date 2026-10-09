@@ -66,7 +66,7 @@ curl -X POST http://localhost:4000/climate/profile \
   -d '{"lat": 26.1445, "lon": 91.7362}'
 ```
 
-Or open the web console; see the next section.
+Or open the web console in `web/`; see below.
 
 ### The web console
 
@@ -221,7 +221,7 @@ curl -X POST http://localhost:4000/climate/profile \
 
 Both are applied to the whole app in `createApp`, so a new route gets them without extra code.
 
-**Rate limits** are per client, over one minute. Every route allows 120 requests per address. The per-route limits below count per signed-in user, so an account cannot reset its limit by changing address. `/climate/*` also has its own limit of 60, because one request there can cost several upstream calls, `/auth/*` has a limit of 20, `/finance/*` has a limit of 30, because a profile can cost a climate lookup, and `/evaluate/*` has a limit of 30 for the same reason. Responses carry the standard `RateLimit` headers. Over the limit, the answer is 429 `RATE_LIMITED`.
+**Rate limits** are per client, over one minute. Every route allows 120 requests per address. The per-route limits below count per signed-in user, so an account cannot reset its limit by changing address. `/climate/*` also has its own limit of 60, because one request there can cost several upstream calls, `/auth/*` has a limit of 20, `/finance/*` has a limit of 30, because a profile can cost a climate lookup, `/evaluate/*` has a limit of 30 for the same reason, and `/advisor/*` has a limit of 30. Inside it, `POST /advisor/chat` and `POST /advisor/damage-report` together allow 5 requests per user, because each one is an answer from the agent and can cost several model calls. Responses carry the standard `RateLimit` headers. Over the limit, the answer is 429 `RATE_LIMITED`.
 
 **Idempotency** applies to `POST`, `PUT`, `PATCH` and `DELETE`. Send an `Idempotency-Key` header (1 to 255 printable ASCII characters, no spaces) and a retry with the same key gets the first response back, with `Idempotency-Replayed: true`, without running the request again. The header is optional.
 
@@ -610,7 +610,10 @@ api/
     ├── routes/                   health.ts, auth.ts, climate.ts, alerts.ts, finance.ts
     ├── controllers/              auth, climate, alerts and finance controllers: parse input, call the service
     ├── jobs/climate-refresh.ts   Six-hourly forecast refresh of every known location
-    ├── prompts/climate.ts        The agent's two system prompts
+    ├── prompts/                  Every prompt sent to a model
+    │   ├── climate.ts            The climate agent's two system prompts
+    │   ├── advisor.ts            The chat advisor's system prompt, per mode
+    │   └── classifier.ts         The weather-impact classifier's system prompt, examples and messages
     ├── generated/prisma/         Generated client. Gitignored; never edit
     └── services/
         ├── cache/cache.ts        Cache interface, Redis implementation, no-op cache
@@ -692,7 +695,7 @@ Where to change things:
 - **The response shape**: `schema.ts`, then the object built at the end of `run()`. The schema is strict, so an extra key fails with `INVALID_OUTPUT`.
 - **What the agent is told**: `src/prompts/climate.ts`, then bump `CLIMATE.agent.promptVersion`.
 - **A finance weight, score band, stress cap or penalty**: `FINANCE` in `src/services/finance/config.ts`, then bump `FINANCE.modelVersion`.
-- **A rate limit**: `rateLimit` and `climateRateLimit` in `createApp`'s arguments; the defaults are in `app.ts`.
+- **A rate limit**: `rateLimit`, `climateRateLimit`, `advisorRateLimit` and `advisorAnswerRateLimit` in `createApp`'s arguments; the defaults are in `app.ts`.
 - **A new endpoint**: add a handler in a controller and register it in `routes/`. Throw an `AppError`; do not format error responses by hand. It inherits the global rate limit and idempotency; add a stricter limit in `app.ts` if a request is expensive.
 - **A database column**: edit `schema.prisma`, then run `npm run db:migrate`.
 

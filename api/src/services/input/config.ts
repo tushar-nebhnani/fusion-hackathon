@@ -19,7 +19,7 @@ export const INPUT = {
   // How often unfinished classifications and trigger jobs are tried again
   retryMinutes: 5,
   classifier: {
-    // Part of the cache key; bump when classifier/prompt.ts or reference.ts changes
+    // Part of the cache key; bump when src/prompts/classifier.ts or classifier/reference.ts changes
     promptVersion: "impact-1",
     temperature: 0,
     maxTokens: 4_000,

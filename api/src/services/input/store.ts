@@ -124,6 +124,22 @@ export async function businessOwner(
   return { ownerUserId: row.ownerUserId, sharedWithBank: consent?.share_with_bank === true };
 }
 
+// businessOwner for many ids in one read; ids that do not exist are left out
+export async function businessOwners(
+  db: Db,
+  ids: string[],
+): Promise<{ id: string; ownerUserId: string | null; sharedWithBank: boolean }[]> {
+  const rows = await db.business.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, ownerUserId: true, consent: true },
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    ownerUserId: row.ownerUserId,
+    sharedWithBank: (row.consent as Partial<Consent> | null)?.share_with_bank === true,
+  }));
+}
+
 export async function getBusiness(db: Db, id: string): Promise<BusinessView | null> {
   const row = await db.business.findUnique({
     where: { id },

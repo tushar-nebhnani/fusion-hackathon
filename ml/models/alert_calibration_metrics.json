@@ -1,0 +1,138 @@
+[
+  {
+    "hazard": "flood",
+    "counts": {
+      "train": {
+        "episodes": 4605,
+        "hits": 449,
+        "rate": 0.0975
+      },
+      "val": {
+        "episodes": 1091,
+        "hits": 63,
+        "rate": 0.0577
+      },
+      "test": {
+        "episodes": 1127,
+        "hits": 78,
+        "rate": 0.0692
+      }
+    },
+    "status": "model",
+    "model_kind": "logistic",
+    "val_pr_auc": {
+      "logistic": 0.2472,
+      "gbm": 0.2001
+    },
+    "test": {
+      "base_rate": 0.0692,
+      "pr_auc": 0.1704,
+      "baseline_pr_auc": 0.079,
+      "brier": 0.0645,
+      "baseline_brier": 0.0649,
+      "low_band_cut": {
+        "threshold": 0.0291,
+        "hits_kept": 0.756,
+        "false_alarms_cut": 0.411,
+        "precision": 0.087
+      },
+      "high_band": {
+        "threshold": 0.1,
+        "hits_kept": 0.474,
+        "false_alarms_cut": 0.831,
+        "precision": 0.173
+      }
+    },
+    "per_year_test_base_rate": {
+      "2020": 0.046,
+      "2021": 0.065,
+      "2022": 0.113,
+      "2023": 0.058
+    },
+    "coefficients_std": {
+      "cell_flood_rate": 0.673,
+      "rain": 0.638,
+      "rain3": -0.45,
+      "rain14": 0.228,
+      "rain_over_p99": -0.181,
+      "doy_sin": -0.181,
+      "rh": 0.177,
+      "soil": -0.168,
+      "rain3_over_p95": 0.166,
+      "rain7": 0.166,
+      "soil_anom": 0.157,
+      "doy_cos": -0.156,
+      "wet_days7": -0.145,
+      "rain30_anom": -0.101,
+      "monsoon": 0.06,
+      "trip_imd": -0.055,
+      "coastal": -0.018,
+      "trip_rel": -0.013
+    },
+    "leave_one_region_out": {
+      "east_coast": {
+        "hits": 11,
+        "base_rate": 0.04,
+        "pr_auc": 0.132
+      },
+      "interior": {
+        "hits": 37,
+        "base_rate": 0.073,
+        "pr_auc": 0.14
+      },
+      "islands": "too few hits to score",
+      "north_hills": {
+        "hits": 19,
+        "base_rate": 0.041,
+        "pr_auc": 0.254
+      },
+      "northeast": {
+        "hits": 37,
+        "base_rate": 0.058,
+        "pr_auc": 0.151
+      },
+      "west_coast": {
+        "hits": 37,
+        "base_rate": 0.166,
+        "pr_auc": 0.348
+      }
+    },
+    "misses_no_alert": {
+      "events": 501,
+      "share": 0.459
+    }
+  },
+  {
+    "hazard": "storm",
+    "counts": {
+      "train": {
+        "episodes": 1833,
+        "hits": 30,
+        "rate": 0.0164
+      },
+      "val": {
+        "episodes": 360,
+        "hits": 17,
+        "rate": 0.0472
+      },
+      "test": {
+        "episodes": 372,
+        "hits": 16,
+        "rate": 0.043
+      }
+    },
+    "status": "baseline only: 30 training hits < 50",
+    "baseline_rates": {
+      "0": 0.0053,
+      "1": 0.024
+    },
+    "test": {
+      "baseline_brier": 0.0417,
+      "base_rate": 0.043
+    },
+    "misses_no_alert": {
+      "events": 11,
+      "share": 0.149
+    }
+  }
+]

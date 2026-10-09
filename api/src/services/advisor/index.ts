@@ -15,7 +15,7 @@ import {
 } from "./checks.js";
 import type { BusinessDirectory } from "./directory.js";
 import type { LlmClient, LlmMessage } from "./llm/client.js";
-import { PROMPT_VERSION, systemPrompt } from "./prompts/index.js";
+import { PROMPT_VERSION, systemPrompt } from "../../prompts/advisor.js";
 import type { ConversationRow, ProposalRow } from "./repository.js";
 import { modeFor, transition, type LoanStateRecord } from "./state.js";
 import { createToolRunner, istLabel, istToday, type ToolDeps, type ToolResult } from "./tools/index.js";
@@ -89,6 +89,9 @@ type AlertActions = AlertOutput["actions"];
 const SEVERITY = { watch: "WATCH", warning: "WARNING", severe: "CRITICAL" } as const;
 const SMS_LIMIT = 160;
 const HOUR_MS = 3_600_000;
+// Conversations returned by getConversations when the caller names no limit
+export const CONVERSATIONS_DEFAULT = 20;
+export const CONVERSATIONS_MAX = 100;
 
 const viewProposal = (row: ProposalRow): ProposalView => ({
   id: row.id,
@@ -721,16 +724,21 @@ export function createAdvisor(deps: AdvisorDeps) {
     return getLoanState(loanId);
   }
 
-  async function getConversations(businessId: string) {
+  // The most recent `limit` conversations, oldest first. Three reads however
+  // many conversations there are.
+  async function getConversations(businessId: string, limit: number = CONVERSATIONS_DEFAULT) {
     await requireBusiness(businessId);
-    const conversations = await repo.listConversations(businessId);
+    const conversations = await repo.listConversations(businessId, limit);
+    const ids = conversations.map((conversation) => conversation.id);
+    const [messages, toolCalls] = await Promise.all([repo.listMessagesOf(ids), repo.listToolCallsOf(ids)]);
     return {
       businessId,
-      conversations: await Promise.all(
-        conversations.map(async (conversation) => ({
-          ...conversation,
-          createdAt: conversation.createdAt.toISOString(),
-          messages: (await repo.listMessages(conversation.id)).map((m) => ({
+      conversations: conversations.map((conversation) => ({
+        ...conversation,
+        createdAt: conversation.createdAt.toISOString(),
+        messages: messages
+          .filter((m) => m.conversationId === conversation.id)
+          .map((m) => ({
             id: m.id,
             role: m.role,
             content: m.content,
@@ -738,10 +746,9 @@ export function createAdvisor(deps: AdvisorDeps) {
             citations: m.citations,
             createdAt: m.createdAt.toISOString(),
           })),
-          // So every citation can be followed to the tool output behind it
-          toolCalls: await repo.listToolCalls(conversation.id),
-        })),
-      ),
+        // So every citation can be followed to the tool output behind it
+        toolCalls: toolCalls.filter((call) => call.conversationId === conversation.id),
+      })),
     };
   }
 

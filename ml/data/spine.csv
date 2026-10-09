@@ -1,0 +1,39 @@
+location_name,cell_lat,cell_lon,state,ifi_districts,coastal,region,is_preset
+Guwahati,26.1,91.7,Assam,Kamrup Metro|Kamrup,False,northeast,True
+Mumbai,19.1,72.9,Maharashtra,Mumbai|Mumbai Suburban,True,west_coast,True
+Delhi,28.6,77.2,Delhi,New Delhi|New New Delhi,False,interior,True
+Chennai,13.1,80.3,Tamil Nadu,Chennai,True,east_coast,True
+Jaisalmer,26.9,70.9,Rajasthan,Jaisalmer,False,interior,True
+Srinagar,34.1,74.8,Jammu and Kashmir,Srinagar,False,north_hills,True
+Puri,19.8,85.8,Odisha,Puri,True,east_coast,True
+Bengaluru,13.0,77.6,Karnataka,Bengaluru Urban,False,interior,True
+Amaravati,16.5,80.5,Andhra Pradesh,Guntur,True,east_coast,False
+Itanagar,27.1,93.6,Arunachal Pradesh,Papum Pare,False,northeast,False
+Dispur,26.1,91.8,Assam,Kamrup Metro|Kamrup,False,northeast,False
+Patna,25.6,85.1,Bihar,Patna,False,interior,False
+Raipur,21.3,81.6,Chhattisgarh,Raipur,False,interior,False
+Panaji,15.5,73.8,Goa,North Goa,True,west_coast,False
+Gandhinagar,23.2,72.6,Gujarat,Gandhinagar,False,west_coast,False
+Chandigarh,30.7,76.8,Chandigarh,Chandigarh,False,north_hills,False
+Shimla,31.1,77.2,Himachal Pradesh,Shimla,False,north_hills,False
+Ranchi,23.3,85.3,Jharkhand,Ranchi,False,interior,False
+Thiruvananthapuram,8.5,76.9,Kerala,Thiruvananthapuram,True,west_coast,False
+Bhopal,23.3,77.4,Madhya Pradesh,Bhopal,False,interior,False
+Imphal,24.8,93.9,Manipur,Imphal West|Imphal East,False,northeast,False
+Shillong,25.6,91.9,Meghalaya,East Khasi Hills,False,northeast,False
+Aizawl,23.7,92.7,Mizoram,Aizawl,False,northeast,False
+Kohima,25.7,94.1,Nagaland,Kohima,False,northeast,False
+Bhubaneswar,20.3,85.8,Odisha,Khordha,True,east_coast,False
+Jaipur,26.9,75.8,Rajasthan,Jaipur,False,interior,False
+Gangtok,27.3,88.6,Sikkim,Gangtok,False,northeast,False
+Hyderabad,17.4,78.5,Telangana,Hyderabad,False,interior,False
+Agartala,23.8,91.3,Tripura,West Tripura,False,northeast,False
+Lucknow,26.8,80.9,Uttar Pradesh,Lucknow,False,interior,False
+Dehradun,30.3,78.0,Uttarakhand,Dehradun,False,north_hills,False
+Kolkata,22.6,88.4,West Bengal,Kolkata,True,east_coast,False
+Sri Vijaya Puram,11.6,92.7,Andaman and Nicobar Islands,South Andamans,True,islands,False
+Daman,20.4,72.8,Dadra and Nagar Haveli and Daman and Diu,Daman,True,west_coast,False
+Jammu,32.7,74.9,Jammu and Kashmir,Jammu,False,north_hills,False
+Leh,34.2,77.6,Ladakh,Leh ladakh,False,north_hills,False
+Kavaratti,10.6,72.6,Lakshadweep,,True,islands,False
+Puducherry,11.9,79.8,Puducherry,Pondicherry,True,east_coast,False

@@ -1,4 +1,5 @@
 import { Router, type Request, type RequestHandler, type Response } from "express";
+import type { Store } from "express-rate-limit";
 import { z } from "zod";
 import { NotFoundError } from "../../errors/app-error.js";
 import { auditNote } from "../../middleware/audit.js";
@@ -13,6 +14,8 @@ import { parseBody } from "./validation.js";
 export interface InputRouterOptions {
   // Requests per minute per client on these routes
   rateLimit?: number;
+  // Where that count is kept; in this process when not given
+  rateLimitStore?: Store;
   // POST /seed/smes exists only when enabled (never in production)
   seed?: { enabled: boolean; file: string };
 }
@@ -59,7 +62,7 @@ export function inputRouter(service: InputService, options: InputRouterOptions =
   // does the replaying.
   router.use(
     PATHS,
-    rateLimiter(options.rateLimit ?? INPUT.rateLimit),
+    rateLimiter(options.rateLimit ?? INPUT.rateLimit, options.rateLimitStore),
     requireAuth,
     requireIdempotencyKey,
     requestLog,

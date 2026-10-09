@@ -4,10 +4,10 @@ import { placeFromPincode } from "../pincode.js";
 import type { Operations, Profile, Sector } from "../schemas/index.js";
 import { fallbackConditions } from "./defaults.js";
 import { applyGuards } from "./guard.js";
-import { SYSTEM_PROMPT, retryMessage, userMessage, type ClassifierInputs } from "./prompt.js";
+import { SYSTEM_PROMPT, retryMessage, userMessage, type ClassifierInputs } from "../../../prompts/classifier.js";
 import { classifierOutputSchema, type ClassifierOutput, type ImpactConditions } from "./schema.js";
 
-export type { ClassifierInputs } from "./prompt.js";
+export type { ClassifierInputs } from "../../../prompts/classifier.js";
 
 // The model behind the classifier. `complete` resolves to the reply as
 // parsed JSON and throws when the model cannot be reached or declines.

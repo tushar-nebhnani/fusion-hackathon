@@ -97,6 +97,8 @@ Do not change `ALERTS_MODE`, `MONITOR_ALERT_SINK` or the OpenAI key in `api/.env
 | The finance profile's shape | `services/finance/profile/schema.ts`, then `buildProfile` in `profile/build.ts`. The schema is strict |
 | The profile response shape | `services/climate/schema.ts`, then the object built at the end of `run()` in `profile.service.ts`. The schema is strict: an extra key fails with `INVALID_OUTPUT` |
 | What the climate agent is told | `src/prompts/climate.ts`, then bump `CLIMATE.agent.promptVersion` |
+| What the chat advisor is told | `src/prompts/advisor.ts`, then bump `PROMPT_VERSION` in the same file |
+| What the weather-impact classifier is told | `src/prompts/classifier.ts`, then bump `INPUT.classifier.promptVersion` |
 | An endpoint | A handler in `src/controllers/`, registered in `src/routes/`, mounted in `src/app.ts` with `requireAuth` or `requireBank` |
 | Who is a bank officer | `AUTH_BANK_EMAILS` and `AUTH_BANK_DOMAINS` in `api/.env` |
 | Session lifetime or the cookie name | `AUTH` in `src/services/auth/config.ts` |
