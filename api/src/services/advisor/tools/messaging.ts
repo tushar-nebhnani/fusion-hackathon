@@ -26,8 +26,9 @@ export interface ContactBook {
 }
 
 // The alert system's contacts come first, with its rule: no consent, or an
-// opt-out, means no message. Without a row there, the demo contacts in
-// smes.json are used when they carry consent.
+// opt-out, means no message. Without an owner row there, the business
+// record's own contacts are used when they carry consent; with one, even an
+// opted-out one, that row decides.
 export function createContactBook(prisma?: PrismaClient): ContactBook {
   return {
     async forBusiness(business) {
@@ -41,17 +42,15 @@ export function createContactBook(prisma?: PrismaClient): ContactBook {
       if (!prisma) return fallback;
 
       const rows = await prisma.alertContact.findMany({
-        where: {
-          OR: [{ audience: "owner", businessId: business.id }, { audience: "bank" }],
-          consentAt: { not: null },
-          optedOutAt: null,
-        },
+        where: { OR: [{ audience: "owner", businessId: business.id }, { audience: "bank" }] },
       });
-      const owner = rows.find((row) => row.audience === "owner");
-      const banks = rows.flatMap((row) => (row.audience === "bank" && row.email ? [row.email] : []));
+      const consenting = rows.filter((row) => row.consentAt !== null && row.optedOutAt === null);
+      const listed = rows.some((row) => row.audience === "owner");
+      const owner = consenting.find((row) => row.audience === "owner");
+      const banks = consenting.flatMap((row) => (row.audience === "bank" && row.email ? [row.email] : []));
       return {
-        ownerEmail: owner?.email ?? fallback.ownerEmail,
-        ownerPhone: owner?.phoneE164 ?? fallback.ownerPhone,
+        ownerEmail: listed ? (owner?.email ?? null) : fallback.ownerEmail,
+        ownerPhone: listed ? (owner?.phoneE164 ?? null) : fallback.ownerPhone,
         bankEmails: banks.length > 0 ? banks : fallback.bankEmails,
       };
     },

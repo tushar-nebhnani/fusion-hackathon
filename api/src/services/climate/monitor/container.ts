@@ -12,6 +12,8 @@ import { createRepository } from "../repository.js";
 import { systemClock } from "./adapters/clock.js";
 import { createConsoleAlertSink } from "./adapters/consoleAlertSink.js";
 import { consoleRunLogger } from "./adapters/consoleRunLogger.js";
+import * as inputStore from "../../input/store.js";
+import { createInputLocationSource } from "./adapters/inputLocationSource.js";
 import { createJsonLocationSource } from "./adapters/jsonLocationSource.js";
 import { createAgentReviewer } from "./agentReview.js";
 import { loadMonitorConfig } from "./config.js";
@@ -44,11 +46,16 @@ export function buildMonitor() {
       ? createConsoleAlertSink()
       : { enqueue: createEnqueue({ prisma, config: loadAlertsConfig() }) };
 
+  const source =
+    config.locationSource === "json"
+      ? createJsonLocationSource(resolve(config.locationsFile), logger)
+      : createInputLocationSource(() => inputStore.activeLocations(prisma), logger);
+
   const repo = createMonitorRepo(prisma);
   const monitor = createMonitor({
     config,
     climate,
-    source: createJsonLocationSource(resolve(config.locationsFile), logger),
+    source,
     sink,
     logger,
     clock: systemClock,

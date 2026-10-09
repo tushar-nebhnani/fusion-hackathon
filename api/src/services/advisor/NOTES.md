@@ -15,14 +15,24 @@ With no API key the advisor runs the **offline planner** (`llm/offline.ts`): a d
 stand-in that drives the same tool loop and writes template answers from tool results. Set
 `ADVISOR_LLM_API_KEY` (or the existing `OPENAI_API_KEY`) to use the model.
 
+## Connected units
+
+| Unit | How |
+|---|---|
+| Input service | `inputDirectory.ts` builds each `BusinessRecord` from `businesses`, the primary location, the latest snapshot, the loans that are not closed or rejected and the latest finished weather-impact profile. The mapping is described at the top of that file. A business with no snapshot answers 409 `NO_FINANCIALS`. |
+| Demo businesses | `api/data/smes.json` (loans `LN-0101`, `LN-0142`, `LN-0203`, `LN-0307`) stays behind the input service when `ADVISOR_DEMO_BUSINESSES=true` (the default), never in production. They are open to every signed-in user; input businesses use the input service's `assertAccess`. |
+| Finance service | `getFinanceProfile` adds `riskScore`: the latest stored profile's baseline and climate-adjusted score (`listProfiles`), read only. The revenue, cost and loan figures still come from the business record. |
+| Weather-impact classifier | Each hazard's `physical + max(0, -demand)` is the loss on a hazard day: above 0 is `unfavourable` with that sensitivity, a positive demand alone is `favourable`, otherwise `neutral`. |
+| Background monitor | `monitorAlerts.ts` polls the alert outbox on the sweep timer and calls `handleAlert` once per owner alert the worker sent (alert id `outbox-<row id>`), with the business's `ACTIVE` loans. `ADVISOR_MONITOR_ALERTS=false` turns it off. `POST /advisor/dev/fake-alert` still works. |
+| Loan state | A loan stored as `PRE_LOAN` moves to `ACTIVE` (`disbursed`) the next time it is read after the input service marks it `active`. |
+
+Settings, read by `config.ts`: `ADVISOR_LLM_PROVIDER`, `ADVISOR_LLM_MODEL`, `ADVISOR_LLM_API_KEY`, `ADVISOR_MAX_ITERATIONS`, `ADVISOR_ENABLE_DEV_ROUTES`, `ADVISOR_SMES_PATH`, `ADVISOR_DEMO_BUSINESSES`, `ADVISOR_MONITOR_ALERTS` and `ADVISOR_SWEEP_SECONDS` (alert-window sweep and monitor alerts, default 60).
+
 ## Stubs (replace when the real units exist)
 
 | Stub | Where | Replace with |
 |---|---|---|
-| Finance unit | `tools/finance.ts` reads `api/data/smes.json` | the finance unit's public function |
-| Input service / business data | `directory.ts` loads `api/data/smes.json` (4 synthetic businesses, loans `LN-0101`, `LN-0142`, `LN-0203`, `LN-0307`) | the business table and the input service |
-| Weather-impact classifier | `tools/weatherImpact.ts` reads `weatherImpact` from the business profile; missing → `{ effect: "unknown" }` | the classifier's output |
-| Background monitor | `dev/fakeAlert.ts` + `POST /advisor/dev/fake-alert`; `handleAlert` and `handleVerification` are internal functions for it | `BACKGROUND_JOB.md` |
+| Background monitor's `handleVerification` | `POST /advisor/dev/verify-alert` only; nothing labels advisor alerts as hit or miss yet | the monitor's verification job |
 | SMS | No SMS sender exists (removed from the alert system, `RESOLVE_LATER.md` item 5). SMS text is composed (≤160 chars), stored and logged with status `unavailable`. | add an SMS sender in `alerts/senders/` and route `channel: "sms"` to it in `tools/messaging.ts` |
 | Hazard seasonality | `tools/climate.ts` `hazardSeasons()`: a static India-wide table (one rule for the south-east coast's NE monsoon). The climate profile has no months. | seasonality from the climate unit |
 

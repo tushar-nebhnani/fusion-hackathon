@@ -1,6 +1,8 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../../../app.js";
+import type { AdvisorAccess } from "../../../controllers/advisor.controller.js";
+import { NotFoundError } from "../../../errors/app-error.js";
 import { BANK, OWNER, fakeAuth, signedIn } from "../../auth/testing/fake-auth.js";
 import { createTestAdvisor } from "../testing/fixtures.js";
 
@@ -15,7 +17,10 @@ interface ErrorBody {
 }
 const body = <T>(res: request.Response) => res.body as T;
 
-function app(devRoutes = true) {
+// Every business is open unless a test passes its own access rule
+const open: AdvisorAccess = () => Promise.resolve();
+
+function app(devRoutes = true, assertAccess = open) {
   const { advisor } = createTestAdvisor();
   return createApp({
     auth: { service: fakeAuth() },
@@ -25,7 +30,7 @@ function app(devRoutes = true) {
     },
     checkDb: () => Promise.resolve(),
     upstreamStatus: () => ({ state: "unknown", checked_at: null }),
-    advisor: { service: advisor, devRoutes },
+    advisor: { service: advisor, devRoutes, assertAccess },
   });
 }
 
@@ -105,6 +110,31 @@ describe("/advisor routes", () => {
     const res = await signedIn(app(), BANK).post("/advisor/loans/LN-0142/disburse").send({});
     expect(res.status).toBe(409);
     expect(body<ErrorBody>(res).error.details).toMatchObject({ state: "ACTIVE", event: "disbursed" });
+  });
+
+  it("hides a business the user may not see, on every route that names it", async () => {
+    // Only SME-0101 is this user's
+    const mine: AdvisorAccess = (businessId) =>
+      businessId === "SME-0101" ? Promise.resolve() : Promise.reject(new NotFoundError("Business not found"));
+    const server = app(true, mine);
+
+    const chat = await signedIn(server).post("/advisor/chat").send({ businessId: "SME-0142", message: "hi" });
+    const state = await signedIn(server).get("/advisor/loans/LN-0142/state");
+    const history = await signedIn(server).get("/advisor/conversations/SME-0142");
+    const damage = await signedIn(server)
+      .post("/advisor/damage-report")
+      .send({ loanId: "LN-0142", daysClosed: 2 });
+    const disburse = await signedIn(server, BANK).post("/advisor/loans/LN-0142/disburse").send({});
+    expect([chat, state, history, damage, disburse].map((res) => res.status)).toEqual([404, 404, 404, 404, 404]);
+
+    const list = await signedIn(server).get("/advisor/businesses");
+    expect(body<{ businesses: { id: string }[] }>(list).businesses.map((b) => b.id)).toEqual(["SME-0101"]);
+    expect((await signedIn(server).get("/advisor/loans/LN-0101/state")).status).toBe(200);
+  });
+
+  it("lists the businesses as JSON, not an unresolved promise", async () => {
+    const res = await signedIn(app()).get("/advisor/businesses");
+    expect(body<{ businesses: unknown[] }>(res).businesses.length).toBeGreaterThan(0);
   });
 
   it("does not mount dev routes when they are off", async () => {

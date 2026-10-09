@@ -486,7 +486,7 @@
   <!-- ═══ 08 An event hits ══════════════════════════════════════════════ -->
   <section class="step" id="s-event">
     <header class="step-h"><span class="step-n">08</span><div><h2>An event hits; the advisor helps</h2><p>The advisor follows the loan through three modes: pre-loan advice, alert guidance, and a recovery plan after damage. Every number in an answer must match a tool result. It can only propose a repayment change; a bank officer decides. Talk to it in the chat panel.</p></div></header>
-    <div class="note" style="margin-bottom:16px">The advisor still reads four synthetic businesses from <code>api/data/smes.json</code> (loans <code>LN-0101</code>, <code>LN-0142</code>, <code>LN-0203</code>, <code>LN-0307</code>), not the business created in step 02. This step therefore continues with <code>SME-0142</code>, a Chennai bakery.</div>
+    <div class="note" style="margin-bottom:16px">The advisor reads the same business and loan as the steps above, from the input service, and follows the same access rule. Until a business is created here, the chat uses <code>SME-0142</code>, one of four demo businesses from <code>api/data/smes.json</code> that stay available outside production.</div>
     <div class="stack">
       <div class="panel">
         <div class="panel-h"><span>Raise a test alert</span><span class="ep"><span class="verb w">POST</span>/advisor/dev/fake-alert</span><span class="who dev">Dev only</span></div>
@@ -494,7 +494,7 @@
           <p class="help">Stands in for the monitor: puts loans into alert mode, so the chat answers with preventive steps.</p>
           <form id="f-fake-alert" data-call="POST /advisor/dev/fake-alert">
             <div class="fields">
-              <label class="f"><span>Loan ids <em>comma separated</em></span><input class="code" type="text" name="loanIds" data-t="csv" value="LN-0142"></label>
+              <label class="f"><span>Loan ids <em>comma separated</em></span><input class="code" type="text" name="loanIds" data-t="csv" data-bind="advLoan" value="LN-0142"></label>
               <label class="f"><span>Hazard</span><input class="code" type="text" name="hazard" value="heavy_rain"></label>
               <label class="f"><span>Severity</span><select name="severity"><option>watch</option><option selected>warning</option><option>severe</option></select></label>
               <label class="f"><span>Starts in <em>hours</em></span><input class="code" type="number" step="any" name="startsInHours" data-t="num" value="18"></label>

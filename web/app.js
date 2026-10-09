@@ -101,6 +101,7 @@ const ctx = {
     if (value === null || value === undefined || value === "") return;
     store.set(`ctx.${key}`, String(value));
     for (const input of document.querySelectorAll(`[data-bind="${key}"]`)) input.value = String(value);
+    if (key === "advBiz" || key === "advLoan") $("chat-who").textContent = [$("chat-biz").value, $("chat-loan").value].filter(Boolean).join(" · ");
   },
 };
 
@@ -222,7 +223,7 @@ const SAMPLES = [
   [/^PATCH \/loans\/[^/]+\/status$/, { loan: { ...SAMPLE_BUSINESS.loans[0], status: "authorised" }, scoring: "pending" }, HAND],
   [/^POST \/advisor\/dev\/fake-alert$/, { event: { alertId: "fake-sample", cellId: "demo-cell", hazard: "heavy_rain", severity: "warning", windowStart: "2026-10-10T06:00:00.000Z", windowEnd: "2026-10-11T06:00:00.000Z", loanIds: ["LN-0142"] } }, HAND],
   [/^GET \/alerts/, SAMPLE_ALERTS, HAND],
-  [/^GET \/advisor\/businesses$/, SAMPLE_ADVISOR_BUSINESSES, "The four demo businesses in api/data/smes.json."],
+  [/^GET \/advisor\/businesses$/, SAMPLE_ADVISOR_BUSINESSES, "The four demo businesses in api/data/smes.json. Live, the list also has the input service's businesses you may see."],
   [/^POST \/advisor\/chat$/, SAMPLE_TURN, HAND],
 ];
 
@@ -424,6 +425,9 @@ const RENDER = {
   business(d) {
     ctx.set("biz", d.id);
     ctx.set("loan", d.loans?.at(-1)?.id);
+    // The advisor reads the same business and loan from the input service
+    ctx.set("advBiz", d.id);
+    ctx.set("advLoan", d.loans?.at(-1)?.id);
     const p = d.profile ?? {}, loc = d.locations?.primary ?? {};
     // The next step scores this business's own location
     if (typeof loc.lat === "number" && typeof loc.lon === "number") {
@@ -463,6 +467,8 @@ const RENDER = {
   loan(d) {
     const l = d.loan ?? d;
     ctx.set("loan", l.id);
+    ctx.set("advBiz", l.business_id);
+    ctx.set("advLoan", l.id);
     return h("div", {}, h("div", { class: "presets" }, toned(l.status), d.scoring !== undefined ? tag(`scoring: ${isObject(d.scoring) ? JSON.stringify(d.scoring) : d.scoring}`) : null), kvOf(l));
   },
 
@@ -855,6 +861,7 @@ function drawStatic() {
     if (kept) input.value = kept;
     input.addEventListener("input", () => ctx.set(key, input.value.trim()));
   }
+  $("chat-who").textContent = [$("chat-biz").value, $("chat-loan").value].filter(Boolean).join(" · ");
 }
 
 // ── Shell: views, theme, API address, wire log ───────────────────────────────

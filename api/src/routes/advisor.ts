@@ -1,10 +1,13 @@
 import { Router } from "express";
-import { advisorController } from "../controllers/advisor.controller.js";
+import { advisorController, type AdvisorAccess } from "../controllers/advisor.controller.js";
 import { requireBank } from "../middleware/auth.js";
 import type { Advisor } from "../services/advisor/index.js";
 
-export function advisorRouter(advisor: Advisor, options: { devRoutes: boolean }): Router {
-  const controller = advisorController(advisor);
+export function advisorRouter(
+  advisor: Advisor,
+  options: { devRoutes: boolean; assertAccess: AdvisorAccess },
+): Router {
+  const controller = advisorController(advisor, options.assertAccess);
   const router = Router();
 
   router.get("/businesses", controller.businesses);

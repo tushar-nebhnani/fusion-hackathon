@@ -5,25 +5,33 @@ import { createDryRunSender } from "../alerts/senders/dryRun.js";
 import { createSmtpSender } from "../alerts/senders/emailSmtp.js";
 import type { ClimateService } from "../climate/profile.service.js";
 import { loadAdvisorConfig, type AdvisorConfig } from "./config.js";
-import { loadDirectory } from "./directory.js";
+import type { FinanceService } from "../finance/service.js";
+import { combineDirectories, loadDirectory, type BusinessDirectory } from "./directory.js";
 import { createAdvisor, type Advisor } from "./index.js";
 import { createOpenAiLlm } from "./llm/client.js";
 import { createOfflineLlm } from "./llm/offline.js";
+import { createInputDirectory } from "./inputDirectory.js";
+import { createMonitorAlertBridge } from "./monitorAlerts.js";
 import { createPrismaAdvisorRepository } from "./repository.js";
 import { createContactBook, createMessenger } from "./tools/messaging.js";
 
 export interface AdvisorRuntime {
   advisor: Advisor;
   config: AdvisorConfig;
+  directory: BusinessDirectory;
+  // Whether a business is one of the smes.json demo businesses
+  isDemo(businessId: string): Promise<boolean>;
   // Stops the alert-window sweep
   stop(): void;
 }
 
-// Builds the advisor from env, reusing the climate service, the alert
-// system's sender (dry run or SMTP, per ALERTS_MODE) and its guidelines
+// Builds the advisor from env, reusing the climate service, the input
+// service's tables, the finance service's scores, the alert system's sender
+// (dry run or SMTP, per ALERTS_MODE) and its guidelines
 export function createAdvisorFromEnv(deps: {
   prisma: PrismaClient;
   climate: ClimateService;
+  finance?: Pick<FinanceService, "listProfiles">;
   logger?: Pick<Console, "log" | "error">;
 }): AdvisorRuntime {
   const logger = deps.logger ?? console;
@@ -36,9 +44,28 @@ export function createAdvisorFromEnv(deps: {
       : createOfflineLlm();
   const sender = alerts.mode === "live" ? createSmtpSender(alerts.smtp) : createDryRunSender();
 
+  const demo = config.demoBusinesses ? loadDirectory(config.smesPath) : null;
+  const directory = demo
+    ? combineDirectories(createInputDirectory(deps.prisma), demo)
+    : createInputDirectory(deps.prisma);
+  const { finance } = deps;
+
   const advisor = createAdvisor({
     repo: createPrismaAdvisorRepository(deps.prisma),
-    directory: loadDirectory(config.smesPath),
+    directory,
+    financeScore: finance
+      ? async (businessId) => {
+          const [latest] = await finance.listProfiles(businessId, 1);
+          return latest
+            ? {
+                baselineScore: latest.baseline_score,
+                climateAdjustedScore: latest.adjusted_score,
+                scoredAt: latest.created_at,
+                modelVersion: latest.model_version,
+              }
+            : null;
+        }
+      : undefined,
     climate: deps.climate,
     messenger: createMessenger(sender),
     contacts: createContactBook(deps.prisma),
@@ -46,15 +73,32 @@ export function createAdvisorFromEnv(deps: {
     maxIterations: config.maxIterations,
     ownerSteps: (group, severity) => content.guidelines.hazards[group]?.[severity]?.owner ?? [],
   });
-  logger.log(`Advisor: ${llm.version}, messages via ${sender.provider}`);
+  logger.log(
+    `Advisor: ${llm.version}, messages via ${sender.provider}, ` +
+      `businesses from the input service${demo ? " and smes.json" : ""}, ` +
+      `monitor alerts ${config.monitorAlerts ? "on" : "off"}`,
+  );
+  const bridge = config.monitorAlerts
+    ? createMonitorAlertBridge({ prisma: deps.prisma, advisor, directory, logger })
+    : null;
 
-  // Loans in ALERT go back to ACTIVE once their window ends (README §4)
+  // Loans in ALERT go back to ACTIVE once their window ends (README §4), and
+  // alerts sent since the last sweep are advised on
   const timer = setInterval(() => {
     advisor.sweepAlerts().catch((error: unknown) => {
       logger.error("advisor: alert sweep failed,", error instanceof Error ? error.message : error);
     });
+    bridge?.poll().catch((error: unknown) => {
+      logger.error("advisor: monitor alerts failed,", error instanceof Error ? error.message : error);
+    });
   }, config.sweepSeconds * 1000);
   timer.unref();
 
-  return { advisor, config, stop: () => clearInterval(timer) };
+  return {
+    advisor,
+    config,
+    directory,
+    isDemo: async (businessId) => (demo ? (await demo.getBusiness(businessId)) !== null : false),
+    stop: () => clearInterval(timer),
+  };
 }

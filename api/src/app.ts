@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import express, { type Express } from "express";
+import type { AdvisorAccess } from "./controllers/advisor.controller.js";
 import type { AuthCookieOptions } from "./controllers/auth.controller.js";
 import { auditTrail } from "./middleware/audit.js";
 import { loadSession, requireAuth, requireBank, sessionUser } from "./middleware/auth.js";
@@ -50,8 +51,9 @@ export interface AppDeps extends HealthDeps {
   trustProxy?: number;
   // Read side of the alert system. /alerts is mounted only when it is given
   alerts?: AlertReader;
-  // Chat advisor. /advisor is mounted only when it is given
-  advisor?: { service: Advisor; devRoutes: boolean };
+  // Chat advisor. /advisor is mounted only when it is given. Every route that
+  // names a business or loan asks assertAccess first.
+  advisor?: { service: Advisor; devRoutes: boolean; assertAccess: AdvisorAccess };
   // Defaults to an in-process store, which only suits tests and one instance
   idempotency?: IdempotencyStore;
   // Requests per minute per client across the whole API
@@ -129,7 +131,10 @@ export function createApp(deps: AppDeps): Express {
       "/advisor",
       rateLimiter(deps.advisorRateLimit ?? 30),
       requireAuth,
-      advisorRouter(deps.advisor.service, { devRoutes: deps.advisor.devRoutes }),
+      advisorRouter(deps.advisor.service, {
+        devRoutes: deps.advisor.devRoutes,
+        assertAccess: deps.advisor.assertAccess,
+      }),
     );
   }
 

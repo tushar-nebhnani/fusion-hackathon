@@ -8,12 +8,12 @@ This README is the handover document for anyone, human or AI agent, picking up t
 
 | Part | Folder | State |
 | --- | --- | --- |
-| Climate risk API | `api/` | Built and tested. 850 tests pass across `api/`; typecheck and lint are clean. |
+| Climate risk API | `api/` | Built and tested. 874 tests pass across `api/`; typecheck and lint are clean. |
 | Climate agent | `api/src/services/climate/agent.ts` | Built. Optional: an OpenAI model reviews the screening and scores the forecast. Off without an API key. |
 | Alert system | `api/src/services/alerts/` | Built. Email warnings to business owners and banks, sent by a separate worker process. SMS was removed (see `RESOLVE_LATER.md`). Triggered by the background monitor. |
-| Background monitor | `api/src/services/climate/monitor/` | Built. Part of the climate unit, run as its own process. Watches locations with active loans, checks them more often when the forecast worsens, queues alerts and records events for the ML model. The loans DB and logs system it will read from and write to are stand-ins. |
+| Background monitor | `api/src/services/climate/monitor/` | Built. Part of the climate unit, run as its own process. Watches the businesses with an authorised or active loan in the input service's tables, checks them more often when the forecast worsens, queues alerts and records events for the ML model. The logs system it will write to is a stand-in. |
 | Finance service | `api/src/services/finance/` | Built. Baseline financial health score and a climate-adjusted score per business, from the input service's data and the climate profile. Rule-based; the ML scorer is a stub. Has its own `README.md`. |
-| Chat advisor | `api/src/services/advisor/` | Built on the `chatbot-work` branch and merged. Mounted at `/advisor` for signed-in users; bank decisions need a bank officer. Runs an offline planner without an API key. It still reads `api/data/smes.json` through stubs instead of the finance and input services. Stubs and endpoints are listed in its `NOTES.md`. |
+| Chat advisor | `api/src/services/advisor/` | Built on the `chatbot-work` branch and merged. Mounted at `/advisor` for signed-in users, with the input service's ownership and sharing rule; bank decisions need a bank officer. Runs an offline planner without an API key. Reads businesses, snapshots, loans and weather-impact profiles from the input service and scores from the finance service; the `api/data/smes.json` demo businesses stay behind them outside production. Advises owners after each alert the alert system sends. Its `NOTES.md` has the details. |
 | Demo page | `api/public/index.html` | Built. A single static page served by the API at `/demo/`. |
 | Web console | `web/` | Built. A static HTML, CSS and JavaScript page with no build step. It walks one loan through every unit on a single page and calls every endpoint; see [The web console](#the-web-console). Checked against the live API only as far as the public routes and the 401 answers; the signed-in flows have not been exercised from it yet. |
 | ML service | `ml/` | Dependencies declared only. No code, models, data or tests. |
@@ -80,13 +80,13 @@ python3 -m http.server 3000 --directory web
 Open http://localhost:3000. The port matters: `http://localhost:3000` is the default in `AUTH_ALLOWED_ORIGINS`, and the API refuses writes from any other origin. To sign in from it, add `http://localhost:3000` to the OAuth client's authorised JavaScript origins.
 
 - **Run the whole workflow.** The button at the top submits the main form of each step in turn (`WORKFLOW` in `web/app.js`) and stops at the first one the API refuses, showing the answer in that step. Creating a loan and authorising it need a bank officer. The secondary endpoints of each step sit under its "More" fold.
-- **The advisor step uses a different business.** The advisor still reads `api/data/smes.json`, so step 08 continues with `SME-0142` and not the business created in step 02.
+- **The advisor step continues with the same business.** Creating the business and recording the loan fill their ids into the chat and the step 08 forms. Before that, the chat uses `SME-0142`, a demo business from `api/data/smes.json`.
 - **Live and sample modes.** The page probes `GET /health` on load. If the API does not answer it switches to sample mode: reads show built-in sample answers, each labelled as a sample, and writes are not sent. The mode button in the header switches back.
 - **Wire log.** The bar at the bottom lists every request the page made, with its status, time, `RateLimit` header, `Idempotency-Key`, whether it was replayed, and `X-Request-Id`.
 - **Adding an endpoint to it** needs no JavaScript for a plain form: give a `<form>` a `data-call="METHOD /path/:param"` attribute and name its inputs after the body fields. The comment at the top of `web/index.html` lists the conventions. A bespoke view is a function in `RENDER` in `web/app.js`; without one the answer is drawn as plain fields.
 - The `.next` folder, `node_modules` and `next-env.d.ts` in `web/` are ignored leftovers of the removed Next.js scaffold and are not used.
 
-The first request for a new location downloads about 30 years of daily history from Open-Meteo and can take up to a minute. Later requests are served from Redis and Postgres.
+The first request for a new location downloads about 30 years of daily history from Open-Meteo and can take up to a minute. A location saved through the input service is warmed with 15 years instead (see "How the services connect"). Later requests are served from Redis and Postgres.
 
 The climate agent is off until you put an `OPENAI_API_KEY` in `api/.env`. Without it the API works the same way with rule-based results only. The startup log says which mode is running.
 
@@ -112,7 +112,7 @@ The climate agent is off until you put an `OPENAI_API_KEY` in `api/.env`. Withou
 | `FINANCE_SCORER` | `rules` | `rules` or `ml`. `ml` sends the metrics to `FINANCE_ML_URL` and falls back to the rules if the call fails |
 | `FINANCE_ML_URL` | none | Scoring endpoint of the Python model, which is not built yet |
 
-The first seven are validated at startup by `api/src/config/env.ts`; the process exits if one is invalid. The sign-in variables (`GOOGLE_CLIENT_ID`, `AUTH_*`) are read by `api/src/services/auth/config.ts` and are described under [Authentication](#authentication). The finance service's (`FINANCE_*`) are read by `api/src/services/finance/config.ts`. The alert system's variables (`ALERTS_*`, `SMTP_*`) are listed under [The alert system](#the-alert-system), and the monitor's (`MONITOR_*`) under [The background monitor](#the-background-monitor). All of these are read separately, so a bad one never stops the API. Open-Meteo needs no key: its free tier is used without one.
+The first seven are validated at startup by `api/src/config/env.ts`; the process exits if one is invalid. The sign-in variables (`GOOGLE_CLIENT_ID`, `AUTH_*`) are read by `api/src/services/auth/config.ts` and are described under [Authentication](#authentication). The finance service's (`FINANCE_*`) are read by `api/src/services/finance/config.ts`. The alert system's variables (`ALERTS_*`, `SMTP_*`) are listed under [The alert system](#the-alert-system), the monitor's (`MONITOR_*`) under [The background monitor](#the-background-monitor), and the advisor's (`ADVISOR_*`) in `api/src/services/advisor/NOTES.md`. All of these are read separately, so a bad one never stops the API. Open-Meteo needs no key: its free tier is used without one.
 
 ### API commands (run inside `api/`)
 
@@ -330,6 +330,25 @@ Every error has the same shape:
 
 Validation runs in a fixed order: presence, type, range, coverage. Coordinates are rounded to 4 decimal places, about 10 metres.
 
+## How the services connect
+
+The input service holds the real businesses, locations, snapshots and loans. Every other unit reads them; none keeps its own copy.
+
+```
+input service ──climate_warm──▶ climate pipeline           (cache warm-up, 15 years of history)
+      │ ──finance triggers────▶ finance service            (first profile, recompute)
+      ├─ authorised/active loans ─▶ monitor ──enqueue()──▶ alert outbox ──▶ alert worker ──▶ email
+      │                                                         │ owner rows that were sent
+      └─ businesses, snapshots, loans, impact ─▶ advisor ◀──────┘ (loan → ALERT, ranked actions)
+                                                     ▲ latest finance score
+```
+
+- **Climate warm-up.** `server.ts` connects the input service's `climate` port: a saved or moved primary location calls `getProfile` with `historyYears: 15` (`CLIMATE.warmHistoryYears`). The archive and river history then start on 1 January 15 years back, never before `CLIMATE.historyStart`. The screening is cached per cell, so a cell first screened this way keeps the 15-year screening for API callers too until it is reviewed again (90 days). A warm-up that fails stays a pending job and is retried with the input service's other pending work.
+- **Finance triggers.** Unchanged: an authorised loan and a new snapshot on a live loan each store a fresh finance profile.
+- **Monitor.** `MONITOR_LOCATION_SOURCE=input` (the default) watches the primary location of every business with an `authorised` or `active` loan, read again on every tick. `json` reads `MONITOR_LOCATIONS_FILE` instead; `monitor:simulate` always reads the file.
+- **Alerts.** The worker looks a business up in `alert_businesses` first and then in the input service's `businesses` (city from the primary location's PIN code). An owner with no row in `alert_contacts` is emailed at `contacts.owner.email` only when `consent.alerts` is true and `email` is one of `contacts.alerts.channels`. Any owner row in `alert_contacts`, opted out or not, decides instead. Bank alerts still go to the consenting bank rows in `alert_contacts`; the per-business bank officer is not added, because a bank digest covers several businesses.
+- **Advisor.** Reads each business from the input service (`advisor/inputDirectory.ts`), and the finance service's latest stored score through its `getFinanceProfile` tool. Every `/advisor` route that names a business or loan applies the input service's access rule: owners see their own businesses, the bank sees those shared with it. Every 60 seconds (`ADVISOR_SWEEP_SECONDS`) it takes the owner alerts the worker **sent** in the last 48 hours, so consent, opt-out and cooldown have already been applied, and advises on each once (`advisor/monitorAlerts.ts`): live loans move to `ALERT` and the owner gets ranked actions. That is a second message to the owner after the alert email; `ADVISOR_MONITOR_ALERTS=false` turns it off.
+
 ## How the climate pipeline works
 
 The whole pipeline is `run()` in `api/src/services/climate/profile.service.ts`.
@@ -493,7 +512,7 @@ Differences from `job.md`:
 - No SMS: no Twilio sender, no SMS templates, no quiet hours and no email fallback. The `sms` channel value and the `phone_e164` column are still in the database, unused; the worker suppresses any `sms` row it finds.
 - The code is in `api/src/services/alerts/`, not `src/alerts/`, and tests sit next to the code as `*.test.ts`.
 - Storage is Postgres through Prisma, not SQLite. `alert_deliveries` also stores the rendered `subject` and `body`.
-- A fourth table, `alert_businesses`, holds the name, city and sector that messages show, because the project has no business table yet.
+- A fourth table, `alert_businesses`, holds the name, city and sector that messages show. It came before the input service's `businesses` table and is now asked first, with `businesses` behind it (see "How the services connect").
 - `Sender.send` takes one message object instead of `(to, subject, body)`, so it can say whether the body is HTML.
 
 ## The background monitor
@@ -524,10 +543,11 @@ How it works:
 | `MONITOR_TICK_MINUTES` | `15` | |
 | `MONITOR_CONCURRENCY` | `5` | Cells checked at once |
 | `MONITOR_AGENT_ENABLED` | `false` | Also needs `OPENAI_API_KEY` |
-| `MONITOR_LOCATIONS_FILE` | `data/monitor-locations.json` | Watched locations, until the loans DB exists |
+| `MONITOR_LOCATION_SOURCE` | `input` | `input` watches businesses with an authorised or active loan; `json` reads `MONITOR_LOCATIONS_FILE` |
+| `MONITOR_LOCATIONS_FILE` | `data/monitor-locations.json` | Watched locations when `MONITOR_LOCATION_SOURCE=json`, and for `monitor:simulate` |
 | `MONITOR_ALERT_SINK` | `outbox` | `console` prints alerts instead of queueing them |
 
-Two things it depends on are not built, so they sit behind small interfaces in `monitor/ports.ts`: the list of active loans (a JSON file for now) and the logs system (the console for now). The monitor README gives the steps to swap each in.
+It reaches the other units through small interfaces in `monitor/ports.ts`. The list of watched locations comes from the input service's tables (`adapters/inputLocationSource.ts`) or the JSON file. The logs system is not built, so it is the console for now; the monitor README gives the steps to swap it in.
 
 ## Code map (`api/`)
 
@@ -535,7 +555,7 @@ Two things it depends on are not built, so they sit behind small interfaces in `
 api/
 ├── prisma/schema.prisma          Database schema
 ├── prisma/migrations/            Eight migrations: climate_tool, idempotency_keys, alerts, climate_monitor, input_service, auth, finance_service, audit_events
-├── data/monitor-locations.json   Locations the monitor watches, until the loans DB exists
+├── data/monitor-locations.json   Locations for monitor:simulate, or the monitor with MONITOR_LOCATION_SOURCE=json
 ├── prisma.config.ts              Prisma 7 config; the datasource URL lives here
 ├── public/index.html             Demo page, served at /demo/
 ├── vitest.config.ts              Points tests at a *_test database and Redis database 1; test files run one at a time
@@ -733,16 +753,15 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 
 - A production frontend. `web/` is a static console for showing and testing the API, not the product UI. It has no tests.
 - The ML service. `ml/` is empty. The finance service scores with rules; its ML scorer is a stub that would call a model over HTTP (`FINANCE_SCORER=ml`), and no model exists.
-- The advisor's link to the real services. The chat advisor reads `api/data/smes.json` through stubs; the finance service exports four tool-ready functions for it, and nothing calls them yet.
+- The advisor's use of the finance service's other functions. It shows the latest stored score; the scenario, location and repayment-capacity functions are not tools yet, and the advisor still runs its own cash-flow and repayment maths.
 - A way to manage users. Bank officers are named in `api/.env`; there is no admin screen, and no way to hand a business to a different owner except by editing `businesses.owner_user_id`.
 - `request_log.requester_id` for signed-in users. It is still null for every client request; only the monitor sets it.
 - The World Bank flood exposure raster. `createClimateService` accepts an `exposure` provider, but none is passed, so every response carries a `flood_exposure_unavailable` warning and confidence is `med` at best.
 - Evidence for agent decisions. The agent works from its own knowledge with no search or retrieval, so the `evidence_urls` column is always empty.
-- The loans DB. The monitor reads its watched locations from `api/data/monitor-locations.json`, behind the `WatchedLocationSource` interface.
 - The logs system. The monitor logs to the console, behind the `RunLogger` interface.
 - A schedule for `npm run monitor:verify`. It runs once and exits; nothing runs it daily yet.
 - Alerts when a hazard score rises a band. `job.md` section 3 lists that trigger; the monitor acts on forecast thresholds and dormant tripwires only.
-- A way to manage alert contacts and businesses. They are rows written by hand or by `npm run alerts:test -- --seed`.
+- A way to manage alert contacts. Owners of input-service businesses are reached through their own contacts and consent; bank contacts and opt-outs are still rows written by hand or by `npm run alerts:test -- --seed`. Consent cannot be changed after a business is created: `PATCH /businesses/:id` does not accept it.
 - SMS alerts. Removed for now; see `RESOLVE_LATER.md` item 5.
 - Native-speaker review of the Hindi and Marathi alert texts.
 - A job queue. The forecast refresh runs on a timer inside the API process; Redis is configured for BullMQ, but BullMQ is not installed.

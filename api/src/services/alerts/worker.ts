@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import type { AlertOutbox, Prisma, PrismaClient } from "../../generated/prisma/client.js";
+import { findAlertBusiness, inputOwnerRecipient } from "./businesses.js";
 import { loadAlertsConfig, type AlertsConfig } from "./config.js";
 import { MAX_ATTEMPTS, backoffMs, inCooldown, isDigest } from "./policy.js";
 import {
@@ -141,7 +142,7 @@ export function createAlertWorker(deps: WorkerDeps): AlertWorker {
       },
       orderBy: { id: "asc" },
     });
-    if (!contact?.email) return null;
+    if (!contact?.email) return inputOwnerRecipient(prisma, row.businessId);
     return { to: contact.email, language: isLanguage(contact.language) ? contact.language : "en" };
   }
 
@@ -175,7 +176,7 @@ export function createAlertWorker(deps: WorkerDeps): AlertWorker {
       await settle(row, { status: "dead", lastError: "Stored event is not valid" });
       return null;
     }
-    const business = await prisma.alertBusiness.findUnique({ where: { id: row.businessId } });
+    const business = await findAlertBusiness(prisma, row.businessId);
     if (!business) {
       await suppress(row, "Unknown business");
       return null;
