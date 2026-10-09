@@ -106,126 +106,8 @@ const ctx = {
 };
 
 // ── Sample answers ───────────────────────────────────────────────────────────
-// Shown only in sample mode, and always labelled. The climate profile is a real
-// answer captured from the API; the rest are written by hand from the documented
-// shapes so that the layout can be seen before the API is running.
-
-const HAND = "Illustrative: written by hand from the documented response shape, not computed.";
-
-const SAMPLE_CLIMATE = {
-  location: { lat: 26.1445, lon: 91.7362, cells: { historical: "0.1:26.1:91.7", climate: "0.1:26.1:91.7", flood: "0.05:26.15:91.75", forecast: "0.1:26.1:91.7" } },
-  overall_climate_risk: 0.459, grade: "C", confidence: "med",
-  hazards: [
-    { hazard: "river_flood", relevance: "secondary", relevance_method: "static", score: 0.322, components: { structural: 1, historical: 0.022, forecast: 0.055 }, reason: "99th-percentile river discharge of 45 m³/s" },
-    { hazard: "flash_flood", relevance: "primary", relevance_method: "static", score: 0.824, components: { structural: 1, historical: 1, forecast: 0 }, reason: "Rain of 50 mm or more on 11.6 days per year" },
-    { hazard: "heat", relevance: "dormant", relevance_method: "static", score: 0, components: { historical: 0, forecast: 0 }, reason: "Max temperature above 40°C on 0.0 days per year" },
-    { hazard: "drought", relevance: "dormant", relevance_method: "static", score: 0.1, components: { historical: 0.125, forecast: 0 }, reason: "Weak monsoon (below 75% of normal) in about 1 in 16 years" },
-    { hazard: "storm", relevance: "secondary", relevance_method: "static", score: 0.12, components: { historical: 0.113, forecast: 0.148 }, reason: "Gusts above 60 km/h on 1.1 days per year" },
-    { hazard: "cold_wave", relevance: "dormant", relevance_method: "static", score: 0, components: { historical: 0, forecast: 0 }, reason: "Min temperature below 4°C on 0.0 days per year" },
-  ],
-  active_events: [],
-  data_freshness: { forecast_issued_at: "2026-10-09T11:58:01+05:30", history_until: "2026-10-03" },
-  cache: "complete_hit",
-  warnings: ["flood_exposure_unavailable: World Bank exposure raster is not loaded"],
-};
-
-const SAMPLE_IMPACT = {
-  business_id: "sample-business", version: 1, status: "ok", category: "food_beverage", overall_confidence: 0.8,
-  conditions: {
-    river_flood: { physical: 0.8, demand: -0.3, mechanism: "operational_downtime", confidence: 0.7, reason: "Ground-floor premises close during floods", source: "llm" },
-    flash_flood: { physical: 0.5, demand: -0.5, mechanism: "foot_traffic", confidence: 0.8, reason: "Walk-in shop; heavy rain keeps customers home", source: "llm" },
-    heat: { physical: 0.2, demand: 0.1, mechanism: "demand_mix", confidence: 0.6, reason: "Ovens run hotter; cold items sell a little more", source: "llm" },
-    drought: { physical: 0.1, demand: 0, mechanism: "none", confidence: 0.3, reason: "Sector default", source: "sector_default" },
-    storm: { physical: 0.5, demand: -0.4, mechanism: "foot_traffic", confidence: 0.7, reason: "Shop shuts in high wind; few walk-ins", source: "llm" },
-    cold_wave: { physical: 0, demand: 0.1, mechanism: "demand_timing", confidence: 0.5, reason: "Warm baked goods sell slightly more", source: "llm" },
-  },
-  model: "sample", prompt_version: "sample", note: null, overridden_by: null, override_reason: null,
-};
-
-const SAMPLE_SNAPSHOT = {
-  version: 1, as_of: "2026-09-30", verified_by_bank: false, derivation_version: "derive-1",
-  raw: { monthly_revenue: [410000, 395000, 420000, 450000, 470000, 430000, 405000, 415000], monthly_opex: 310000, existing_emi_total: 28000, outstanding_debt: 650000, cash_balance: 240000, payment_delays_12m: 1 },
-  derived: { avg_revenue: 424375, revenue_volatility: 0.054, operating_margin: 0.2695, dscr: 4.0848, debt_to_revenue: 0.1276, cash_buffer_days: 23.2, years_in_operation: 11, num_locations: 1 },
-};
-
-const SAMPLE_BUSINESS = {
-  id: "sample-business", source: "user",
-  profile: { name: "Sri Lakshmi Bakery", sector: "food_beverage", sub_sector: "bakery", year_started: 2015, sales_channel: "both", indoor_outdoor: "indoor", employees: 6 },
-  locations: { primary: { lat: 13.0827, lon: 80.2707, address: "12 NSC Bose Road, George Town, Chennai", pincode: "600001", premises: "rented", floor: "ground" }, additional_locations: [] },
-  operations: { power_outage_hrs_month: 12, has_backup_power: false, water_dependency: "medium", has_insurance: true, insurance_covers: ["flood", "stock"], seasonal_months: [10, 11, 12] },
-  suppliers: [{ name: "Annai Flour Mills", lat: 13.05, lon: 80.21, share: 0.6, critical: false }, { name: "Madurai Dairy Co-op", lat: 9.9252, lon: 78.1198, share: 0.4, critical: false }],
-  consent: { data_processing: true, share_with_bank: true, alerts: true, version: "consent-1" },
-  latest_snapshot: SAMPLE_SNAPSHOT,
-  loans: [{ id: "sample-loan", business_id: "sample-business", amount: 800000, emi: 21500, tenure_months: 48, interest_rate: 13, purpose: "equipment", status: "applied" }],
-  impact_profile: SAMPLE_IMPACT,
-  scoring: "pending",
-};
-
-const stressRow = (severity, shock, gross, insurance, revenue, dscr, breach) => ({
-  severity, direction: shock < 0 ? "unfavourable" : "neutral", shock_pct: shock, gross_shock_pct: gross, insurance_applied: insurance, duration_months: 2,
-  stressed_metrics: { monthly_revenue: revenue, net_monthly_cashflow: revenue - 60000, dscr, surplus_after_debt: revenue - 70000, cash_runway: "positive_cashflow", cash_runway_months: null, cash_after_shock: 90000 },
-  breach, breach_reasons: breach ? ["dscr_below_1"] : [],
-});
-
-const SAMPLE_FINANCE = {
-  business_id: "sample-business", generated_at: "2026-10-09T11:30:00+05:30", model_version: "finance-1",
-  inputs: { snapshot_version: 1, snapshot_as_of: "2026-09-30", snapshot_verified: false, proposed_loan_ids: [], impact_profile_version: 1 },
-  baseline: { score: 89, band: "low_risk", sub_scores: { dscr: 100, runway: 85, leverage: 85, volatility: 80, repayment: 75, business_age: 100 }, source: "rules" },
-  metrics: { avg_monthly_revenue: 100000, avg_monthly_expenses: 60000, net_monthly_cashflow: 40000, total_emi: 10000, dscr: 4, surplus_after_debt: 30000, cash_runway: "positive_cashflow", revenue_volatility: 0.12, leverage: 0.2 },
-  climate: { profile_ref: "0.1:19.1:72.9@2026-10-09T11:30:00+05:30", cell_id: "0.1:19.1:72.9", fetched_at: "2026-10-09T11:30:00+05:30", overall_climate_risk: 0.4, grade: "C", confidence: "med" },
-  sensitivity: { source: "fallback", hazards: {
-    river_flood: { direction: "unfavourable", magnitude: 0.6, channels: ["operations", "revenue"], reason: "Sector default for food_beverage", physical: 0.6, demand: 0 },
-    flash_flood: { direction: "unfavourable", magnitude: 0.4, channels: ["foot_traffic"], reason: "Sector default for food_beverage", physical: 0.4, demand: 0 },
-    heat: { direction: "neutral", magnitude: 0, channels: [], reason: "Sector default for food_beverage", physical: 0, demand: 0 },
-  } },
-  stress: {
-    river_flood: stressRow(0.8, -24, -48, ["flood", "stock"], 76000, 1.6, false),
-    flash_flood: stressRow(0.5, -10, -20, ["flood", "stock"], 90000, 3, false),
-    heat: stressRow(0.1, 0, 0, [], 100000, 4, false),
-  },
-  adjusted: { score: 80, band: "low_risk", drivers: [
-    { hazard: "river_flood", points_change: -7.2, reason: "River flood stress (severity 0.8, revenue down 24% after flood and stock insurance) drops DSCR from 4 to 1.6" },
-    { hazard: "flash_flood", points_change: -1.8, reason: "Flash flood stress (severity 0.5, revenue down 10% after flood and stock insurance) drops DSCR from 4 to 3" },
-  ] },
-  summary: "Baseline 89 (low_risk); climate-adjusted 80 (low_risk). Biggest driver: River flood stress.",
-  warnings: ["snapshot_unverified: the bank has not verified the financials", "short_revenue_history: fewer than 12 months of revenue"],
-};
-
-const SAMPLE_ALERTS = { alerts: [
-  { id: 2, business_id: "SME-0142", business_name: "Sri Ganesh Bakery", audience: "owner", channel: "email", hazard: "flash_flood", severity: "warning", status: "sent", attempts: 1, window_start: "2026-10-10", window_end: "2026-10-12", evidence: "Sample evidence line from the monitor", note: null, created_at: "2026-10-09T12:05:00+05:30",
-    deliveries: [{ provider: "dry_run", result: "sent", error: null, subject: "Sample subject: heavy rain warning", body: "Sample body. Live, this is the message exactly as the template rendered it.", sent_at: "2026-10-09T12:05:04+05:30" }] },
-  { id: 1, business_id: "SME-0142", business_name: "Sri Ganesh Bakery", audience: "bank", channel: "email", hazard: "flash_flood", severity: "warning", status: "suppressed", attempts: 0, window_start: "2026-10-10", window_end: "2026-10-12", evidence: "Sample evidence line from the monitor", note: "Sample reason: inside the cooldown window", created_at: "2026-10-09T12:05:00+05:30", deliveries: [] },
-] };
-
-// The four businesses in api/data/smes.json, which the advisor reads
-const SAMPLE_ADVISOR_BUSINESSES = { businesses: [
-  { id: "SME-0101", name: "Maa Tarini Kirana Store", sector: "kirana", city: "Puri", loans: ["LN-0101"] },
-  { id: "SME-0142", name: "Sri Ganesh Bakery", sector: "food", city: "Chennai", loans: ["LN-0142"] },
-  { id: "SME-0203", name: "Patil Agro Inputs", sector: "agri-inputs", city: "Latur", loans: ["LN-0203"] },
-  { id: "SME-0307", name: "Rathore Tailoring & Alterations", sector: "tailoring", city: "Jaipur", loans: ["LN-0307"] },
-] };
-
-const SAMPLE_TURN = {
-  conversationId: "00000000-0000-4000-8000-000000000000", mode: "sample", loanId: "LN-0142", loanState: null,
-  reply: "This is a placeholder shown in sample mode. Live, the advisor answers from tool results (finance scenarios, the climate profile, hazard seasons) and cites each one.",
-  structured: null, citations: [], warnings: [], toolCalls: [],
-};
-
-const SAMPLES = [
-  [/^POST \/climate\/profile$/, SAMPLE_CLIMATE, "A real answer for Guwahati, captured from the API on 9 Oct 2026. Other coordinates show the same answer."],
-  [/^GET \/climate\/events/, { location: SAMPLE_CLIMATE.location, active_events: [], data_freshness: SAMPLE_CLIMATE.data_freshness, cache: "complete_hit", warnings: SAMPLE_CLIMATE.warnings }, "From the Guwahati answer captured on 9 Oct 2026."],
-  [/^(GET|POST) \/businesses(\/[^/]+)?$/, SAMPLE_BUSINESS, HAND],
-  [/^GET \/businesses\/[^/]+\/impact-profile$/, SAMPLE_IMPACT, HAND],
-  [/^GET \/businesses\/[^/]+\/snapshots$/, { snapshots: [SAMPLE_SNAPSHOT] }, HAND],
-  [/^GET \/finance\/(demo|business\/[^/]+\/profile)$/, SAMPLE_FINANCE, HAND],
-  [/^POST \/businesses\/[^/]+\/snapshots$/, { snapshot: SAMPLE_SNAPSHOT, scoring: "pending" }, HAND],
-  [/^POST \/businesses\/[^/]+\/loans$/, { loan: SAMPLE_BUSINESS.loans[0], scoring: "pending" }, HAND],
-  [/^PATCH \/loans\/[^/]+\/status$/, { loan: { ...SAMPLE_BUSINESS.loans[0], status: "authorised" }, scoring: "pending" }, HAND],
-  [/^POST \/advisor\/dev\/fake-alert$/, { event: { alertId: "fake-sample", cellId: "demo-cell", hazard: "heavy_rain", severity: "warning", windowStart: "2026-10-10T06:00:00.000Z", windowEnd: "2026-10-11T06:00:00.000Z", loanIds: ["LN-0142"] } }, HAND],
-  [/^GET \/alerts/, SAMPLE_ALERTS, HAND],
-  [/^GET \/advisor\/businesses$/, SAMPLE_ADVISOR_BUSINESSES, "The four demo businesses in api/data/smes.json. Live, the list also has the input service's businesses you may see."],
-  [/^POST \/advisor\/chat$/, SAMPLE_TURN, HAND],
-];
+// SAMPLES and HAND come from sample-data.js: synthetic answers that follow one
+// business through every step. Shown only in sample mode, and always labelled.
 
 // ── API client ───────────────────────────────────────────────────────────────
 
@@ -246,8 +128,11 @@ async function api(method, path, body, options = {}) {
     result.source = "sample";
     // noSample: a request made to show a refusal must not be answered with a sample
     const hit = options.noSample ? null : SAMPLES.find(([pattern]) => pattern.test(`${method} ${path}`));
-    if (hit) Object.assign(result, { ok: true, status: 200, data: hit[1], sampleNote: hit[2] });
-    else result.notSent = true;
+    if (hit) {
+      // A sample is the answer itself, or a function that works it out from the request
+      const { sampleStatus: status = 200, sampleNote, ...data } = typeof hit[1] === "function" ? hit[1](body ?? {}, path) : hit[1];
+      Object.assign(result, { ok: status < 400, status, data, sampleNote: sampleNote ?? (status < 400 ? hit[2] : undefined) });
+    } else result.notSent = true;
   } else {
     try {
       const headers = {};
@@ -338,7 +223,7 @@ function errorNote(r) {
 
 function show(out, r, renderer = "generic") {
   const body = h("div", { class: "out-b" });
-  if (r.source === "sample" && r.ok) body.append(note("sample", h("b", {}, "SAMPLE "), r.sampleNote ?? HAND), h("div", { style: "height:12px" }));
+  if (r.source === "sample" && (r.ok || r.sampleNote)) body.append(note("sample", h("b", {}, "SAMPLE "), r.sampleNote ?? HAND), h("div", { style: "height:12px" }));
   if (!r.ok) body.append(errorNote(r));
   else if (r.status === 204 || r.data === null) body.append(note("", `${r.status} with no body.`));
   else {
@@ -383,6 +268,16 @@ const warnings = (list) => (list?.length ? [subH("Warnings"), list.map((w) => no
 
 function gradeCell(grade) {
   return [h("span", { class: `sw g-${grade}` }), grade ?? "n/a"];
+}
+
+// The advisor's repayment proposal: its fields, then one row per option
+function proposalBlock(p) {
+  if (!p) return null;
+  const { options, ...rest } = p;
+  return [subH("Proposal for the bank"), kvOf(rest),
+    options?.length ? table(["Option", "Terms", "#Relief EMI", "#EMI after", "#Months", "#Extra cost", "#Lowest DSCR", "#Shortfall"], options.map((o, i) => [
+      [h("b", {}, o.title ?? label(o.kind)), i === p.recommendedIndex ? [" ", tag("recommended", "ok")] : null],
+      o.terms, inr(o.reliefEmi), inr(o.newEmi), o.months, inr(o.extraCostVsOriginal), o.minMonthlyDSCR, inr(o.cashShortfall)])) : null];
 }
 
 function eventsBlock(events) {
@@ -546,7 +441,7 @@ const RENDER = {
       h("div", { class: "presets" }, d.mode ? tag(`mode: ${d.mode}`, "cy") : null, d.loanState ? tag(`loan: ${d.loanState}`) : null,
         tag(`${d.toolCalls?.length ?? 0} tool calls`), tag(`${d.citations?.length ?? 0} citations`)),
       d.reply ? h("div", { class: "msg", style: "max-width:none" }, d.reply) : null,
-      d.proposal ? [subH("Proposal for the bank"), kvOf(d.proposal)] : null,
+      proposalBlock(d.proposal),
       d.toolCalls?.length ? [subH("Tool calls"), generic(d.toolCalls)] : null,
       d.structured ? [subH("Structured answer"), generic(d.structured)] : null,
       warnings(d.warnings));
@@ -554,7 +449,7 @@ const RENDER = {
 
   // Under the chat, where the reply itself is already in the log
   chatMeta: (d) => h("div", {},
-    d.proposal ? [subH("Proposal for the bank"), kvOf(d.proposal)] : null,
+    proposalBlock(d.proposal),
     d.toolCalls?.length ? [subH("Tool calls"), generic(d.toolCalls)] : h("p", { class: "muted", style: "font-size:13px" }, "No tool calls in this turn."),
     warnings(d.warnings)),
 
@@ -755,7 +650,7 @@ function drawMode() {
   if (sample) {
     banner.replaceChildren(h("b", {}, "SAMPLE DATA"),
       state.reachable === false ? `The API at ${state.base} did not answer. ` : "",
-      "Reads show built-in sample answers and writes are not sent. ",
+      "Every step answers with synthetic data for one made-up bakery; nothing is sent, and a reload starts the walk-through again. ",
       location.protocol === "file:" ? "This page was opened from disk; serve it on http://localhost:3000 so the API accepts its requests. " : "",
       "Start the API with npm run dev inside api/, then click the mode button.");
   }

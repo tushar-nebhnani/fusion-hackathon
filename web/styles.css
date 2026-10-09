@@ -147,10 +147,8 @@ main { padding: 28px 28px 56px; min-width: 0; }
 .view h1 { font-weight: 800; font-size: 34px; line-height: 1.1; letter-spacing: -0.01em; margin: 8px 0 10px; }
 .view > header p { color: var(--body); max-width: 760px; }
 h2.sec { font-weight: 800; font-size: 22px; margin: 34px 0 12px; }
-.sec-note { color: var(--body); font-size: 15px; margin: -6px 0 14px; max-width: 760px; }
 
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 16px; align-items: start; }
-.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 16px; align-items: start; }
 .stack { display: grid; gap: 16px; min-width: 0; }
 
 /* ── Panels ───────────────────────────────────────────────────────────── */

@@ -34,7 +34,7 @@ fusion-hackathon/
 ├── AGENTS.md               Working rules for AI coding agents
 ├── CLAUDE.md               One line that makes Claude Code load AGENTS.md
 ├── api/                    Express + TypeScript + Prisma API (the real work)
-├── web/                    Static console for every unit: index.html, styles.css, app.js
+├── web/                    Static console for every unit: index.html, styles.css, app.js, sample-data.js
 └── ml/                     Python project (FastAPI, scikit-learn): data, features, training, models, service, tests
 ```
 
@@ -83,7 +83,7 @@ Open http://localhost:3000. The port matters: `http://localhost:3000` is the def
 
 - **Run the whole workflow.** The button at the top submits the main form of each step in turn (`WORKFLOW` in `web/app.js`) and stops at the first one the API refuses, showing the answer in that step. Creating a loan and authorising it need a bank officer. The secondary endpoints of each step sit under its "More" fold.
 - **The advisor step continues with the same business.** Creating the business and recording the loan fill their ids into the chat and the step 08 forms. Before that, the chat uses `SME-0142`, a demo business from `api/data/smes.json`.
-- **Live and sample modes.** The page probes `GET /health` on load. If the API does not answer it switches to sample mode: reads show built-in sample answers, each labelled as a sample, and writes are not sent. The mode button in the header switches back.
+- **Live and sample modes.** The page probes `GET /health` on load. If the API does not answer it switches to sample mode, where nothing is sent and every step answers with synthetic data from `web/sample-data.js`, each answer labelled as a sample. The data follows one made-up business, Sri Lakshmi Bakery in Chennai, and writes move a state kept in the page (loan status, advisor state, alert outbox, repayment proposal), so the whole workflow can be walked without the API; a reload starts it again. The figures imitate the services' rules and are not computed by them. The mode button in the header switches back.
 - **Wire log.** The bar at the bottom lists every request the page made, with its status, time, `RateLimit` header, `Idempotency-Key`, whether it was replayed, and `X-Request-Id`.
 - **Adding an endpoint to it** needs no JavaScript for a plain form: give a `<form>` a `data-call="METHOD /path/:param"` attribute and name its inputs after the body fields. The comment at the top of `web/index.html` lists the conventions. A bespoke view is a function in `RENDER` in `web/app.js`; without one the answer is drawn as plain fields.
 - The `.next` folder, `node_modules` and `next-env.d.ts` in `web/` are ignored leftovers of the removed Next.js scaffold and are not used.
@@ -577,7 +577,7 @@ curl 'http://localhost:4000/alerts?limit=5'
 
 How it works:
 
-- **Producers call one function.** `import { enqueue } from "./services/alerts/index.js"` and call `void enqueue(event)`. It does one `INSERT` into `alert_outbox`, resolves to `true` or `false` within milliseconds and never rejects, even when Postgres is down.
+- **Producers call one function.** Build it once with `createEnqueue({ prisma, config })` from `./services/alerts/enqueue.js` and call `void enqueue(event)`. It does one `INSERT` into `alert_outbox`, resolves to `true` or `false` within milliseconds and never rejects, even when Postgres is down.
 - **A separate process sends.** `npm run alerts:worker` polls the outbox every 15 seconds, claims up to 20 rows with a 2-minute lease, and sends them one at a time. The API never talks to SMTP.
 - **Each event becomes two emails.** The owner gets one in their language (`en`, `hi` or `mr`) with preventive steps. The bank gets one with the borrower, the evidence and suggested actions; its `WATCH` alerts wait for one daily digest at 09:00 IST.
 - **Rules applied by the worker** (`policy.ts`): no message without `consent_at`, or after `opted_out_at`; a 6-hour cooldown per business, hazard and audience that only a higher severity breaks; retries after 1, 2, 4 and 8 minutes, then `dead`.

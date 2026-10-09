@@ -14,7 +14,7 @@ Instructions for any AI coding agent working here. `README.md` is the reference:
 | `api/src/services/finance/` | The finance service: baseline and climate-adjusted scores. Has its own `README.md` | Yes |
 | `api/src/services/evaluator/` | Checks the climate and finance answers together and rates them; the chat advisor's only way to both. Described in `README.md` | Yes |
 | `api/src/services/input/` | The input service, still being built | Only when asked. It is not documented here or in `README.md` yet |
-| `web/` | Static console that calls every endpoint: `index.html`, `styles.css`, `app.js`. No build step, no tests | Yes |
+| `web/` | Static console that calls every endpoint: `index.html`, `styles.css`, `app.js`, `sample-data.js` (sample mode's synthetic answers). No build step, no tests | Yes |
 | `ml/` | Python ML service: data, features, training, saved models, a FastAPI app and `pytest` tests. The API reaches it through `/ml` (`api/src/services/ml/`). Commands are in `ml/data/README.md` | Yes |
 
 Four processes exist, each started by hand inside `api/`: the API (`npm run dev`), the alert worker (`npm run alerts:worker`), the monitor (`npm run monitor`) and the verification job (`npm run monitor:verify`). None starts another.

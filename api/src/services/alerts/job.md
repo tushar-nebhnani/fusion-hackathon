@@ -272,9 +272,8 @@ The worker shuts down gracefully on `SIGINT`/`SIGTERM`: it stops claiming, finis
 ```
 src/alerts/
 ├── README.md            ← this file
-├── index.ts             ← exports enqueue() and types
 ├── types.ts             ← AlertEvent, Severity, Hazard, ...
-├── enqueue.ts           ← builds outbox rows (fast, never rejects)
+├── enqueue.ts           ← createEnqueue(): builds outbox rows (fast, never rejects)
 ├── worker.ts            ← entry point for npm run alerts:worker
 ├── policy.ts            ← cooldown, quiet hours, severity upgrade rules
 ├── render.ts            ← templates + guidelines → message text
@@ -353,8 +352,10 @@ npm run alerts:test -- --business SME-0142 --hazard flood --severity WARNING
 Producers call:
 
 ```ts
-import { enqueue } from "./alerts";
+import { loadAlertsConfig } from "./alerts/config.js";
+import { createEnqueue } from "./alerts/enqueue.js";
 
+const enqueue = createEnqueue({ prisma, config: loadAlertsConfig() });
 void enqueue(event); // resolves true/false in ms, never rejects
 ```
 

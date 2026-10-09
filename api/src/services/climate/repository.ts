@@ -290,5 +290,3 @@ export function createRepository(prisma: PrismaClient) {
     },
   };
 }
-
-export type ClimateRepository = ReturnType<typeof createRepository>;
