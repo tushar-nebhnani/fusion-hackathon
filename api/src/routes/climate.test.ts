@@ -1,9 +1,10 @@
-import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
+import { fakeAuth, signedIn } from "../services/auth/testing/fake-auth.js";
 import { connectDb, disconnectDb, prisma } from "../config/db.js";
 import type { ClimateAgent } from "../services/climate/agent.js";
-import { createClimateService } from "../services/climate/profile.service.js";
+import { createClimateService, historyStartFor } from "../services/climate/profile.service.js";
+import { CLIMATE } from "../config/climate.js";
 import { climateProfileSchema, type ClimateProfile } from "../services/climate/schema.js";
 import { fakeAgent } from "../services/climate/testing/fake-agent.js";
 import { fakeOpenMeteo, type FakeClimate } from "../services/climate/testing/fake-open-meteo.js";
@@ -28,13 +29,14 @@ function setup(climate: Partial<FakeClimate> = {}, rateLimit = 1000, agent?: Cli
     logger: silent,
   });
   const app = createApp({
+    auth: { service: fakeAuth() },
     climate: service,
     checkDb: connectDb,
     upstreamStatus: () => om.status(),
     climateRateLimit: rateLimit,
   });
   const profile = async (point: object = GUWAHATI) => {
-    const res = await request(app).post("/climate/profile").send(point);
+    const res = await signedIn(app).post("/climate/profile").send(point);
     return { res, body: res.body as ClimateProfile };
   };
   return { app, om, cache, profile, service };
@@ -468,7 +470,7 @@ describe("POST /climate/profile", () => {
   ])("rejects %s", async (_name, payload, status, code) => {
     const { app, om } = setup();
 
-    const res = await request(app).post("/climate/profile").send(payload);
+    const res = await signedIn(app).post("/climate/profile").send(payload);
 
     expect(res.status).toBe(status);
     expect(res.body).toMatchObject({ error: { code, step: "input_validation" } });
@@ -477,7 +479,7 @@ describe("POST /climate/profile", () => {
   });
 
   it("rejects malformed JSON with 400", async () => {
-    const res = await request(setup().app)
+    const res = await signedIn(setup().app)
       .post("/climate/profile")
       .set("content-type", "application/json")
       .send('{"lat": 26.1, "lon": ');
@@ -488,7 +490,7 @@ describe("POST /climate/profile", () => {
 
   it("rate limits each client", async () => {
     const { app } = setup({}, 2);
-    const bad = () => request(app).post("/climate/profile").send({});
+    const bad = () => signedIn(app).post("/climate/profile").send({});
 
     expect((await bad()).status).toBe(400);
     expect((await bad()).status).toBe(400);
@@ -781,7 +783,7 @@ describe("GET /climate/events", () => {
   it("returns active events only", async () => {
     const { app } = setup({ forecastTmax: [38, 46, 47] });
 
-    const res = await request(app).get("/climate/events?lat=26.1445&lon=91.7362");
+    const res = await signedIn(app).get("/climate/events?lat=26.1445&lon=91.7362");
 
     expect(res.status).toBe(200);
     expect(Object.keys(res.body as object).sort()).toEqual([
@@ -812,7 +814,7 @@ describe("GET /climate/events", () => {
   ])("validates %s", async (url, status, code) => {
     const { app, om } = setup();
 
-    const res = await request(app).get(url);
+    const res = await signedIn(app).get(url);
 
     expect(res.status).toBe(status);
     expect(res.body).toMatchObject({ error: { code } });
@@ -825,7 +827,7 @@ describe("GET /climate/cell/:cellId", () => {
     const { app, profile } = setup();
     await profile();
 
-    const res = await request(app).get("/climate/cell/0.1:26.1:91.7");
+    const res = await signedIn(app).get("/climate/cell/0.1:26.1:91.7");
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
@@ -850,7 +852,7 @@ describe("GET /climate/cell/:cellId", () => {
   });
 
   it("returns 404 for a valid cell with no data", async () => {
-    const res = await request(setup().app).get("/climate/cell/0.1:19.1:72.9");
+    const res = await signedIn(setup().app).get("/climate/cell/0.1:19.1:72.9");
 
     expect(res.status).toBe(404);
     expect(res.body).toMatchObject({ error: { code: "NOT_FOUND" } });
@@ -862,7 +864,7 @@ describe("GET /climate/cell/:cellId", () => {
     ["sql fragment", "/climate/cell/0.1:26.1:91.7'%20OR%20'1'='1"],
     ["encoded traversal", "/climate/cell/..%2F..%2Fetc%2Fpasswd"],
   ])("rejects %s with 400", async (_name, url) => {
-    const res = await request(setup().app).get(url);
+    const res = await signedIn(setup().app).get(url);
 
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: { code: "INVALID_CELL_ID" } });
@@ -875,7 +877,204 @@ describe("unsupported methods", () => {
     ["post", "/climate/events"],
     ["delete", "/climate/cell/0.1:26.1:91.7"],
   ] as const)("%s %s is a 404", async (method, url) => {
-    const res = await request(setup().app)[method](url);
+    const res = await signedIn(setup().app)[method](url);
     expect(res.status).toBe(404);
+  });
+});
+
+// The option and the extra method the background monitor uses. Both are
+// additions: a caller that does not ask for them sees no difference.
+describe("forceFreshForecast and getProfileWithForecast", () => {
+  const forced = { forceFreshForecast: true };
+
+  it("change nothing for a caller that does not ask for them", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    om.calls.length = 0;
+
+    const viaHttp = await profile();
+    const direct = await service.getProfile(GUWAHATI);
+    const explicitlyOff = await service.getProfile(GUWAHATI, null, { forceFreshForecast: false });
+
+    expect(om.calls).toEqual([]);
+    expect(viaHttp.body.cache).toBe("complete_hit");
+    expect(direct).toEqual(viaHttp.body);
+    expect(explicitlyOff).toEqual(viaHttp.body);
+  });
+
+  it("refetches only the two forecast layers, even while they are fresh", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    om.calls.length = 0;
+
+    // Same instant: by its age the cached forecast is as fresh as it can be
+    const result = await service.getProfile(GUWAHATI, null, forced);
+
+    expect([...om.calls].sort()).toEqual(["flood_forecast", "forecast"]);
+    expect(result.cache).toBe("partial_hit");
+  });
+
+  it("skips the river forecast while river flood is dormant, forced or not", async () => {
+    const { om, profile, service } = setup({ riverDischarge: null });
+    await profile();
+    om.calls.length = 0;
+
+    await service.getProfile(GUWAHATI, null, forced);
+
+    expect(om.calls).toEqual(["forecast"]);
+  });
+
+  it("sees a forecast that changed since the cached one", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    om.climateOf.forecastRain = [0, 150, 150, 150];
+    clock = new Date(START.getTime() + HOUR_MS);
+
+    const cached = await service.getProfile(GUWAHATI);
+    const fresh = await service.getProfile(GUWAHATI, null, forced);
+
+    expect(cached.active_events).toEqual([]);
+    expect(fresh.active_events).toMatchObject([{ hazard: "flash_flood", severity: "warning" }]);
+  });
+
+  it("leaves the refreshed forecast in the cache for the next ordinary request", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    clock = new Date(START.getTime() + HOUR_MS);
+    await service.getProfile(GUWAHATI, null, forced);
+    om.calls.length = 0;
+
+    const { body } = await profile();
+
+    expect(body.cache).toBe("complete_hit");
+    expect(om.calls).toEqual([]);
+    expect(body.data_freshness.forecast_issued_at).toBe("2026-10-09T12:30:00+05:30");
+  });
+
+  it("keeps a still-valid forecast when the forced refetch cannot reach Open-Meteo", async () => {
+    const { om, profile, service } = setup();
+    const before = await profile();
+    om.climateOf.failing = ["forecast", "flood_forecast"];
+    clock = new Date(START.getTime() + HOUR_MS);
+
+    const result = await service.getProfile(GUWAHATI, null, forced);
+
+    expect(result.confidence).toBe(before.body.confidence);
+    expect(result.warnings).toEqual(before.body.warnings);
+  });
+
+  it("takes the same cell lock on a partial hit as on a miss", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    let running = 0;
+    let most = 0;
+    const fetchForecast = om.forecast.bind(om);
+    om.forecast = async (...args) => {
+      running += 1;
+      most = Math.max(most, running);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      running -= 1;
+      return fetchForecast(...args);
+    };
+    om.calls.length = 0;
+
+    // Two refetches of one cell at once, as the monitor and a request might
+    const [a, b] = await Promise.all([
+      service.getProfile(GUWAHATI, null, forced),
+      service.getProfile(GUWAHATI, null, forced),
+    ]);
+
+    expect(most).toBe(1);
+    expect([a.cache, b.cache]).toEqual(["partial_hit", "partial_hit"]);
+    expect(om.calls.filter((call) => call === "forecast")).toHaveLength(2);
+  });
+
+  it("makes an ordinary request wait for a refetch of its cell, then reuse it", async () => {
+    const { om, profile, service } = setup();
+    await profile();
+    const fetchForecast = om.forecast.bind(om);
+    om.forecast = async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      return fetchForecast(...args);
+    };
+    clock = new Date(START.getTime() + HOUR_MS);
+    om.calls.length = 0;
+
+    const [refetch, ordinary] = await Promise.all([
+      service.getProfile(GUWAHATI, null, forced),
+      service.getProfile(GUWAHATI),
+    ]);
+
+    expect(refetch.cache).toBe("partial_hit");
+    expect(ordinary.cache).toBe("complete_hit");
+    expect(ordinary.data_freshness).toEqual(refetch.data_freshness);
+    expect(om.calls.filter((call) => call === "forecast")).toHaveLength(1);
+  });
+
+  it("returns exactly the API's profile, plus the daily forecast values", async () => {
+    const { om, profile, service } = setup({ forecastRain: [0, 82], forecastTmax: [31, 41] });
+    await profile();
+    om.calls.length = 0;
+    const viaHttp = await profile();
+
+    const detailed = await service.getProfileWithForecast(GUWAHATI);
+
+    expect(detailed.profile).toEqual(viaHttp.body);
+    expect(om.calls).toEqual([]);
+    expect(detailed.forecast.window).toEqual({ start: "2026-10-09", end: "2026-10-15" });
+    expect(detailed.forecast.weather?.time).toHaveLength(7);
+    expect(detailed.forecast.weather?.values).toMatchObject({
+      precipitation_sum: [0, 82, 0, 0, 0, 0, 0],
+      precipitation_probability_max: [80, 80, 80, 80, 80, 80, 80],
+      temperature_2m_max: [31, 41, 30, 30, 30, 30, 30],
+    });
+    expect(detailed.forecast.flood?.values.river_discharge).toEqual([500, 500, 500, 500, 500, 500, 500]);
+    // The river's historical high and the rain percentiles the events use
+    expect(detailed.forecast.riverHistory?.dischargeP99).toBeGreaterThan(500);
+    expect(detailed.forecast.weatherHistory?.rain3dP99).toBeGreaterThan(0);
+  });
+
+  it("does not add the forecast values to the HTTP response", async () => {
+    const { profile } = setup();
+
+    const { body } = await profile();
+
+    expect(body).not.toHaveProperty("forecast");
+    expect(() => climateProfileSchema.parse(body)).not.toThrow();
+  });
+
+  it("logs a forced request with the requester it was given", async () => {
+    const { profile, service } = setup();
+    await profile();
+
+    await service.getProfileWithForecast(GUWAHATI, "climate-monitor", forced);
+
+    const rows = await prisma.requestLog.findMany({ orderBy: { id: "asc" } });
+    expect(rows.map((row) => [row.requesterId, row.cacheResult])).toEqual([
+      [null, "miss"],
+      ["climate-monitor", "partial_hit"],
+    ]);
+  });
+});
+
+describe("warm-up history", () => {
+  it("screens a new cell on the requested years of history only", async () => {
+    const { om, service } = setup();
+    const starts: string[] = [];
+    const archive = om.archive.bind(om);
+    const floodHistory = om.floodHistory.bind(om);
+    om.archive = (point, start, end) => (starts.push(start), archive(point, start, end));
+    om.floodHistory = (point, start, end) => (starts.push(start), floodHistory(point, start, end));
+
+    const profile = await service.getProfile(GUWAHATI, null, { historyYears: 15 });
+
+    expect(starts).toEqual(["2011-01-01", "2011-01-01"]);
+    expect(profile.hazards.length).toBeGreaterThan(0);
+  });
+
+  it("never reaches further back than the configured history start", () => {
+    expect(historyStartFor("2026-10-09", 15)).toBe("2011-01-01");
+    expect(historyStartFor("2026-10-09", 60)).toBe(CLIMATE.historyStart);
+    expect(historyStartFor("2026-10-09")).toBe(CLIMATE.historyStart);
   });
 });

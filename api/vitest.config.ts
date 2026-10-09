@@ -15,6 +15,9 @@ export default defineConfig({
     environment: "node",
     include: ["src/**/*.test.ts"],
     globalSetup: "./vitest.global-setup.ts",
+    // The climate and monitor tests share tables in one test database and
+    // each truncates them, so test files run one after another
+    fileParallelism: false,
     // A cache miss stores ~30 years of daily metrics
     testTimeout: 30_000,
     env: { DATABASE_URL: url.toString(), REDIS_URL: redisUrl.toString(), NODE_ENV: "test" },

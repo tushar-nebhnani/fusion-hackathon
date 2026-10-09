@@ -1,0 +1,10 @@
+[
+  { "locationId": "L1", "businessId": "SME-0142", "lat": 13.0827, "lon": 80.2707, "label": "Chennai bakery (coastal, flood-prone)" },
+  { "locationId": "L2", "businessId": "SME-0143", "lat": 13.085, "lon": 80.272, "label": "Chennai tailor (same cell as L1)" },
+  { "locationId": "L3", "businessId": "SME-0201", "lat": 18.5204, "lon": 73.8567, "label": "Pune bakery" },
+  { "locationId": "L4", "businessId": "SME-0215", "lat": 26.1445, "lon": 91.7362, "label": "Guwahati hardware store (Brahmaputra floodplain)" },
+  { "locationId": "L5", "businessId": "SME-0230", "lat": 25.5941, "lon": 85.1376, "label": "Patna grain trader (Ganga floodplain)" },
+  { "locationId": "L6", "businessId": "SME-0264", "lat": 9.9312, "lon": 76.2673, "label": "Kochi fish processor (heavy monsoon rain)" },
+  { "locationId": "L7", "businessId": "SME-0301", "lat": 21.1458, "lon": 79.0882, "label": "Nagpur print shop (heat-prone)" },
+  { "locationId": "L8", "businessId": "SME-0318", "lat": 28.2969, "lon": 74.9647, "label": "Churu dairy (heat-prone, cold winters)" }
+]

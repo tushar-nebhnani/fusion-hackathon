@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import type { AlertOutbox, Prisma, PrismaClient } from "../../generated/prisma/client.js";
+import { findAlertBusiness, inputOwnerRecipient } from "./businesses.js";
 import { loadAlertsConfig, type AlertsConfig } from "./config.js";
 import { MAX_ATTEMPTS, backoffMs, inCooldown, isDigest } from "./policy.js";
 import {
@@ -141,7 +142,7 @@ export function createAlertWorker(deps: WorkerDeps): AlertWorker {
       },
       orderBy: { id: "asc" },
     });
-    if (!contact?.email) return null;
+    if (!contact?.email) return inputOwnerRecipient(prisma, row.businessId);
     return { to: contact.email, language: isLanguage(contact.language) ? contact.language : "en" };
   }
 
@@ -175,7 +176,7 @@ export function createAlertWorker(deps: WorkerDeps): AlertWorker {
       await settle(row, { status: "dead", lastError: "Stored event is not valid" });
       return null;
     }
-    const business = await prisma.alertBusiness.findUnique({ where: { id: row.businessId } });
+    const business = await findAlertBusiness(prisma, row.businessId);
     if (!business) {
       await suppress(row, "Unknown business");
       return null;
@@ -390,10 +391,17 @@ async function main(): Promise<void> {
   const config = loadAlertsConfig();
 
   // nodemailer is loaded only when messages really go out
-  const sender =
+  const chosen =
     config.mode === "live"
       ? (await import("./senders/emailSmtp.js")).createSmtpSender(config.smtp)
       : createDryRunSender();
+  // ALERTS_REDIRECT_TO: consent and cooldown still decide whether a message
+  // goes out; only the address it goes to changes
+  const redirectTo = config.redirectTo;
+  const sender: Sender = redirectTo
+    ? { provider: chosen.provider, send: (message) => chosen.send({ ...message, to: redirectTo }) }
+    : chosen;
+  if (redirectTo) console.warn(`Alert worker: every email is redirected to ${redirectTo}`);
 
   const worker = createAlertWorker({ prisma, config, content: loadContent(), sender });
 

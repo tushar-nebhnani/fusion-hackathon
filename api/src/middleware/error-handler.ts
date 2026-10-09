@@ -1,6 +1,4 @@
-
 import type { ErrorRequestHandler, RequestHandler } from "express";
-import { env } from "../config/env.js";
 import { AppError, NotFoundError } from "../errors/app-error.js";
 
 // Return a safe error when a route does not exist.
@@ -49,12 +47,14 @@ function getSafeHttpError(
 // Express error handlers require four parameters.
 export const errorHandler: ErrorRequestHandler = (
   err,
-  req,
+  _req,
   res,
   _next,
 ) => {
   // Handle errors intentionally created by our application.
   if (err instanceof AppError) {
+    // Read by the audit trail as the reason a request did not succeed
+    res.locals.errorCode = err.code;
     res.status(err.statusCode).json({
       error: {
         code: err.code,
@@ -70,6 +70,7 @@ export const errorHandler: ErrorRequestHandler = (
   const safeHttpError = getSafeHttpError(err);
 
   if (safeHttpError) {
+    res.locals.errorCode = safeHttpError.code;
     res.status(safeHttpError.status).json({
       error: {
         code: safeHttpError.code,
@@ -79,24 +80,11 @@ export const errorHandler: ErrorRequestHandler = (
     return;
   }
 
-  // Log unexpected errors on the server, not in the API response.
- 
-  console.error(
-    JSON.stringify({
-      timestamp: new Date().toISOString(),
-      event: "api_internal_error",
-      method: req.method,
-      path: req.path,
-      status: 500,
-      errorType: err instanceof Error ? err.name : "UnknownError",
-    }),
-  );
-
-
+  res.locals.errorCode = "INTERNAL_ERROR";
+  // The detail stays in the server's log, whatever NODE_ENV says. The
+  // request id, also sent as X-Request-Id, is how to find this line.
+  console.error(`request ${String(res.locals.requestId ?? "-")} failed:`, err);
   res.status(500).json({
-    error: {
-      code: "INTERNAL_ERROR",
-      message: "Internal server error",
-    },
+    error: { code: "INTERNAL_ERROR", message: "Internal server error" },
   });
 };

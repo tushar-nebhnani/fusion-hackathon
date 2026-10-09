@@ -12,6 +12,8 @@ const schema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.url(),
   REDIS_URL: z.url().default("redis://localhost:6379"),
+  // Reverse proxies in front of the API; 0 when clients connect directly
+  TRUST_PROXY: z.coerce.number().int().min(0).max(5).default(0),
   // The climate agent runs only when a key is present and it is not switched off
   OPENAI_API_KEY: optionalSecret,
   CLIMATE_AGENT_ENABLED: z.enum(["true", "false"]).default("true"),
