@@ -16,11 +16,13 @@ This README is the handover document for anyone, human or AI agent, picking up t
 | Evaluator | `api/src/services/evaluator/` | Built. Checks the climate and finance answers for one business against each other and against their own rules, gives one combined rating with reasons, and stores each evaluation. The chat advisor reads climate and finance only through it. See [The evaluator](#the-evaluator). |
 | Chat advisor | `api/src/services/advisor/` | Built on the `chatbot-work` branch and merged. Mounted at `/advisor` for signed-in users, with the input service's ownership and sharing rule; bank decisions need a bank officer. Its `/advisor/dev/*` routes (fake alert, verify, sweep) are for bank officers only, exist only when `ADVISOR_ENABLE_DEV_ROUTES=true` and never in production. Runs an offline planner without an API key. Reads businesses, snapshots, loans and weather-impact profiles from the input service and scores from the finance service; the `api/data/smes.json` demo businesses stay behind them outside production. Advises owners after each alert the alert system sends. Its `NOTES.md` has the details. |
 | Web console | `web/` | Built. A static HTML, CSS and JavaScript page with no build step. It walks one loan through every unit on a single page and calls every endpoint; see [The web console](#the-web-console). Checked against the live API only as far as the public routes and the 401 answers; the signed-in flows have not been exercised from it yet. |
-| ML service | `ml/` | Dependencies declared only. No code, models, data or tests. |
+| ML service | `ml/` | A separate FastAPI service, started by hand: alert calibration for flood and storm, cash-flow anomaly detection and a climate cash-flow simulation. The API reaches it through `/ml` (see [The ML endpoints](#the-ml-endpoints)); the monitor and the finance score do not use it yet. Model cards are in `ml/models/`, assumptions in `ml/data/ASSUMPTIONS.md`. |
 | Postgres | `docker-compose.yml` | Used by the API as the durable store. |
 | Redis | `docker-compose.yml` | Used by the API as a read cache in front of Postgres. No job queue yet. |
 
 Everything of substance is in `api/`.
+
+New to the app? [docs/README.md](docs/README.md) says what a business owner, a bank officer and the operator each do, and walks one loan through it.
 
 ## Repository layout
 
@@ -33,7 +35,7 @@ fusion-hackathon/
 ├── CLAUDE.md               One line that makes Claude Code load AGENTS.md
 ├── api/                    Express + TypeScript + Prisma API (the real work)
 ├── web/                    Static console for every unit: index.html, styles.css, app.js
-└── ml/                     Python 3.13 project (FastAPI, scikit-learn), empty
+└── ml/                     Python project (FastAPI, scikit-learn): data, features, training, models, service, tests
 ```
 
 ## Quick start
@@ -111,6 +113,7 @@ The climate agent is off until you put an `OPENAI_API_KEY` in `api/.env`. Withou
 
 | `FINANCE_SCORER` | `rules` | `rules` or `ml`. `ml` sends the metrics to `FINANCE_ML_URL` and falls back to the rules if the call fails |
 | `FINANCE_ML_URL` | none | Scoring endpoint of the Python model, which is not built yet |
+| `ML_SERVICE_URL` | none | Base URL of the Python service in `ml/`, for example `http://localhost:8001`. Without it `/ml` answers 503 `ML_UNAVAILABLE` |
 
 The first seven are validated at startup by `api/src/config/env.ts`; the process exits if one is invalid. The sign-in variables (`GOOGLE_CLIENT_ID`, `AUTH_*`) are read by `api/src/services/auth/config.ts` and are described under [Authentication](#authentication). The finance service's (`FINANCE_*`) are read by `api/src/services/finance/config.ts`. The alert system's variables (`ALERTS_*`, `SMTP_*`) are listed under [The alert system](#the-alert-system), the monitor's (`MONITOR_*`) under [The background monitor](#the-background-monitor), and the advisor's (`ADVISOR_*`) in `api/src/services/advisor/NOTES.md`. All of these are read separately, so a bad one never stops the API. Open-Meteo needs no key: its free tier is used without one.
 
@@ -169,6 +172,10 @@ When the climate agent is on, an OpenAI model does two jobs on top of the rules:
 | `GET` | `/evaluate/business/:id/history` | owner of it, bank | Stored evaluations of a business, newest first |
 | `POST` | `/finance/evaluate-location` | signed in | Scores an unsaved business at a candidate location. Body: `{"business", "lat", "lon"}` |
 | `GET` | `/finance/demo` | signed in | Runs a built-in sample business through the finance pipeline |
+| `GET` | `/ml/status` | signed in | Whether the Python service answers and which models it has loaded. Always 200 |
+| `POST` | `/ml/alerts/calibrate` | signed in | Chance that a fired flood or storm alert is followed by a real event |
+| `POST` | `/ml/anomaly` | signed in | Whether a monthly revenue series breaks from its own pattern |
+| `POST` | `/ml/climate-cashflow` | signed in | Simulated effect of the location's weather on a business's default risk |
 
 The input service's routes (`/businesses`, `/loans`, `/seed`) are listed in `api/src/services/input/README.md`. All of them need a signed-in user. The finance routes, their bodies and the profile's shape are described in `api/src/services/finance/README.md`.
 
@@ -330,6 +337,58 @@ Every error has the same shape:
 | 500 | `INTERNAL_ERROR` | Anything unexpected. The message is always `Internal server error`; the detail is in the server log beside the request id |
 
 Validation runs in a fixed order: presence, type, range, coverage. Coordinates are rounded to 4 decimal places, about 10 metres.
+
+## The ML endpoints
+
+`/ml` is how a frontend reaches the Python models in `ml/`. The Python service has no sign-in or rate limit of its own, so keep it reachable from the API only. `/ml` adds the session check, a limit of 30 requests a minute per client (`ML.rateLimit` in `src/services/ml/config.ts`), strict request validation and an 8-second timeout. Nothing is stored: each answer is computed from the request alone.
+
+Start the Python service and point the API at it:
+
+```bash
+cd ml && uvicorn app.main:app --port 8001      # with ml/requirements.txt installed
+# in api/.env
+ML_SERVICE_URL=http://localhost:8001
+```
+
+**`POST /ml/alerts/calibrate`** Body: `hazard` (`flood` or `storm`), `lat`, `lon`, `date` (`YYYY-MM-DD`), `precipitation_sum` (1 to 60 daily values ending on the alert day, oldest first), and optionally `soil_wetness_top`, `relative_humidity_2m_mean`, `wind_speed_10m_max` and `surface_pressure_mean` in the same form. Storm needs the last two; without them the band is `baseline`.
+
+```json
+{ "p_event": 0.345, "band": "high", "model_version": "alert-cal-0.2.0", "cell": "Mumbai", "distance_km": 3.1, "reason": null }
+```
+
+`band` is `low`, `medium` or `high`; `baseline` when only the rule's base rate applies; `unscored` when the point is more than 150 km from a trained cell. Treat `baseline` and `unscored` as "show the alert as it is".
+
+**`POST /ml/anomaly`** Body: `monthly_revenue` (13 to 120 values, oldest first), and optionally `late_payments` (booleans, same length), `cell_anomalous_share` (0 to 1) and `climate_event_in_cell`.
+
+```json
+{ "anomaly_score": 0.63, "flagged": true, "type": "systemic", "months_flagged": 2, "model_version": "cashflow-anomaly-0.1.0", "reason": null }
+```
+
+`type` is `systemic` (shared with the area, likely weather), `idiosyncratic` (this business alone) or `null` when not flagged. The stored financial snapshots hold 6 to 12 months, so a business needs more history than the input service keeps today.
+
+**`POST /ml/climate-cashflow`** Body: `lat`, `lon`, `monthly_revenue`, `variable_cost_share` (0 to 0.95), `fixed_costs`, `emi`, `starting_cash`, and a `sector` or a `vulnerability` (0 to 1 per hazard). Optional: `revenue_volatility`, `insurance_recovery`, `backup_power`, `date`, `pd_base` (the scorecard's PD, to get `climate_adjusted_pd` back), and `alert_hazard` with `alert_p_event` for an active alert.
+
+```json
+{
+  "scored": true, "cell": "Guwahati", "distance_km": 4.2,
+  "pd_without_climate": 0.0006, "pd_with_climate": 0.2203, "delta_pd_climate": 0.2197,
+  "climate_adjusted_pd": 0.2597, "climate_premium_bps": 988.7,
+  "expected_annual_climate_loss": 132007, "climate_cfar95": 405868, "cash_reserve_target": 345868,
+  "p_cash_short_30d": 0.05, "p_cash_short_30d_without_climate": 0.0,
+  "loss_by_hazard": { "river_flood": 90000 },
+  "what_if": [{ "condition": "insure 50% of climate losses", "pd_with_climate": 0.0618, "pd_change": -0.1585 }],
+  "paths": 20000, "hazards": { "river_flood": { "events_per_year": 2.86, "mean_duration": 16.14 } },
+  "assumptions": ["..."]
+}
+```
+
+A point with no measured cell within 150 km answers `{ "scored": false, "reason": "..." }`. Show `assumptions` next to the numbers: the size of the effect depends on assumed costs per event (`ml/data/ASSUMPTIONS.md`).
+
+| Status | Code | When |
+| --- | --- | --- |
+| 400 | `BAD_REQUEST` | A field is missing, unknown or out of range; `details` lists each one |
+| 502 | `ML_FAILED` | The Python service failed or sent an answer the API does not recognise |
+| 503 | `ML_UNAVAILABLE` | `ML_SERVICE_URL` is not set, or the service did not answer in time |
 
 ## How the services connect
 
@@ -793,7 +852,7 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 ## Not built yet
 
 - A production frontend. `web/` is a static console for showing and testing the API, not the product UI. It has no tests.
-- The ML service. `ml/` is empty. The finance service scores with rules; its ML scorer is a stub that would call a model over HTTP (`FINANCE_SCORER=ml`), and no model exists.
+- Using the ML models inside the pipeline. The UI can call them through `/ml`, but the monitor does not ask for an alert's calibrated probability, and the finance score ignores the cash-flow simulation. The web console has no `/ml` panel yet. The finance service scores with rules; its ML scorer is a stub that would call a model over HTTP (`FINANCE_SCORER=ml`), and no model exists.
 - The advisor's use of the finance service's other functions. It sees the finance service only through the evaluation; the scenario, location and repayment-capacity functions are not tools yet, and the advisor still runs its own cash-flow and repayment maths on the business's own figures.
 - A way to manage users. Bank officers are named in `api/.env`; there is no admin screen, and no way to hand a business to a different owner except by editing `businesses.owner_user_id`.
 - `request_log.requester_id` for signed-in users. It is still null for every client request; only the monitor sets it.

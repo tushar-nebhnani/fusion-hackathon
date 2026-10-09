@@ -2,8 +2,8 @@
 
     python ml/training/train_alert_calibration.py
 
-Writes ml/models/alert_calibration_flood.joblib (or baseline-only when a
-hazard has fewer than MIN_TRAIN_HITS), metrics JSON and a reliability plot.
+Writes ml/models/alert_calibration_<hazard>.joblib (or baseline-only when a
+hazard has fewer than MIN_TRAIN_HITS), metrics JSON and reliability plots.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from sklearn.ensemble import HistGradientBoostingClassifier  # noqa: E402
-from sklearn.isotonic import IsotonicRegression  # noqa: E402
 from sklearn.linear_model import LogisticRegression  # noqa: E402
 from sklearn.metrics import average_precision_score, brier_score_loss  # noqa: E402
 from sklearn.pipeline import make_pipeline  # noqa: E402
@@ -32,8 +31,10 @@ import alerts as A  # noqa: E402
 
 MODELS = ML / "models"
 FIG = ML / "eda" / "figures"
-MODEL_VERSION = "alert-cal-0.1.0"
-MIN_TRAIN_HITS = 50  # plan section 4.4
+MODEL_VERSION = "alert-cal-0.2.0"
+# Plan section 4.4 said 50. Lowered so storm (30 hits) trains: on 2020-2023 a
+# plain logistic ranks storms far above the rule, though on 16 real events
+MIN_TRAIN_HITS = 25
 # Operating points chosen on validation: share of real events an alert band keeps
 KEEP_HITS_LOW = 0.90   # below this score: bank-only / log
 KEEP_HITS_HIGH = 0.50  # above this score: high band
@@ -68,6 +69,23 @@ def at_threshold(y: np.ndarray, p: np.ndarray, t: float) -> dict:
     }
 
 
+def logit(p: np.ndarray) -> np.ndarray:
+    p = np.clip(p, 1e-6, 1 - 1e-6)
+    return np.log(p / (1 - p))
+
+
+def fit_platt(raw: np.ndarray, y: np.ndarray) -> dict[str, float]:
+    """Platt scaling on validation. Isotonic gave the test alerts only 28
+    distinct scores, which lost ranking (PR-AUC 0.170 against 0.198)."""
+    m = LogisticRegression(C=1e6, max_iter=1000).fit(logit(raw).reshape(-1, 1), y)
+    return {"a": float(m.coef_[0][0]), "b": float(m.intercept_[0])}
+
+
+def platt(raw: np.ndarray, cal: dict[str, float]) -> np.ndarray:
+    # app/main.py applies the same formula when serving
+    return 1 / (1 + np.exp(-(cal["a"] * logit(raw) + cal["b"])))
+
+
 def fit_model(kind: str, X: pd.DataFrame, y: pd.Series):
     if kind == "logistic":
         m = make_pipeline(StandardScaler(), LogisticRegression(C=0.5, max_iter=5000))
@@ -100,11 +118,10 @@ def evaluate(name: str, eps: pd.DataFrame, features: list[str], cells: dict) -> 
               for k, m in cands.items()}
     kind = max(val_ap, key=val_ap.get)
     model = cands[kind]
-    raw_val = model.predict_proba(val[features])[:, 1]
-    iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0).fit(raw_val, val.label)
+    cal = fit_platt(model.predict_proba(val[features])[:, 1], val.label.values)
 
     def predict(df: pd.DataFrame) -> np.ndarray:
-        return iso.predict(model.predict_proba(df[features])[:, 1])
+        return platt(model.predict_proba(df[features])[:, 1], cal)
 
     p_val, p_test = predict(val), predict(test)
     t_low = threshold_keeping(val.label.values, p_val, KEEP_HITS_LOW)
@@ -113,6 +130,7 @@ def evaluate(name: str, eps: pd.DataFrame, features: list[str], cells: dict) -> 
     y = test.label.values
     out.update({
         "status": "model",
+        "model_version": MODEL_VERSION,
         "model_kind": kind,
         "val_pr_auc": {k: round(v, 4) for k, v in val_ap.items()},
         "test": {
@@ -133,9 +151,9 @@ def evaluate(name: str, eps: pd.DataFrame, features: list[str], cells: dict) -> 
     out["leave_one_region_out"] = loro(eps, features, kind)
     reliability(name, y, p_test, b_test)
     joblib.dump({
-        "model": model, "isotonic": iso, "features": features, "bands": {"low": t_low, "high": t_high},
+        "model": model, "platt": cal, "features": features, "bands": {"low": t_low, "high": t_high},
         "baseline_rates": rates, "model_version": MODEL_VERSION, "hazard": name, "cells": cells,
-    }, MODELS / f"alert_calibration_{name}.joblib")
+    }, MODELS / f"alert_calibration_{name}.joblib", compress=3)
     return out
 
 
@@ -163,12 +181,12 @@ def reliability(name: str, y: np.ndarray, p: np.ndarray, b: np.ndarray) -> None:
     df = pd.DataFrame({"y": y, "p": p, "bin": idx}).groupby("bin").agg(p=("p", "mean"), y=("y", "mean"), n=("y", "size"))
     fig, ax = plt.subplots(figsize=(5, 5))
     ax.plot([0, 1], [0, 1], ls="--", c="grey", lw=1, label="perfect")
-    ax.plot(df.p, df.y, marker="o", label="model 4 (calibrated)")
+    ax.plot(df.p, df.y, marker="o", label="model 4 (calibrated)")  # few points when events are few
     ax.axhline(b.mean(), c="#c0504d", lw=1, label="rule alone (one rate)")
     top = max(df.p.max(), df.y.max()) * 1.15
     ax.set_xlim(0, top)
     ax.set_ylim(0, top)
-    ax.set_xlabel("predicted P(real flood)")
+    ax.set_xlabel(f"predicted P(real {name})")
     ax.set_ylabel("observed share that were real")
     ax.set_title(f"{name}: reliability on 2020-2023 (unseen)")
     ax.legend()
@@ -180,18 +198,19 @@ def cell_stats(w: pd.DataFrame) -> dict:
     """Per-cell thresholds and monthly climatology, so serving computes the
     same features from a short recent series."""
     first = w.groupby("location_name").first()
-    clim = w.groupby(["location_name", "month"]).first()[["rain30_clim", "soil_clim"]]
+    clim = w.groupby(["location_name", "month"]).first()[["rain30_clim", "soil_clim", "pressure_clim"]]
     clim["rh_clim"] = (w[A._in(A.TRAIN_YEARS, w.date)]
                        .groupby(["location_name", "month"]).rh.mean())
     out = {}
     for name, r in first.iterrows():
         out[name] = {
             "lat": float(r.cell_lat), "lon": float(r.cell_lon), "coastal": int(r.coastal),
-            "rain_p99": float(r.rain_p99), "rain3_p95": float(r.rain3_p95),
+            "rain_p99": float(r.rain_p99), "rain3_p95": float(r.rain3_p95), "wind_p99": float(r.wind_p99),
             "cell_flood_rate": float(r.cell_flood_rate),
             "rain30_clim": {int(m): float(v) for m, v in clim.loc[name].rain30_clim.items()},
             "soil_clim": {int(m): float(v) for m, v in clim.loc[name].soil_clim.items()},
             "rh_clim": {int(m): float(v) for m, v in clim.loc[name].rh_clim.items()},
+            "pressure_clim": {int(m): float(v) for m, v in clim.loc[name].pressure_clim.items()},
         }
     return out
 
@@ -204,9 +223,11 @@ def main() -> None:
     fe, fm = A.flood_dataset(w, floods)
     se, sm = A.storm_dataset(w, storms)
     results = []
+    stats = cell_stats(w)
     for name, eps, miss, feats in (("flood", fe, fm, A.FLOOD_FEATURES), ("storm", se, sm, A.STORM_FEATURES)):
         eps = eps[eps.start.dt.year <= A.TEST_YEARS[1]]
-        r = evaluate(name, eps, feats, cell_stats(w))
+        # storm episodes exist only in cells storms reach, so serving scores only those
+        r = evaluate(name, eps, feats, {n: c for n, c in stats.items() if n in set(eps.location_name)})
         r["misses_no_alert"] = {"events": len(miss), "share": round(len(miss) / max(len(miss) + int(eps.label.sum()), 1), 3)}
         results.append(r)
     path = MODELS / "alert_calibration_metrics.json"

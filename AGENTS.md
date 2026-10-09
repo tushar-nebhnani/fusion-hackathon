@@ -15,7 +15,7 @@ Instructions for any AI coding agent working here. `README.md` is the reference:
 | `api/src/services/evaluator/` | Checks the climate and finance answers together and rates them; the chat advisor's only way to both. Described in `README.md` | Yes |
 | `api/src/services/input/` | The input service, still being built | Only when asked. It is not documented here or in `README.md` yet |
 | `web/` | Static console that calls every endpoint: `index.html`, `styles.css`, `app.js`. No build step, no tests | Yes |
-| `ml/` | Python project with dependencies only | Nothing to work on yet |
+| `ml/` | Python ML service: data, features, training, saved models, a FastAPI app and `pytest` tests. The API reaches it through `/ml` (`api/src/services/ml/`). Commands are in `ml/data/README.md` | Yes |
 
 Four processes exist, each started by hand inside `api/`: the API (`npm run dev`), the alert worker (`npm run alerts:worker`), the monitor (`npm run monitor`) and the verification job (`npm run monitor:verify`). None starts another.
 
@@ -94,7 +94,7 @@ Do not change `ALERTS_MODE`, `MONITOR_ALERT_SINK` or the OpenAI key in `api/.env
 - **Names:** snake_case in API responses and database columns (through Prisma `@map`), camelCase in TypeScript. Unused arguments start with `_`.
 - **Dates and timestamps are in IST** (`Asia/Kolkata`).
 - **Tunable numbers live in `src/config/climate.ts`**, or `LIMITS` and `HAZARD_CATALOG` in `hazards.ts`. Do not put a threshold in the middle of a function.
-- **Settings that must not stop the API** (`ALERTS_*`, `SMTP_*`, `MONITOR_*`, `INPUT_*`, `FINANCE_*`) are read by their own `config.ts` and fall back to defaults. Only `src/config/env.ts` may exit the process.
+- **Settings that must not stop the API** (`ALERTS_*`, `SMTP_*`, `MONITOR_*`, `INPUT_*`, `FINANCE_*`, `ML_*`) are read by their own `config.ts` and fall back to defaults. Only `src/config/env.ts` may exit the process.
 - **Comments are short** and say why, not what. Write code that reads like the code around it.
 
 ## Where to make a change

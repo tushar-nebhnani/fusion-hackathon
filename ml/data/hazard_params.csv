@@ -1,0 +1,229 @@
+location_name,hazard,unit,n_events,events_per_year_mean,trend_per_decade,events_per_year,mean_duration,duration_from
+Agartala,cold_wave,days,9,0.3103,0.0,0.3103,2.22,cell
+Agartala,drought,months,51,1.7586,-0.3177,0.9894,1.0,cell
+Agartala,flash_flood,days,38,1.3103,0.1821,1.7651,1.18,cell
+Agartala,heat,days,20,0.6897,-0.2472,0.4435,3.05,cell
+Agartala,river_flood,days,22,0.7586,0.0,0.7586,5.95,cell
+Agartala,storm,days,7,0.2414,0.1505,0.3093,1.0,cell
+Aizawl,cold_wave,days,22,0.7586,0.0,0.7586,1.68,cell
+Aizawl,drought,months,55,1.8966,-0.4671,0.9483,1.0,cell
+Aizawl,flash_flood,days,34,1.1724,0.2433,1.7369,1.35,cell
+Aizawl,heat,days,0,0.0,0.0,0.0,2.72,hazard average
+Aizawl,river_flood,days,14,0.4828,0.0,0.4828,1.0,cell
+Aizawl,storm,days,3,0.1034,0.061,0.1146,1.0,cell
+Amaravati,cold_wave,days,0,0.0,0.0,0.0,1.83,hazard average
+Amaravati,drought,months,59,2.0345,-0.1754,1.4938,1.0,cell
+Amaravati,flash_flood,days,14,0.4828,0.0979,0.5683,1.21,cell
+Amaravati,heat,days,86,2.9655,-0.1517,2.2732,2.48,cell
+Amaravati,river_flood,days,25,0.8621,0.0,0.8621,7.68,cell
+Amaravati,storm,days,6,0.2069,0.0693,0.2324,1.33,cell
+Bengaluru,cold_wave,days,29,1.0,0.0,1.0,1.28,cell
+Bengaluru,drought,months,53,1.8276,-0.0015,1.823,1.0,cell
+Bengaluru,flash_flood,days,5,0.1724,-0.0031,0.1716,1.0,cell
+Bengaluru,heat,days,4,0.1379,-0.0126,0.135,1.25,cell
+Bengaluru,river_flood,days,45,1.5517,0.0,1.5517,12.44,cell
+Bengaluru,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Bhopal,cold_wave,days,67,2.3103,0.0,2.3103,1.7,cell
+Bhopal,drought,months,55,1.8966,-0.1663,1.4158,1.0,cell
+Bhopal,flash_flood,days,31,1.069,0.0947,1.2518,1.16,cell
+Bhopal,heat,days,54,1.8621,-0.1184,1.5152,2.22,cell
+Bhopal,river_flood,days,25,0.8621,0.0,0.8621,2.52,cell
+Bhopal,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Bhubaneswar,cold_wave,days,33,1.1379,0.0,1.1379,1.67,cell
+Bhubaneswar,drought,months,52,1.7931,-0.0734,1.5797,1.0,cell
+Bhubaneswar,flash_flood,days,33,1.1379,0.0326,1.2024,1.12,cell
+Bhubaneswar,heat,days,91,3.1379,-0.1416,2.4495,2.35,cell
+Bhubaneswar,river_flood,days,18,0.6207,0.0,0.6207,13.06,cell
+Bhubaneswar,storm,days,7,0.2414,0.0265,0.2525,1.14,cell
+Chandigarh,cold_wave,days,0,0.0,0.0,0.0,1.83,hazard average
+Chandigarh,drought,months,58,2.0,-0.3025,1.1584,1.0,cell
+Chandigarh,flash_flood,days,18,0.6207,0.0384,0.6623,1.0,cell
+Chandigarh,heat,days,164,5.6552,-0.3193,3.172,2.66,cell
+Chandigarh,river_flood,days,10,0.3448,0.0,0.3448,1.1,cell
+Chandigarh,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Chennai,cold_wave,days,0,0.0,0.0,0.0,1.83,hazard average
+Chennai,drought,months,57,1.9655,-0.141,1.536,1.0,cell
+Chennai,flash_flood,days,15,0.5172,0.0633,0.5751,1.33,cell
+Chennai,heat,days,41,1.4138,-0.2647,0.8797,1.63,cell
+Chennai,river_flood,days,37,1.2759,0.0,1.2759,6.84,cell
+Chennai,storm,days,10,0.3448,0.0472,0.3734,1.4,cell
+Daman,cold_wave,days,0,0.0,0.0,0.0,1.83,hazard average
+Daman,drought,months,57,1.9655,-0.2347,1.2937,1.0,cell
+Daman,flash_flood,days,40,1.3793,-0.1106,1.1381,1.32,cell
+Daman,heat,days,0,0.0,0.0,0.0,2.72,hazard average
+Daman,river_flood,days,0,0.0,0.0,0.0,8.55,hazard average
+Daman,storm,days,1,0.0345,0.0404,0.0369,1.27,hazard average
+Dehradun,cold_wave,days,22,0.7586,0.0,0.7586,1.14,cell
+Dehradun,drought,months,58,2.0,-0.326,1.1073,1.0,cell
+Dehradun,flash_flood,days,11,0.3793,0.0109,0.3864,1.18,cell
+Dehradun,heat,days,84,2.8966,-0.1736,2.1337,2.77,cell
+Dehradun,river_flood,days,22,0.7586,0.0,0.7586,1.64,cell
+Dehradun,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Delhi,cold_wave,days,68,2.3448,0.0,2.3448,1.84,cell
+Delhi,drought,months,59,2.0345,-0.1511,1.5612,1.0,cell
+Delhi,flash_flood,days,14,0.4828,0.0747,0.547,1.07,cell
+Delhi,heat,days,148,5.1034,-0.0634,4.5757,3.59,cell
+Delhi,river_flood,days,14,0.4828,0.0,0.4828,1.36,cell
+Delhi,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Dispur,cold_wave,days,16,0.5517,0.0,0.5517,2.12,cell
+Dispur,drought,months,57,1.9655,-0.2112,1.3514,1.0,cell
+Dispur,flash_flood,days,24,0.8276,-0.1508,0.6355,1.08,cell
+Dispur,heat,days,1,0.0345,-0.0472,0.0318,2.72,hazard average
+Dispur,river_flood,days,83,2.8621,0.0,2.8621,16.14,cell
+Dispur,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Gandhinagar,cold_wave,days,50,1.7241,0.0,1.7241,1.72,cell
+Gandhinagar,drought,months,58,2.0,-0.069,1.7757,1.0,cell
+Gandhinagar,flash_flood,days,21,0.7241,-0.0618,0.6511,1.29,cell
+Gandhinagar,heat,days,109,3.7586,-0.1342,2.9734,3.29,cell
+Gandhinagar,river_flood,days,16,0.5517,0.0,0.5517,54.25,cell
+Gandhinagar,storm,days,1,0.0345,0.0404,0.0369,1.27,hazard average
+Gangtok,cold_wave,days,115,3.9655,0.0,3.9655,1.3,cell
+Gangtok,drought,months,50,1.7241,-0.5562,0.8621,1.0,cell
+Gangtok,flash_flood,days,4,0.1379,0.0503,0.1501,1.25,cell
+Gangtok,heat,days,0,0.0,0.0,0.0,2.72,hazard average
+Gangtok,river_flood,days,22,0.7586,0.0,0.7586,8.27,cell
+Gangtok,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Guwahati,cold_wave,days,16,0.5517,0.0,0.5517,2.12,cell
+Guwahati,drought,months,57,1.9655,-0.2112,1.3514,1.0,cell
+Guwahati,flash_flood,days,24,0.8276,-0.1508,0.6355,1.08,cell
+Guwahati,heat,days,1,0.0345,-0.0472,0.0318,2.72,hazard average
+Guwahati,river_flood,days,83,2.8621,0.0,2.8621,16.14,cell
+Guwahati,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Hyderabad,cold_wave,days,20,0.6897,0.0,0.6897,1.7,cell
+Hyderabad,drought,months,59,2.0345,0.1768,2.7181,1.0,cell
+Hyderabad,flash_flood,days,7,0.2414,-0.0502,0.2215,1.0,cell
+Hyderabad,heat,days,21,0.7241,0.0916,0.8436,2.57,cell
+Hyderabad,river_flood,days,24,0.8276,0.0,0.8276,9.04,cell
+Hyderabad,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Imphal,cold_wave,days,18,0.6207,0.0,0.6207,1.22,cell
+Imphal,drought,months,49,1.6897,-0.2974,0.9883,1.0,cell
+Imphal,flash_flood,days,9,0.3103,0.0538,0.3397,1.0,cell
+Imphal,heat,days,0,0.0,0.0,0.0,2.72,hazard average
+Imphal,river_flood,days,5,0.1724,0.0,0.1724,4.8,cell
+Imphal,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Itanagar,cold_wave,days,8,0.2759,0.0,0.2759,2.0,cell
+Itanagar,drought,months,56,1.931,-0.4238,0.9655,1.0,cell
+Itanagar,flash_flood,days,15,0.5172,0.0177,0.533,1.07,cell
+Itanagar,heat,days,0,0.0,0.0,0.0,2.72,hazard average
+Itanagar,river_flood,days,17,0.5862,0.0,0.5862,2.94,cell
+Itanagar,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Jaipur,cold_wave,days,70,2.4138,0.0,2.4138,1.61,cell
+Jaipur,drought,months,60,2.069,-0.3051,1.1924,1.0,cell
+Jaipur,flash_flood,days,3,0.1034,0.0225,0.1075,1.0,cell
+Jaipur,heat,days,89,3.069,-0.1559,2.3346,2.39,cell
+Jaipur,river_flood,days,29,1.0,0.0,1.0,15.45,cell
+Jaipur,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Jaisalmer,cold_wave,days,80,2.7586,0.0,2.7586,1.79,cell
+Jaisalmer,drought,months,56,1.931,-0.1248,1.5535,1.0,cell
+Jaisalmer,flash_flood,days,2,0.069,0.0262,0.0721,1.17,hazard average
+Jaisalmer,heat,days,126,4.3448,-0.1428,3.3841,2.09,cell
+Jaisalmer,river_flood,days,12,0.4138,0.0,0.4138,4.0,cell
+Jaisalmer,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Jammu,cold_wave,days,0,0.0,0.0,0.0,1.83,hazard average
+Jammu,drought,months,59,2.0345,-0.5339,1.0172,1.0,cell
+Jammu,flash_flood,days,13,0.4483,0.1023,0.5315,1.08,cell
+Jammu,heat,days,210,7.2414,-0.4525,3.6207,2.96,cell
+Jammu,river_flood,days,14,0.4828,0.0,0.4828,2.5,cell
+Jammu,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Kavaratti,cold_wave,days,0,0.0,0.0,0.0,1.83,hazard average
+Kavaratti,drought,months,51,1.7586,-0.1517,1.3479,1.0,cell
+Kavaratti,flash_flood,days,15,0.5172,0.1419,0.6537,1.13,cell
+Kavaratti,heat,days,0,0.0,0.0,0.0,2.72,hazard average
+Kavaratti,river_flood,days,0,0.0,0.0,0.0,8.55,hazard average
+Kavaratti,storm,days,2,0.069,0.0164,0.0708,1.27,hazard average
+Kohima,cold_wave,days,23,0.7931,0.0,0.7931,1.43,cell
+Kohima,drought,months,54,1.8621,-0.4219,0.931,1.0,cell
+Kohima,flash_flood,days,2,0.069,0.0361,0.0733,1.17,hazard average
+Kohima,heat,days,0,0.0,0.0,0.0,2.72,hazard average
+Kohima,river_flood,days,7,0.2414,0.0,0.2414,35.14,cell
+Kohima,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Kolkata,cold_wave,days,40,1.3793,0.0,1.3793,2.1,cell
+Kolkata,drought,months,49,1.6897,-0.0032,1.6806,1.0,cell
+Kolkata,flash_flood,days,22,0.7586,0.1692,1.0013,1.18,cell
+Kolkata,heat,days,64,2.2069,-0.0583,1.9964,2.05,cell
+Kolkata,river_flood,days,34,1.1724,0.0,1.1724,3.97,cell
+Kolkata,storm,days,6,0.2069,0.0723,0.2335,1.33,cell
+Leh,cold_wave,days,362,12.4828,0.0,12.4828,2.25,cell
+Leh,drought,months,53,1.8276,-0.5204,0.9138,1.0,cell
+Leh,flash_flood,days,0,0.0,0.0,0.0,1.17,hazard average
+Leh,heat,days,0,0.0,0.0,0.0,2.72,hazard average
+Leh,river_flood,days,4,0.1379,0.0,0.1379,1.0,cell
+Leh,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Lucknow,cold_wave,days,59,2.0345,0.0,2.0345,1.76,cell
+Lucknow,drought,months,59,2.0345,-0.1196,1.6519,1.0,cell
+Lucknow,flash_flood,days,17,0.5862,0.0905,0.6817,1.12,cell
+Lucknow,heat,days,140,4.8276,0.0315,5.0914,3.44,cell
+Lucknow,river_flood,days,27,0.931,0.0,0.931,6.22,cell
+Lucknow,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Mumbai,cold_wave,days,1,0.0345,0.0,0.0345,1.83,hazard average
+Mumbai,drought,months,52,1.7931,-0.2675,1.1099,1.0,cell
+Mumbai,flash_flood,days,18,0.6207,0.1347,0.7755,1.28,cell
+Mumbai,heat,days,42,1.4483,-0.2859,0.8659,1.5,cell
+Mumbai,river_flood,days,100,3.4483,0.0,3.4483,3.08,cell
+Mumbai,storm,days,3,0.1034,0.0739,0.1171,1.0,cell
+Panaji,cold_wave,days,0,0.0,0.0,0.0,1.83,hazard average
+Panaji,drought,months,54,1.8621,-0.23,1.2365,1.0,cell
+Panaji,flash_flood,days,42,1.4483,0.4675,2.8966,1.17,cell
+Panaji,heat,days,0,0.0,0.0,0.0,2.72,hazard average
+Panaji,river_flood,days,13,0.4483,0.0,0.4483,4.69,cell
+Panaji,storm,days,1,0.0345,0.0404,0.0369,1.27,hazard average
+Patna,cold_wave,days,51,1.7586,0.0,1.7586,1.86,cell
+Patna,drought,months,57,1.9655,0.2597,2.9857,1.0,cell
+Patna,flash_flood,days,14,0.4828,0.0644,0.5378,1.0,cell
+Patna,heat,days,118,4.069,0.0009,4.0752,2.6,cell
+Patna,river_flood,days,36,1.2414,0.0,1.2414,8.33,cell
+Patna,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Puducherry,cold_wave,days,0,0.0,0.0,0.0,1.83,hazard average
+Puducherry,drought,months,51,1.7586,-0.2156,1.1994,1.0,cell
+Puducherry,flash_flood,days,18,0.6207,-0.0288,0.5908,1.22,cell
+Puducherry,heat,days,1,0.0345,-0.0337,0.0326,2.72,hazard average
+Puducherry,river_flood,days,4,0.1379,0.0,0.1379,1.25,cell
+Puducherry,storm,days,7,0.2414,0.0767,0.2744,1.57,cell
+Puri,cold_wave,days,0,0.0,0.0,0.0,1.83,hazard average
+Puri,drought,months,58,2.0,-0.1425,1.5588,1.0,cell
+Puri,flash_flood,days,32,1.1034,0.0214,1.1441,1.19,cell
+Puri,heat,days,51,1.7586,-0.2031,1.2273,1.67,cell
+Puri,river_flood,days,14,0.4828,0.0,0.4828,16.29,cell
+Puri,storm,days,11,0.3793,-0.0027,0.3776,1.18,cell
+Raipur,cold_wave,days,70,2.4138,0.0,2.4138,1.77,cell
+Raipur,drought,months,59,2.0345,-0.1439,1.5816,1.0,cell
+Raipur,flash_flood,days,32,1.1034,0.25,1.6514,1.25,cell
+Raipur,heat,days,131,4.5172,-0.1745,3.3219,3.36,cell
+Raipur,river_flood,days,17,0.5862,0.0,0.5862,2.29,cell
+Raipur,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Ranchi,cold_wave,days,75,2.5862,0.0,2.5862,1.67,cell
+Ranchi,drought,months,52,1.7931,0.0505,1.952,1.0,cell
+Ranchi,flash_flood,days,17,0.5862,-0.0513,0.5367,1.18,cell
+Ranchi,heat,days,38,1.3103,-0.063,1.1757,2.66,cell
+Ranchi,river_flood,days,19,0.6552,0.0,0.6552,5.68,cell
+Ranchi,storm,days,1,0.0345,0.0404,0.0369,1.27,hazard average
+Shillong,cold_wave,days,33,1.1379,0.0,1.1379,1.61,cell
+Shillong,drought,months,44,1.5172,-0.4164,0.7586,1.0,cell
+Shillong,flash_flood,days,33,1.1379,0.4827,2.2759,1.27,cell
+Shillong,heat,days,0,0.0,0.0,0.0,2.72,hazard average
+Shillong,river_flood,days,13,0.4483,0.0,0.4483,2.23,cell
+Shillong,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Shimla,cold_wave,days,74,2.5517,0.0,2.5517,1.43,cell
+Shimla,drought,months,61,2.1034,-0.1931,1.4953,1.0,cell
+Shimla,flash_flood,days,8,0.2759,-0.0318,0.2613,1.38,cell
+Shimla,heat,days,57,1.9655,-0.2259,1.3151,2.53,cell
+Shimla,river_flood,days,85,2.931,0.0,2.931,3.55,cell
+Shimla,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Sri Vijaya Puram,cold_wave,days,0,0.0,0.0,0.0,1.83,hazard average
+Sri Vijaya Puram,drought,months,56,1.931,0.0073,1.9552,1.0,cell
+Sri Vijaya Puram,flash_flood,days,36,1.2414,0.1126,1.4967,1.11,cell
+Sri Vijaya Puram,heat,days,0,0.0,0.0,0.0,2.72,hazard average
+Sri Vijaya Puram,river_flood,days,1,0.0345,0.0,0.0345,8.55,hazard average
+Sri Vijaya Puram,storm,days,3,0.1034,-0.0096,0.1019,1.33,cell
+Srinagar,cold_wave,days,251,8.6552,0.0,8.6552,1.98,cell
+Srinagar,drought,months,59,2.0345,-0.5967,1.0172,1.0,cell
+Srinagar,flash_flood,days,7,0.2414,0.0885,0.2798,1.0,cell
+Srinagar,heat,days,14,0.4828,-0.3207,0.27,2.14,cell
+Srinagar,river_flood,days,9,0.3103,0.0,0.3103,3.56,cell
+Srinagar,storm,days,0,0.0,0.0,0.0,1.27,hazard average
+Thiruvananthapuram,cold_wave,days,0,0.0,0.0,0.0,1.83,hazard average
+Thiruvananthapuram,drought,months,62,2.1379,-0.112,1.7596,1.0,cell
+Thiruvananthapuram,flash_flood,days,18,0.6207,0.0216,0.6438,1.0,cell
+Thiruvananthapuram,heat,days,0,0.0,0.0,0.0,2.72,hazard average
+Thiruvananthapuram,river_flood,days,162,5.5862,0.0,5.5862,7.54,cell
+Thiruvananthapuram,storm,days,2,0.069,-0.0033,0.0686,1.27,hazard average

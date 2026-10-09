@@ -24,6 +24,7 @@ function app() {
     input: { service: { logRequest: () => undefined } as never, options: { seed: { enabled: true, file: "unused" } } },
     finance: { service: STUB, assertAccess: () => Promise.resolve() },
     evaluator: { service: STUB, assertAccess: () => Promise.resolve() },
+    ml: { client: STUB },
   });
 }
 
@@ -37,6 +38,10 @@ const SIGNED_IN_ONLY: Route[] = [
   ["post", "/finance/evaluate-location"],
   ["get", "/finance/business/b1/profile"],
   ["get", "/evaluate/business/b1"],
+  ["get", "/ml/status"],
+  ["post", "/ml/alerts/calibrate"],
+  ["post", "/ml/anomaly"],
+  ["post", "/ml/climate-cashflow"],
   ["get", "/advisor/businesses"],
   ["post", "/advisor/chat"],
   ["post", "/advisor/damage-report"],

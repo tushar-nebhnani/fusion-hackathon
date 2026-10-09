@@ -20,12 +20,14 @@ sys.path.insert(0, str(ML / "features"))
 
 MODEL = ML / "models" / "alert_calibration_flood.joblib"
 WEATHER = ML / "data" / "weather_dataset.csv"
-pytestmark = pytest.mark.skipif(not MODEL.exists(), reason="train model 4 first")
+pytestmark = pytest.mark.skipif(
+    not (MODEL.exists() and MODEL.with_name("alert_calibration_storm.joblib").exists()), reason="train model 4 first")
 
-from app.main import CalibrateRequest, app, flood_features, model  # noqa: E402
+from app.main import CalibrateRequest, app, flood_features, model, storm_features  # noqa: E402
 
 client = TestClient(app)
 MUMBAI = {"lat": 19.08, "lon": 72.88}
+PURI = {"lat": 19.81, "lon": 85.83}
 
 
 def test_heavy_rain_in_a_trained_cell_gets_a_probability_and_band():
@@ -56,11 +58,30 @@ def test_point_far_from_every_cell_is_unscored_so_the_alert_goes_out_unchanged()
     assert r.json()["p_event"] is None
 
 
-def test_storm_is_baseline_only():
+def test_storm_without_wind_and_pressure_stays_rule_only():
     r = client.post("/alerts/calibrate", json={
         "hazard": "storm", **MUMBAI, "date": "2023-06-10", "precipitation_sum": [100.0],
     })
     assert r.json()["band"] == "baseline"
+    assert r.json()["p_event"] is None
+
+
+def storm_p(wind: float, pressure: float) -> dict:
+    return client.post("/alerts/calibrate", json={
+        "hazard": "storm", **PURI, "date": "2023-10-25", "precipitation_sum": [10.0, 40.0, 90.0],
+        "wind_speed_10m_max": [wind], "surface_pressure_mean": [pressure],
+    }).json()
+
+
+def test_storm_with_wind_and_pressure_gets_a_probability_and_band():
+    body = storm_p(wind=60.0, pressure=990.0)
+    assert 0.0 <= body["p_event"] <= 1.0
+    assert body["band"] in {"low", "medium", "high"}
+    assert body["cell"] == "Puri"
+
+
+def test_stronger_wind_and_lower_pressure_score_higher_for_storm():
+    assert storm_p(wind=80.0, pressure=980.0)["p_event"] > storm_p(wind=20.0, pressure=1008.0)["p_event"]
 
 
 def test_invalid_request_is_rejected():
@@ -93,4 +114,24 @@ def test_service_features_match_training_features():
     )
     got = flood_features(req, model("flood")["cells"]["Mumbai"])
     for name in A.FLOOD_FEATURES:
+        assert np.isclose(got[name], row[name], rtol=1e-6, atol=1e-6), name
+
+
+@pytest.mark.skipif(not WEATHER.exists(), reason="weather data not fetched")
+def test_service_storm_features_match_training_features():
+    import alerts as A
+
+    weather, spine, floods, _ = A.load()
+    weather = weather[weather.location_name == "Puri"]
+    w = A.daily_features(weather, spine, floods)
+    day = pd.Timestamp("2019-05-03")  # cyclone Fani at Puri
+    row = w[w.date == day].iloc[0]
+    hist = w[(w.date > day - pd.Timedelta(days=30)) & (w.date <= day)]
+    req = CalibrateRequest(
+        hazard="storm", **PURI, date=day.date(),
+        precipitation_sum=hist.rain.tolist(), relative_humidity_2m_mean=hist.rh.tolist(),
+        wind_speed_10m_max=hist.wind.tolist(), surface_pressure_mean=hist.surface_pressure_mean.tolist(),
+    )
+    got = storm_features(req, model("storm")["cells"]["Puri"])
+    for name in A.STORM_FEATURES:
         assert np.isclose(got[name], row[name], rtol=1e-6, atol=1e-6), name

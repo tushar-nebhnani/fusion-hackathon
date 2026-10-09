@@ -22,6 +22,7 @@ import { climateRouter } from "./routes/climate.js";
 import { evaluatorRouter, type EvaluatorRouterDeps } from "./routes/evaluator.js";
 import { financeRouter, type FinanceRouterDeps } from "./routes/finance.js";
 import { healthRouter, type HealthDeps } from "./routes/health.js";
+import { mlRouter } from "./routes/ml.js";
 import type { Advisor } from "./services/advisor/index.js";
 import type { AlertReader } from "./services/alerts/reader.js";
 import type { AuditRecorder } from "./services/audit/recorder.js";
@@ -32,6 +33,7 @@ import { EVALUATOR } from "./services/evaluator/config.js";
 import { FINANCE } from "./services/finance/index.js";
 import { inputRouter, type InputRouterOptions } from "./services/input/index.js";
 import type { Logger } from "./services/logs/index.js";
+import { ML, type MlClient } from "./services/ml/index.js";
 import type { InputService } from "./services/input/service.js";
 
 export interface AppDeps extends HealthDeps {
@@ -95,6 +97,12 @@ export interface AppDeps extends HealthDeps {
   // Finance service. /finance is mounted only when it is given
   finance?: FinanceRouterDeps & {
     // Requests per minute per client on /finance; a profile can cost a climate lookup
+    rateLimit?: number;
+  };
+  // The Python models in `ml/`. /ml is mounted only when it is given
+  ml?: {
+    client: MlClient;
+    // Requests per minute per client on /ml; each one runs a model or a simulation
     rateLimit?: number;
   };
 }
@@ -178,6 +186,9 @@ export function createApp(deps: AppDeps): Express {
       requireAuth,
       evaluatorRouter(deps.evaluator),
     );
+  }
+  if (deps.ml) {
+    app.use("/ml", rateLimiter(deps.ml.rateLimit ?? ML.rateLimit, store("ml")), requireAuth, mlRouter(deps.ml.client));
   }
   // Guards its own paths: it is mounted at the root
   if (deps.input) {

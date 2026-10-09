@@ -19,6 +19,7 @@
       }
     },
     "status": "model",
+    "model_version": "alert-cal-0.2.0",
     "model_kind": "logistic",
     "val_pr_auc": {
       "logistic": 0.2472,
@@ -26,21 +27,21 @@
     },
     "test": {
       "base_rate": 0.0692,
-      "pr_auc": 0.1704,
+      "pr_auc": 0.1984,
       "baseline_pr_auc": 0.079,
-      "brier": 0.0645,
+      "brier": 0.0618,
       "baseline_brier": 0.0649,
       "low_band_cut": {
-        "threshold": 0.0291,
+        "threshold": 0.0351,
         "hits_kept": 0.756,
-        "false_alarms_cut": 0.411,
-        "precision": 0.087
+        "false_alarms_cut": 0.436,
+        "precision": 0.091
       },
       "high_band": {
-        "threshold": 0.1,
-        "hits_kept": 0.474,
-        "false_alarms_cut": 0.831,
-        "precision": 0.173
+        "threshold": 0.0752,
+        "hits_kept": 0.462,
+        "false_alarms_cut": 0.843,
+        "precision": 0.179
       }
     },
     "per_year_test_base_rate": {
@@ -121,14 +122,70 @@
         "rate": 0.043
       }
     },
-    "status": "baseline only: 30 training hits < 50",
-    "baseline_rates": {
-      "0": 0.0053,
-      "1": 0.024
+    "status": "model",
+    "model_version": "alert-cal-0.2.0",
+    "model_kind": "logistic",
+    "val_pr_auc": {
+      "logistic": 0.3668,
+      "gbm": 0.3048
     },
     "test": {
+      "base_rate": 0.043,
+      "pr_auc": 0.5251,
+      "baseline_pr_auc": 0.0509,
+      "brier": 0.029,
       "baseline_brier": 0.0417,
-      "base_rate": 0.043
+      "low_band_cut": {
+        "threshold": 0.0401,
+        "hits_kept": 0.875,
+        "false_alarms_cut": 0.787,
+        "precision": 0.156
+      },
+      "high_band": {
+        "threshold": 0.1368,
+        "hits_kept": 0.688,
+        "false_alarms_cut": 0.933,
+        "precision": 0.314
+      }
+    },
+    "per_year_test_base_rate": {
+      "2020": 0.04,
+      "2021": 0.052,
+      "2022": 0.042,
+      "2023": 0.038
+    },
+    "coefficients_std": {
+      "rain3": -0.818,
+      "rh": 0.61,
+      "doy_sin": 0.575,
+      "trip_rain": 0.553,
+      "pressure_anom": -0.465,
+      "wind": 0.464,
+      "wind_over_p99": 0.449,
+      "post_monsoon": 0.426,
+      "doy_cos": 0.404,
+      "rain_over_p99": 0.4,
+      "trip_wind": -0.116,
+      "rain": 0.088
+    },
+    "leave_one_region_out": {
+      "east_coast": {
+        "hits": 18,
+        "base_rate": 0.103,
+        "pr_auc": 0.52
+      },
+      "interior": "too few hits to score",
+      "islands": "too few hits to score",
+      "northeast": {
+        "hits": 7,
+        "base_rate": 0.032,
+        "pr_auc": 0.322
+      },
+      "west_coast": {
+        "hits": 6,
+        "base_rate": 0.034,
+        "pr_auc": 0.763
+      }
     },
     "misses_no_alert": {
       "events": 11,

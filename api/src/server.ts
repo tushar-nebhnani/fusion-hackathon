@@ -20,6 +20,7 @@ import { createOpenMeteoClient } from "./services/climate/open-meteo.js";
 import { createClimateService } from "./services/climate/profile.service.js";
 import { createEvaluatorService, createPrismaEvaluationStore } from "./services/evaluator/index.js";
 import { chooseScorer, createFinanceService, loadFinanceEnv } from "./services/finance/index.js";
+import { createMlClient, loadMlEnv } from "./services/ml/index.js";
 import { createPrismaIdempotencyStore } from "./services/idempotency/prisma-store.js";
 import { createOpenAiClassifier } from "./services/input/classifier/openai.js";
 import { INPUT, loadInputEnv } from "./services/input/config.js";
@@ -109,6 +110,8 @@ const input = createInputService({
   },
 });
 const financeEnv = loadFinanceEnv();
+const mlEnv = loadMlEnv();
+logger.info(`ML service: ${mlEnv.url ?? "not configured, /ml answers 503"}`);
 const scorer = chooseScorer(financeEnv);
 logger.info(`Finance scorer: ${scorer.name}`);
 const finance = createFinanceService({ prisma, businesses: input, climate, scorer, logger });
@@ -148,6 +151,7 @@ const app = createApp({
   },
   finance: { service: finance, assertAccess: (id, actor) => input.assertAccess(id, actor) },
   evaluator: { service: evaluator, assertAccess: (id, actor) => input.assertAccess(id, actor) },
+  ml: { client: createMlClient({ url: mlEnv.url }) },
   alerts: createAlertReader(prisma),
   advisor: {
     service: advisor.advisor,

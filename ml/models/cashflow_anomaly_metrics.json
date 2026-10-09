@@ -1,0 +1,47 @@
+{
+  "model_version": "cashflow-anomaly-0.1.0",
+  "data": "synthetic; shocks injected on real flood and storm dates",
+  "businesses": 1140,
+  "fit_years": "2015-2019",
+  "test_years": "2020-2023",
+  "shock_rate_in_fit_years": 0.1585,
+  "rule": {
+    "flagged_share": 0.0043,
+    "precision": 0.949,
+    "precision_at_20": 0.679,
+    "systemic": {
+      "shocks": 4364,
+      "recall": 0.096,
+      "mean_lag_months": 0.72
+    },
+    "idiosyncratic": {
+      "shocks": 336,
+      "recall": 0.068,
+      "mean_lag_months": 0.7
+    }
+  },
+  "isolation_forest": {
+    "flagged_share": 0.0969,
+    "precision": 0.796,
+    "precision_at_20": 0.839,
+    "systemic": {
+      "shocks": 4364,
+      "recall": 0.758,
+      "mean_lag_months": 0.3
+    },
+    "idiosyncratic": {
+      "shocks": 336,
+      "recall": 0.893,
+      "mean_lag_months": 0.07
+    }
+  },
+  "shipped": "isolation_forest",
+  "systemic_split": {
+    "flagged_real_shock_months": 4208,
+    "accuracy": 0.81,
+    "balanced_accuracy": 0.846,
+    "systemic_recognised": 0.797,
+    "business_only_recognised": 0.896,
+    "always_systemic_accuracy": 0.875
+  }
+}

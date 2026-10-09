@@ -1,0 +1,158 @@
+{
+  "model_version": "pd-phase2-0.1.0",
+  "data": "synthetic loans and labels; calibration targets not verified",
+  "by_multiplier": [
+    {
+      "multiplier": 1.0,
+      "loans": {
+        "train": 56000,
+        "test": 20000,
+        "test_cells": 10,
+        "train_default_rate": 0.0404,
+        "test_default_rate": 0.0408
+      },
+      "baseline_rate_by_size": {
+        "auc": 0.5109,
+        "ks": 0.0228,
+        "brier": 0.03909
+      },
+      "logistic": {
+        "auc": 0.6576,
+        "ks": 0.2402,
+        "brier": 0.03859
+      },
+      "boosted_monotonic": {
+        "auc": 0.6541,
+        "ks": 0.2261,
+        "brier": 0.0386
+      },
+      "ceiling_true_pd": {
+        "auc": 0.6845,
+        "ks": 0.2784,
+        "brier": 0.03833
+      },
+      "recovery": {
+        "planted_log_m": 0.0,
+        "estimate": -0.07,
+        "interval_95": [
+          -0.351,
+          0.712
+        ],
+        "planted_inside_interval": true
+      },
+      "auc_lost_without_climate": {
+        "logistic": 0.0097,
+        "boosted_monotonic": -0.0013
+      },
+      "pd_ratio_shocked_vs_calm": {
+        "truth": 0.944,
+        "logistic": 0.914,
+        "boosted_monotonic": 0.938
+      },
+      "kept": "logistic"
+    },
+    {
+      "multiplier": 1.5,
+      "loans": {
+        "train": 56000,
+        "test": 20000,
+        "test_cells": 10,
+        "train_default_rate": 0.0406,
+        "test_default_rate": 0.0407
+      },
+      "baseline_rate_by_size": {
+        "auc": 0.5117,
+        "ks": 0.0243,
+        "brier": 0.03904
+      },
+      "logistic": {
+        "auc": 0.6628,
+        "ks": 0.2506,
+        "brier": 0.03853
+      },
+      "boosted_monotonic": {
+        "auc": 0.6496,
+        "ks": 0.2176,
+        "brier": 0.03854
+      },
+      "ceiling_true_pd": {
+        "auc": 0.6877,
+        "ks": 0.2836,
+        "brier": 0.0383
+      },
+      "recovery": {
+        "planted_log_m": 0.405,
+        "estimate": 0.333,
+        "interval_95": [
+          0.028,
+          1.238
+        ],
+        "planted_inside_interval": true
+      },
+      "auc_lost_without_climate": {
+        "logistic": 0.0133,
+        "boosted_monotonic": -0.0004
+      },
+      "pd_ratio_shocked_vs_calm": {
+        "truth": 1.176,
+        "logistic": 1.158,
+        "boosted_monotonic": 0.999
+      },
+      "kept": "logistic"
+    },
+    {
+      "multiplier": 2.0,
+      "loans": {
+        "train": 56000,
+        "test": 20000,
+        "test_cells": 10,
+        "train_default_rate": 0.0405,
+        "test_default_rate": 0.0406
+      },
+      "baseline_rate_by_size": {
+        "auc": 0.514,
+        "ks": 0.0287,
+        "brier": 0.0389
+      },
+      "logistic": {
+        "auc": 0.6634,
+        "ks": 0.2535,
+        "brier": 0.03838
+      },
+      "boosted_monotonic": {
+        "auc": 0.6578,
+        "ks": 0.2354,
+        "brier": 0.03836
+      },
+      "ceiling_true_pd": {
+        "auc": 0.6914,
+        "ks": 0.2984,
+        "brier": 0.03812
+      },
+      "recovery": {
+        "planted_log_m": 0.693,
+        "estimate": 0.546,
+        "interval_95": [
+          0.266,
+          1.603
+        ],
+        "planted_inside_interval": true
+      },
+      "auc_lost_without_climate": {
+        "logistic": 0.0158,
+        "boosted_monotonic": 0.009
+      },
+      "pd_ratio_shocked_vs_calm": {
+        "truth": 1.376,
+        "logistic": 1.352,
+        "boosted_monotonic": 1.206
+      },
+      "kept": "boosted_monotonic"
+    }
+  ],
+  "rank_agreement_spearman": {
+    "m1.0_vs_m1.5": 0.9889,
+    "m1.0_vs_m2.0": 0.9689,
+    "m1.5_vs_m2.0": 0.9933
+  }
+}

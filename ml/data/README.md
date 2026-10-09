@@ -1,6 +1,6 @@
-# EDA and features (no training here)
+# EDA, features and data
 
-Training is done by the backend engineer. This folder stops at model-ready tables.
+The tables here feed the models in `ml/training/` and the simulation in `ml/risk/`. Every assumed number is listed in `ASSUMPTIONS.md`.
 
 ```bash
 PY=ml/.venv-data/bin/python
@@ -9,6 +9,13 @@ $PY ml/features/build_events.py      # -> data/events_flood.csv, events_storm.cs
 $PY ml/features/build_population.py  # -> data/synthetic_businesses.csv (ALL SYNTHETIC, models 5/6)
 $PY ml/eda/eda.py                    # prints checks, figures in ml/eda/figures/
 $PY ml/features/alerts.py            # -> data/features_flood.csv, features_storm.csv (model 4)
+
+$PY ml/risk/hazard_params.py                   # -> data/hazard_params.csv (event rate and duration per cell and hazard)
+$PY ml/training/train_alert_calibration.py     # model 4 -> models/alert_calibration_{flood,storm}.joblib
+$PY ml/training/train_anomaly.py               # model 6 -> models/cashflow_anomaly.joblib (synthetic series)
+$PY ml/training/train_pd.py                    # model 5 -> models/pd_phase2_m{10,15,20}.joblib (synthetic loans, not served)
+$PY -m pytest ml/tests -q
+cd ml && .venv-data/bin/uvicorn app.main:app --port 8001   # /alerts/calibrate, /anomaly, /risk/climate-cashflow
 ```
 
 `features_flood.csv` / `features_storm.csv`: one row per alert episode (consecutive tripwire days in a cell), with `start`, `end`, a `split` column (train 1995–2015, val 2016–2019, test 2020–2023), the feature columns (`FLOOD_FEATURES` / `STORM_FEATURES` in `features/alerts.py`) and `label` (1 if a real event falls in start − 1 day … end + 3 days). Percentile thresholds and climatology come from training years only, so val and test do not leak. Flood: 6,823 episodes, 8.6 % positive. Storm: 2,565 episodes, 2.5 % positive, so weight classes or use average precision.
