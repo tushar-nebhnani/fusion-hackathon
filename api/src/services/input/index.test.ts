@@ -1,6 +1,15 @@
 import request from "supertest";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../../app.js";
+import {
+  BANK as BANK_USER,
+  OTHER_OWNER,
+  OWNER,
+  cookieFor,
+  fakeAuth,
+  signedIn,
+  userRow,
+} from "../auth/testing/fake-auth.js";
 import { connectDb, disconnectDb, prisma } from "../../config/db.js";
 import type { UpstreamStatus } from "../climate/open-meteo.js";
 import type { ClimateService } from "../climate/profile.service.js";
@@ -14,7 +23,9 @@ import type { InputPorts } from "./triggers.js";
 // Integration tests: the real Express app and Postgres. The model and the
 // climate and finance services are stand-ins.
 const NOW = new Date("2026-10-09T06:00:00Z");
-const BANK = { "X-Actor-Role": "bank", "X-Actor-Id": "officer-7" };
+// Requests are signed in as the owner unless they carry one of these
+const BANK = { Cookie: cookieFor(BANK_USER) };
+const STRANGER = { Cookie: cookieFor(OTHER_OWNER) };
 const silent = { error: vi.fn(), warn: vi.fn() };
 const services: InputService[] = [];
 let keys = 0;
@@ -36,6 +47,7 @@ function setup(options: SetupOptions = {}) {
   });
   services.push(service);
   const app = createApp({
+    auth: { service: fakeAuth() },
     // The climate routes are not exercised here
     climate: {} as ClimateService,
     checkDb: connectDb,
@@ -52,7 +64,7 @@ function setup(options: SetupOptions = {}) {
     headers: Record<string, string> = {},
   ) => {
     keys += 1;
-    return request(app)[method](path).set("Idempotency-Key", `key-${String(keys)}`).set(headers).send(body);
+    return signedIn(app)[method](path).set("Idempotency-Key", `key-${String(keys)}`).set(headers).send(body);
   };
   const create = async (overrides: Record<string, unknown> = {}) => {
     const res = await send("post", "/businesses", businessBody(overrides));
@@ -61,7 +73,7 @@ function setup(options: SetupOptions = {}) {
   };
   const profile = async (id: string) => {
     await service.idle();
-    const res = await request(app).get(`/businesses/${id}/impact-profile`);
+    const res = await signedIn(app).get(`/businesses/${id}/impact-profile`);
     return res.body as ImpactProfileView;
   };
   return { app, service, send, create, profile };
@@ -74,7 +86,8 @@ const fieldsOf = (res: request.Response) => errorOf(res).details?.fields ?? {};
 beforeEach(async () => {
   silent.error.mockClear();
   silent.warn.mockClear();
-  await prisma.$executeRaw`TRUNCATE TABLE businesses, input_request_log RESTART IDENTITY CASCADE`;
+  await prisma.$executeRaw`TRUNCATE TABLE users, businesses, input_request_log RESTART IDENTITY CASCADE`;
+  await prisma.user.createMany({ data: [OWNER, OTHER_OWNER].map(userRow) });
 });
 
 afterEach(async () => {
@@ -207,7 +220,7 @@ describe("POST /businesses", () => {
   it("requires an Idempotency-Key on writes", async () => {
     const { app } = setup();
 
-    const res = await request(app).post("/businesses").send(businessBody());
+    const res = await signedIn(app).post("/businesses").send(businessBody());
 
     expect(res.status).toBe(400);
     expect(errorOf(res).code).toBe("MISSING_IDEMPOTENCY_KEY");
@@ -216,7 +229,7 @@ describe("POST /businesses", () => {
 
   it("replays a repeated Idempotency-Key instead of creating a second business", async () => {
     const { app } = setup();
-    const post = () => request(app).post("/businesses").set("Idempotency-Key", "same-key").send(businessBody());
+    const post = () => signedIn(app).post("/businesses").set("Idempotency-Key", "same-key").send(businessBody());
 
     const first = await post();
     const second = await post();
@@ -230,7 +243,7 @@ describe("POST /businesses", () => {
 
   it("is rate limited", async () => {
     const { app } = setup({ rateLimit: 2 });
-    const get = () => request(app).get("/businesses/none");
+    const get = () => signedIn(app).get("/businesses/none");
 
     expect((await get()).status).toBe(404);
     expect((await get()).status).toBe(404);
@@ -283,7 +296,7 @@ describe("triggers", () => {
     expect(await service.retryPending()).toMatchObject({ jobs: 1 });
 
     expect(calls).toHaveLength(2);
-    const after = await request(app).get(`/businesses/${business.id}`);
+    const after = await signedIn(app).get(`/businesses/${business.id}`);
     expect((after.body as BusinessDetail).scoring).toBe("ok");
   });
 
@@ -321,7 +334,7 @@ describe("GET /businesses/:id", () => {
     await send("post", `/businesses/${id}/snapshots`, financialsBody({ cash_balance: 1 }));
     await send("post", `/businesses/${id}/loans`, loanBody(), BANK);
 
-    const res = await request(app).get(`/businesses/${id}`);
+    const res = await signedIn(app).get(`/businesses/${id}`);
 
     expect(res.status).toBe(200);
     const body = res.body as BusinessDetail;
@@ -330,14 +343,73 @@ describe("GET /businesses/:id", () => {
     expect(body.impact_profile).toMatchObject({ version: 1 });
   });
 
+  it("needs a signed-in user on every route", async () => {
+    const { app, create } = setup();
+    const { id } = await create();
+    const key = (req: request.Test) => req.set("Idempotency-Key", `anon-${String((keys += 1))}`);
+
+    const results = await Promise.all([
+      key(request(app).post("/businesses")).send(businessBody()),
+      request(app).get(`/businesses/${id}`),
+      request(app).get(`/businesses/${id}/snapshots`),
+      request(app).get(`/businesses/${id}/impact-profile`),
+      key(request(app).patch(`/businesses/${id}`)).send({ profile: { employees: 1 } }),
+      key(request(app).post(`/businesses/${id}/snapshots`)).send(financialsBody()),
+      key(request(app).patch("/loans/nope/status")).send({ status: "authorised" }),
+      key(request(app).post("/seed/smes")),
+    ]);
+
+    for (const res of results) {
+      expect(res.status).toBe(401);
+      expect(errorOf(res).code).toBe("UNAUTHORIZED");
+    }
+    expect(await prisma.business.count()).toBe(1);
+  });
+
+  it("lets an owner reach only the businesses they created", async () => {
+    const { app, create, send } = setup();
+    const { id } = await create();
+    const path = `/businesses/${id}`;
+
+    const results = await Promise.all([
+      signedIn(app, OTHER_OWNER).get(path),
+      signedIn(app, OTHER_OWNER).get(`${path}/snapshots`),
+      signedIn(app, OTHER_OWNER).get(`${path}/impact-profile`),
+      send("patch", path, { profile: { employees: 1 } }, STRANGER),
+      send("put", `${path}/locations`, businessBody().locations as object, STRANGER),
+      send("put", `${path}/suppliers`, { suppliers: businessBody().suppliers }, STRANGER),
+      send("post", `${path}/snapshots`, financialsBody(), STRANGER),
+    ]);
+
+    // The same answer as for a business that does not exist
+    for (const res of results) {
+      expect(res.status).toBe(404);
+      expect(errorOf(res).code).toBe("BUSINESS_NOT_FOUND");
+    }
+    expect((await signedIn(app).get(path)).status).toBe(200);
+    expect((await signedIn(app, BANK_USER).get(path)).status).toBe(200);
+    expect(await prisma.financialSnapshot.count()).toBe(0);
+  });
+
+  it("records the owner, and leaves a bank-created business to the bank", async () => {
+    const { app, create, send } = setup();
+    const mine = await create();
+    const banks = await send("post", "/businesses", businessBody(), BANK);
+
+    const rows = await prisma.business.findMany({ select: { id: true, ownerUserId: true } });
+    expect(rows.find((row) => row.id === mine.id)?.ownerUserId).toBe(OWNER.id);
+    expect(rows.find((row) => row.id === (banks.body as BusinessDetail).id)?.ownerUserId).toBeNull();
+    expect((await signedIn(app).get(`/businesses/${(banks.body as BusinessDetail).id}`)).status).toBe(404);
+  });
+
   it("answers 404 BUSINESS_NOT_FOUND for an unknown id", async () => {
     const { app, send } = setup();
     const missing = "/businesses/00000000-0000-0000-0000-000000000000";
 
     const results = await Promise.all([
-      request(app).get(missing),
-      request(app).get(`${missing}/snapshots`),
-      request(app).get(`${missing}/impact-profile`),
+      signedIn(app).get(missing),
+      signedIn(app).get(`${missing}/snapshots`),
+      signedIn(app).get(`${missing}/impact-profile`),
       send("patch", missing, { profile: { employees: 1 } }),
       send("put", `${missing}/locations`, businessBody().locations as object),
       send("put", `${missing}/suppliers`, { suppliers: businessBody().suppliers }),
@@ -513,7 +585,7 @@ describe("snapshots", () => {
     await send("post", `/businesses/${id}/snapshots`, financialsBody());
     await send("post", `/businesses/${id}/snapshots`, financialsBody({ cash_balance: 5 }));
 
-    const res = await request(app).get(`/businesses/${id}/snapshots`);
+    const res = await signedIn(app).get(`/businesses/${id}/snapshots`);
 
     const { snapshots } = res.body as { snapshots: SnapshotView[] };
     expect(snapshots.map((snapshot) => [snapshot.version, snapshot.raw.cash_balance])).toEqual([
@@ -585,12 +657,13 @@ describe("snapshots", () => {
     const path = `/businesses/${id}/snapshots/1/verify`;
 
     const owner = await send("post", path);
-    const anonymousBank = await send("post", path, undefined, { "X-Actor-Role": "bank" });
+    // The role comes from the session; a caller cannot claim it
+    const claimedBank = await send("post", path, undefined, { "X-Actor-Role": "bank", "X-Actor-Id": "x" });
     const bank = await send("post", path, undefined, BANK);
 
     expect(owner.status).toBe(403);
     expect(errorOf(owner).code).toBe("FORBIDDEN");
-    expect(anonymousBank.status).toBe(403);
+    expect(claimedBank.status).toBe(403);
     expect(bank.status).toBe(200);
     expect(bank.body).toMatchObject({
       version: 1,
@@ -780,7 +853,7 @@ describe("weather-impact profile", () => {
     const business = await create();
 
     expect(business.impact_profile).toMatchObject({ version: 1, status: "pending", conditions: null });
-    const pending = await request(app).get(`/businesses/${business.id}/impact-profile`);
+    const pending = await signedIn(app).get(`/businesses/${business.id}/impact-profile`);
     expect(pending.body).toMatchObject({ status: "pending" });
 
     release();

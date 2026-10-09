@@ -432,20 +432,26 @@ Saves to one business are serialised with a row lock, so two submissions at once
 
 | Method | Path | Purpose | Who |
 |---|---|---|---|
-| `POST` | `/businesses` | Create business (A–D, G, H) | any |
-| `GET` | `/businesses/:id` | Business + latest snapshot + loans + current impact profile | any |
-| `PATCH` | `/businesses/:id` | Update profile / operations / contacts | any |
-| `PUT` | `/businesses/:id/locations` | Replace locations (triggers climate) | any |
-| `PUT` | `/businesses/:id/suppliers` | Replace supplier list | any |
-| `POST` | `/businesses/:id/snapshots` | New financial snapshot (E) | any |
-| `GET` | `/businesses/:id/snapshots` | Snapshot history, newest first | any |
+| `POST` | `/businesses` | Create business (A–D, G, H). The caller becomes its owner | signed in |
+| `GET` | `/businesses/:id` | Business + latest snapshot + loans + current impact profile | owner of it, bank |
+| `PATCH` | `/businesses/:id` | Update profile / operations / contacts | owner of it, bank |
+| `PUT` | `/businesses/:id/locations` | Replace locations (triggers climate) | owner of it, bank |
+| `PUT` | `/businesses/:id/suppliers` | Replace supplier list | owner of it, bank |
+| `POST` | `/businesses/:id/snapshots` | New financial snapshot (E) | owner of it, bank |
+| `GET` | `/businesses/:id/snapshots` | Snapshot history, newest first | owner of it, bank |
 | `POST` | `/businesses/:id/snapshots/:v/verify` | Bank marks verified | bank |
 | `POST` | `/businesses/:id/loans` | New loan (F), status `applied` | bank |
 | `PATCH` | `/loans/:id/status` | Status transition, body `{ "status": "authorised" }` | bank |
-| `GET` | `/businesses/:id/impact-profile` | Current weather-impact profile + status | any |
+| `GET` | `/businesses/:id/impact-profile` | Current weather-impact profile + status | owner of it, bank |
 | `POST` | `/businesses/:id/impact-profile/reclassify` | Force a rerun; answers 202 | bank |
 | `PUT` | `/businesses/:id/impact-profile` | Bank override → new version (`overridden`) | bank |
-| `POST` | `/seed/smes` | Load `smes.json` through the same path (dev only) | any |
+| `POST` | `/seed/smes` | Load `smes.json` through the same path (dev only) | bank |
+
+**Who is calling.** Every route needs a signed-in user: the session cookie set by `POST /auth/google` (main `README.md`, "Authentication"). Without it the answer is 401 `UNAUTHORIZED`. The role, `owner` or `bank`, comes from the session and cannot be claimed by the caller.
+
+- An owner reaches only the businesses they created; the creator is stored in `businesses.owner_user_id`. Any other business answers 404 `BUSINESS_NOT_FOUND`, exactly like one that does not exist. One check in `inputRouter` covers every path under `/businesses/:id`.
+- A bank officer reaches every business. A business created by a bank officer, or by the seed, has no owner, so only bank officers can open it.
+- `verified_by` and `overridden_by` hold the bank officer's user id.
 
 `PATCH /businesses/:id` takes any of `profile`, `operations`, `contacts`. Fields of `profile` and `operations` are merged one by one into what is stored. Inside `contacts`, each of `owner`, `bank_officer` and `alerts` is replaced whole. The cross-field checks run on the merged result. Consent cannot be changed through it.
 
@@ -456,10 +462,7 @@ Responses: the business routes return the whole business (the six groups, `lates
 | Header | |
 |---|---|
 | `Idempotency-Key` | **Required on every `POST`, `PUT` and `PATCH`** here (400 `MISSING_IDEMPOTENCY_KEY` without it). A repeat with the same key returns the first response with `Idempotency-Replayed: true` and does not run again. |
-| `X-Actor-Role` | `bank` for the bank routes; anything else is treated as the owner. |
-| `X-Actor-Id` | Who the bank officer is. Required with `bank`; stored as `verified_by` / `overridden_by`. |
-
-**`X-Actor-Role` is a placeholder and protects nothing**: the caller states its own role. It exists so the owner and bank routes are already separate in the code. `inputRouter` takes an `actor` function; real authentication replaces the default there (§10).
+| `Cookie` | The `fusion_session` cookie. The `X-Actor-Role` and `X-Actor-Id` headers that stood in for it are gone and are ignored. |
 
 The routes are rate limited to 60 requests a minute per client, on top of the API-wide limit.
 
@@ -479,9 +482,10 @@ Errors go through the API's one error handler, so they have the same envelope as
 | `VALIDATION_FAILED` | 422 | `details.fields` maps each field path to its problem |
 | `INVALID_FINANCIALS` | 422 | Revenue history is all zeros |
 | `CONSENT_REQUIRED` | 403 | |
-| `FORBIDDEN` | 403 | A bank route called without the bank role and an actor id |
+| `UNAUTHORIZED` | 401 | No session, or it has ended |
+| `FORBIDDEN` | 403 | A bank route called by an owner |
 | `INVALID_STATUS_TRANSITION` | 409 | `details` has `from`, `to` and the `allowed` next statuses |
-| `BUSINESS_NOT_FOUND` | 404 | |
+| `BUSINESS_NOT_FOUND` | 404 | Also for a business that belongs to another owner |
 | `LOAN_NOT_FOUND` | 404 | |
 | `SNAPSHOT_NOT_FOUND` | 404 | |
 | `SEED_FILE_NOT_FOUND` | 404 | |
@@ -579,7 +583,7 @@ The model and the climate and finance services are stand-ins in tests (`testing/
 
 - **Connect the triggers.** Pass `ports: { climate, finance }` to `createInputService` in `server.ts`. `climate.warm(point)` can call the climate service's `getProfile`; the finance port waits for the finance service. Pending jobs are delivered on the next `retryPending()`.
 - **Active cells.** The background monitor still reads its locations from `data/monitor-locations.json`. `service.activeLocations()` is the replacement once the two are joined.
-- **Bank-side authentication and roles** (owner vs bank officer). Coordinate with security (Adarsh). Today the role is a header anyone can send, and any caller can read or edit any business.
+- **Handing a business to an owner.** A business the bank or the seed created has no owner, and nothing in the API sets one; edit `businesses.owner_user_id` by hand until there is an invite or claim step.
 - **`smes.json`** is not in the repo, and its field layout was not available when the loader was written. If it differs from the entry shape in §6, convert the file or adjust `seedEntrySchema`.
 - **Ratios when a loan arrives after the snapshot.** A snapshot's `dscr` is fixed when it is saved. Decide whether applying for a loan should write a fresh snapshot, or whether finance recomputes with `deriveFinancials`.
 - Whether unverified snapshots can drive a loan decision, or only alerts.

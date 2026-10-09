@@ -47,7 +47,7 @@ import {
   parseBody,
 } from "./validation.js";
 
-// Who is calling. Roles are not authenticated yet (README, open items).
+// Who is calling: the signed-in user and the role their email gives them
 export interface Actor {
   role: "owner" | "bank";
   id: string | null;
@@ -67,6 +67,8 @@ export interface BusinessDetail extends store.BusinessView {
 export interface CreateBusinessOptions {
   source?: "user" | "synthetic";
   externalId?: string;
+  // The signed-in owner creating it. Without one only the bank can open it.
+  ownerUserId?: string | null;
   // `defaults` stores the sector defaults without calling the model
   classifier?: "llm" | "defaults";
 }
@@ -84,6 +86,9 @@ export interface InputServiceDeps {
 
 export interface InputService {
   createBusiness(body: unknown, options?: CreateBusinessOptions): Promise<BusinessDetail>;
+  // Rejects with BUSINESS_NOT_FOUND unless the business exists and the
+  // actor is a bank officer or the owner who created it
+  assertAccess(id: string, actor: Actor): Promise<void>;
   getBusiness(id: string): Promise<BusinessDetail>;
   patchBusiness(id: string, body: unknown): Promise<BusinessDetail>;
   replaceLocations(id: string, body: unknown): Promise<BusinessDetail>;
@@ -251,6 +256,7 @@ export function createInputService(deps: InputServiceDeps): InputService {
         const id = await store.insertBusiness(tx, {
           source: options.source ?? "user",
           externalId: options.externalId ?? null,
+          ownerUserId: options.ownerUserId ?? null,
           profile: input.profile,
           locations,
           operations: input.operations,
@@ -268,6 +274,14 @@ export function createInputService(deps: InputServiceDeps): InputService {
 
       startClassification(saved.scheduled);
       return detail(saved.id, await runTriggers(saved.id));
+    },
+
+    async assertAccess(id, actor) {
+      const business = await store.businessOwner(prisma, id);
+      // Someone else's business looks the same as one that does not exist
+      if (!business || (actor.role !== "bank" && business.ownerUserId !== actor.id)) {
+        throw businessNotFound(id);
+      }
     },
 
     getBusiness(id) {

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../../app.js";
+import { BANK, fakeAuth, signedIn } from "../auth/testing/fake-auth.js";
 import { connectDb, disconnectDb, prisma } from "../../config/db.js";
 import type { UpstreamStatus } from "../climate/open-meteo.js";
 import type { ClimateService } from "../climate/profile.service.js";
@@ -169,6 +170,7 @@ describe("POST /seed/smes", () => {
   function appWith(seed?: { enabled: boolean; file: string }) {
     const service = makeService();
     const app = createApp({
+      auth: { service: fakeAuth() },
       climate: {} as ClimateService,
       checkDb: connectDb,
       upstreamStatus: () => ({}) as UpstreamStatus,
@@ -176,7 +178,7 @@ describe("POST /seed/smes", () => {
       input: { service, options: { rateLimit: 10_000, seed } },
     });
     const post = (key: string, body?: object) =>
-      request(app).post("/seed/smes").set("Idempotency-Key", key).send(body);
+      signedIn(app, BANK).post("/seed/smes").set("Idempotency-Key", key).send(body);
     return { app, post };
   }
 
@@ -211,11 +213,23 @@ describe("POST /seed/smes", () => {
     expect(option.status).toBe(422);
   });
 
+  it("is for bank officers only", async () => {
+    const file = await seedFile([entry("sme-001")]);
+    const { app } = appWith({ enabled: true, file });
+
+    const anonymous = await request(app).post("/seed/smes").set("Idempotency-Key", "seed-anon");
+    const owner = await signedIn(app).post("/seed/smes").set("Idempotency-Key", "seed-owner");
+
+    expect(anonymous.status).toBe(401);
+    expect(owner.status).toBe(403);
+    expect(await prisma.business.count()).toBe(0);
+  });
+
   it("requires an Idempotency-Key", async () => {
     const file = await seedFile([entry("sme-001")]);
     const { app } = appWith({ enabled: true, file });
 
-    const res = await request(app).post("/seed/smes");
+    const res = await signedIn(app, BANK).post("/seed/smes");
 
     expect(res.status).toBe(400);
     expect(await prisma.business.count()).toBe(0);

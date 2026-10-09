@@ -1,6 +1,7 @@
-import { Router, type Request, type RequestHandler } from "express";
+import { Router, type Request, type RequestHandler, type Response } from "express";
 import { z } from "zod";
 import { NotFoundError } from "../../errors/app-error.js";
+import { requireAuth, requireBank, requireUser } from "../../middleware/auth.js";
 import { requireIdempotencyKey } from "../../middleware/idempotency.js";
 import { rateLimiter } from "../../middleware/rate-limit.js";
 import { INPUT } from "./config.js";
@@ -13,18 +14,12 @@ export interface InputRouterOptions {
   rateLimit?: number;
   // POST /seed/smes exists only when enabled (never in production)
   seed?: { enabled: boolean; file: string };
-  // Who is calling. Replace with real authentication when it exists.
-  actor?: (req: Request) => Actor;
 }
 
-// Placeholder until the API has authentication: the caller states its own
-// role. It keeps owner and bank routes apart in the code, and protects nothing.
-export function headerActor(req: Request): Actor {
-  const id = req.get("X-Actor-Id")?.trim();
-  return {
-    role: req.get("X-Actor-Role") === "bank" ? "bank" : "owner",
-    id: id ? id.slice(0, 120) : null,
-  };
+// The signed-in user, as the service knows callers
+function actorOf(res: Response): Actor {
+  const user = requireUser(res);
+  return { role: user.role, id: user.id };
 }
 
 const PATHS = ["/businesses", "/loans", "/seed"];
@@ -39,7 +34,6 @@ function param(req: Request, name: string): string {
 // mounted at the root of the app.
 export function inputRouter(service: InputService, options: InputRouterOptions = {}): Router {
   const router = Router();
-  const actorOf = options.actor ?? headerActor;
 
   // Flow step 7
   const requestLog: RequestHandler = (req, res, next) => {
@@ -53,22 +47,35 @@ export function inputRouter(service: InputService, options: InputRouterOptions =
         status: res.statusCode,
         latencyMs: Date.now() - started,
         businessId: typeof businessId === "string" ? businessId.slice(0, 64) : null,
-        actorRole: actorOf(req).role,
+        actorRole: actorOf(res).role,
       });
     });
     next();
   };
 
-  // Rate limiting on top of the API-wide limit, and every write must carry
-  // an Idempotency-Key; the app's idempotency middleware does the replaying.
-  router.use(PATHS, rateLimiter(options.rateLimit ?? INPUT.rateLimit), requireIdempotencyKey, requestLog);
-  router.use("/businesses/:id", (req, res, next) => {
+  // Rate limiting on top of the API-wide limit, a signed-in user, and every
+  // write must carry an Idempotency-Key; the app's idempotency middleware
+  // does the replaying.
+  router.use(
+    PATHS,
+    rateLimiter(options.rateLimit ?? INPUT.rateLimit),
+    requireAuth,
+    requireIdempotencyKey,
+    requestLog,
+  );
+  // One check for every route under a business: an owner reaches only the
+  // businesses they created, a bank officer reaches all of them
+  router.use("/businesses/:id", async (req, res, next) => {
     res.locals.businessId = param(req, "id");
+    await service.assertAccess(param(req, "id"), actorOf(res));
     next();
   });
 
   router.post("/businesses", async (req, res) => {
-    const business = await service.createBusiness(req.body);
+    const actor = actorOf(res);
+    const business = await service.createBusiness(req.body, {
+      ownerUserId: actor.role === "owner" ? actor.id : null,
+    });
     res.locals.businessId = business.id;
     res.status(201).json(business);
   });
@@ -98,15 +105,15 @@ export function inputRouter(service: InputService, options: InputRouterOptions =
   });
 
   router.post("/businesses/:id/snapshots/:v/verify", async (req, res) => {
-    res.json(await service.verifySnapshot(param(req, "id"), param(req, "v"), actorOf(req)));
+    res.json(await service.verifySnapshot(param(req, "id"), param(req, "v"), actorOf(res)));
   });
 
   router.post("/businesses/:id/loans", async (req, res) => {
-    res.status(201).json(await service.createLoan(param(req, "id"), req.body, actorOf(req)));
+    res.status(201).json(await service.createLoan(param(req, "id"), req.body, actorOf(res)));
   });
 
   router.patch("/loans/:id/status", async (req, res) => {
-    const result = await service.changeLoanStatus(param(req, "id"), req.body, actorOf(req));
+    const result = await service.changeLoanStatus(param(req, "id"), req.body, actorOf(res));
     res.locals.businessId = result.loan.business_id;
     res.json(result);
   });
@@ -116,14 +123,14 @@ export function inputRouter(service: InputService, options: InputRouterOptions =
   });
 
   router.post("/businesses/:id/impact-profile/reclassify", async (req, res) => {
-    res.status(202).json(await service.reclassify(param(req, "id"), actorOf(req)));
+    res.status(202).json(await service.reclassify(param(req, "id"), actorOf(res)));
   });
 
   router.put("/businesses/:id/impact-profile", async (req, res) => {
-    res.json(await service.overrideImpactProfile(param(req, "id"), req.body, actorOf(req)));
+    res.json(await service.overrideImpactProfile(param(req, "id"), req.body, actorOf(res)));
   });
 
-  router.post("/seed/smes", async (req, res) => {
+  router.post("/seed/smes", requireBank, async (req, res) => {
     const { seed } = options;
     if (!seed?.enabled) throw new NotFoundError("Route POST /seed/smes not found");
     const { classify } = parseBody(seedRequestSchema, (req.body as unknown) ?? {});

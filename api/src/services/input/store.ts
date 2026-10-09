@@ -85,6 +85,7 @@ export async function insertBusiness(
   data: {
     source: string;
     externalId: string | null;
+    ownerUserId: string | null;
     profile: Profile;
     locations: Locations;
     operations: Operations;
@@ -97,6 +98,7 @@ export async function insertBusiness(
     data: {
       source: data.source,
       externalId: data.externalId,
+      ownerUserId: data.ownerUserId,
       name: data.profile.name,
       sector: data.profile.sector,
       profile: json(data.profile),
@@ -109,6 +111,11 @@ export async function insertBusiness(
     select: { id: true },
   });
   return row.id;
+}
+
+// Null when the business does not exist
+export function businessOwner(db: Db, id: string): Promise<{ ownerUserId: string | null } | null> {
+  return db.business.findUnique({ where: { id }, select: { ownerUserId: true } });
 }
 
 export async function getBusiness(db: Db, id: string): Promise<BusinessView | null> {

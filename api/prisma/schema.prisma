@@ -437,20 +437,24 @@ model DisasterEvent {
 // the validated JSON the owner submitted; `name` and `sector` are copied
 // out for lookups.
 model Business {
-  id         String   @id @default(uuid())
+  id          String   @id @default(uuid())
   // `user` or `synthetic` (seeded)
-  source     String   @default("user")
+  source      String   @default("user")
   // Id of the seed entry, so a seed run can be repeated
-  externalId String?  @unique @map("external_id")
-  name       String
-  sector     String
-  profile    Json
-  operations Json
-  contacts   Json
-  consent    Json
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  externalId  String?  @unique @map("external_id")
+  // The signed-in user who created it. Null for seeded and bank-created
+  // businesses, which only bank officers can open.
+  ownerUserId String?  @map("owner_user_id")
+  name        String
+  sector      String
+  profile     Json
+  operations  Json
+  contacts    Json
+  consent     Json
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
+  owner          User?                  @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
   locations      BusinessLocation[]
   suppliers      BusinessSupplier[]
   snapshots      FinancialSnapshot[]
@@ -458,6 +462,7 @@ model Business {
   impactProfiles WeatherImpactProfile[]
   triggerJobs    InputTriggerJob[]
 
+  @@index([ownerUserId])
   @@map("businesses")
 }
 
@@ -602,4 +607,38 @@ model InputRequestLog {
 
   @@index([createdAt])
   @@map("input_request_log")
+}
+
+// ---- Authentication (Sign in with Google) ----
+
+// One row per Google account that has signed in. The role is not stored: it
+// is worked out from the email and the AUTH_BANK_* settings on every request.
+model User {
+  id          String   @id @default(uuid())
+  // Google's stable account id (the `sub` claim)
+  googleSub   String   @unique @map("google_sub")
+  email       String
+  name        String?
+  pictureUrl  String?  @map("picture_url")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  lastLoginAt DateTime @default(now()) @map("last_login_at") @db.Timestamptz
+
+  sessions   Session[]
+  businesses Business[]
+
+  @@map("users")
+}
+
+// A signed-in browser. Only the SHA-256 of the cookie value is stored.
+model Session {
+  tokenHash String   @id @map("token_hash")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
 }

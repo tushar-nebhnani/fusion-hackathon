@@ -4,6 +4,9 @@ import { env } from "./config/env.js";
 import { startClimateRefresh } from "./jobs/climate-refresh.js";
 import { createRedis } from "./config/redis.js";
 import { createAlertReader } from "./services/alerts/reader.js";
+import { loadAuthEnv } from "./services/auth/config.js";
+import { createGoogleVerifier } from "./services/auth/google.js";
+import { createAuthService } from "./services/auth/service.js";
 import { createRedisCache } from "./services/cache/cache.js";
 import { createOpenAiAgent } from "./services/climate/agent.js";
 import { createOpenMeteoClient } from "./services/climate/open-meteo.js";
@@ -19,6 +22,21 @@ const redis = createRedis();
 const openMeteo = createOpenMeteoClient();
 const idempotencyStore = createPrismaIdempotencyStore(prisma);
 await idempotencyStore.purgeExpired();
+
+const authEnv = loadAuthEnv();
+const auth = createAuthService({
+  prisma,
+  googleClientId: authEnv.googleClientId,
+  verifier: authEnv.googleClientId ? createGoogleVerifier(authEnv.googleClientId) : undefined,
+  bankEmails: authEnv.bankEmails,
+  bankDomains: authEnv.bankDomains,
+});
+await auth.purgeExpired();
+console.log(
+  authEnv.googleClientId
+    ? "Sign in with Google: on"
+    : "Sign in with Google: off (set GOOGLE_CLIENT_ID; protected routes answer 401 until then)",
+);
 
 const agent =
   env.OPENAI_API_KEY && env.CLIMATE_AGENT_ENABLED === "true"
@@ -51,6 +69,11 @@ const inputRetry = setInterval(() => {
 }, INPUT.retryMinutes * 60_000);
 
 const app = createApp({
+  auth: {
+    service: auth,
+    allowedOrigins: authEnv.allowedOrigins,
+    cookie: { sameSite: authEnv.cookieSameSite, secure: authEnv.cookieSecure },
+  },
   idempotency: idempotencyStore,
   climate,
   input: {

@@ -8,7 +8,7 @@ This README is the handover document for anyone, human or AI agent, picking up t
 
 | Part | Folder | State |
 | --- | --- | --- |
-| Climate risk API | `api/` | Built and tested. 460 tests pass across `api/`; typecheck and lint are clean. |
+| Climate risk API | `api/` | Built and tested. 686 tests pass across `api/`; typecheck and lint are clean. |
 | Climate agent | `api/src/services/climate/agent.ts` | Built. Optional: an OpenAI model reviews the screening and scores the forecast. Off without an API key. |
 | Alert system | `api/src/services/alerts/` | Built. Email warnings to business owners and banks, sent by a separate worker process. SMS was removed (see `RESOLVE_LATER.md`). Triggered by the background monitor. |
 | Background monitor | `api/src/services/climate/monitor/` | Built. Part of the climate unit, run as its own process. Watches locations with active loans, checks them more often when the forecast worsens, queues alerts and records events for the ML model. The loans DB and logs system it will read from and write to are stand-ins. |
@@ -81,8 +81,13 @@ The climate agent is off until you put an `OPENAI_API_KEY` in `api/.env`. Withou
 | `OPENAI_API_KEY` | none | Enables the climate agent. Blank means not set |
 | `CLIMATE_AGENT_ENABLED` | `true` | Set to `false` to switch the agent off while keeping the key |
 | `CLIMATE_AGENT_MODEL` | `gpt-5-nano` | OpenAI model the agent uses |
+| `GOOGLE_CLIENT_ID` | none | OAuth client ID for Sign in with Google. Blank means nobody can sign in, so every protected route answers 401 |
+| `AUTH_BANK_EMAILS` | none | Comma-separated emails of bank officers |
+| `AUTH_BANK_DOMAINS` | none | Comma-separated email domains whose users are all bank officers |
+| `AUTH_ALLOWED_ORIGINS` | `http://localhost:3000` | Comma-separated frontend origins allowed to call the API with the session cookie |
+| `AUTH_COOKIE_SAMESITE` | `lax` | `lax` or `none`. Use `none` when the frontend is on a different site from the API; the cookie is then also `Secure`, so it needs HTTPS |
 
-They are validated at startup by `api/src/config/env.ts`; the process exits if one is invalid. The alert system's variables (`ALERTS_*`, `SMTP_*`) are listed under [The alert system](#the-alert-system), and the monitor's (`MONITOR_*`) under [The background monitor](#the-background-monitor). Both sets are read separately, so a bad one never stops the API. Open-Meteo needs no key: its free tier is used without one.
+The first seven are validated at startup by `api/src/config/env.ts`; the process exits if one is invalid. The sign-in variables (`GOOGLE_CLIENT_ID`, `AUTH_*`) are read by `api/src/services/auth/config.ts` and are described under [Authentication](#authentication). The alert system's variables (`ALERTS_*`, `SMTP_*`) are listed under [The alert system](#the-alert-system), and the monitor's (`MONITOR_*`) under [The background monitor](#the-background-monitor). All of these are read separately, so a bad one never stops the API. Open-Meteo needs no key: its free tier is used without one.
 
 ### API commands (run inside `api/`)
 
@@ -119,24 +124,65 @@ When the climate agent is on, an OpenAI model does two jobs on top of the rules:
 
 ### Endpoints
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/demo/` | MVP demo page (`api/public/index.html`) that calls the endpoints below |
-| `GET` | `/health` | Service, database and upstream status |
-| `POST` | `/climate/profile` | Full risk profile. Body: `{"lat": number, "lon": number}` |
-| `GET` | `/climate/events?lat=..&lon=..` | Same pipeline, returning only location, active events, freshness, cache and warnings |
-| `GET` | `/climate/cell/:cellId` | Debug view of what is stored for one grid cell, without raw payloads |
-| `GET` | `/alerts?limit=..&business_id=..&status=..` | Recent alerts, newest first, each with its send attempts and the message as rendered. Never includes who it was sent to |
+| Method | Path | Who | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/demo/` | anyone | MVP demo page (`api/public/index.html`) that calls the endpoints below. It has a Sign in with Google button |
+| `GET` | `/health` | anyone | Service, database and upstream status |
+| `GET` | `/auth/config` | anyone | `{ "google_client_id": ... }`, which a frontend needs to draw the sign-in button. `null` when sign-in is not configured |
+| `POST` | `/auth/google` | anyone | Sign in. Body: `{"credential": "<Google ID token>"}`. Sets the session cookie and returns `{ user }` |
+| `GET` | `/auth/me` | signed in | The signed-in user: `id`, `email`, `name`, `picture_url`, `role` |
+| `POST` | `/auth/logout` | anyone | Ends the session and clears the cookie. Answers 204 |
+| `POST` | `/climate/profile` | signed in | Full risk profile. Body: `{"lat": number, "lon": number}` |
+| `GET` | `/climate/events?lat=..&lon=..` | signed in | Same pipeline, returning only location, active events, freshness, cache and warnings |
+| `GET` | `/climate/cell/:cellId` | signed in | Debug view of what is stored for one grid cell, without raw payloads |
+| `GET` | `/alerts?limit=..&business_id=..&status=..` | bank | Recent alerts, newest first, each with its send attempts and the message as rendered. Never includes who it was sent to |
 
-Request bodies are limited to 10 kB. There is no authentication.
+The input service's routes (`/businesses`, `/loans`, `/seed`) are listed in `api/src/services/input/README.md`. All of them need a signed-in user.
+
+Request bodies are limited to 10 kB.
 
 `/health` returns 200 with `status: "ok"`, or `"degraded"` when the last Open-Meteo call failed, and 503 with `status: "down"` when Postgres is unreachable. It reports the outcome of the most recent real upstream call, so it never spends Open-Meteo quota. It does not report on Redis or the agent.
+
+### Authentication
+
+Users sign in with Google. There are no passwords and no API keys.
+
+1. The frontend shows Google's Sign in with Google button, using the client ID from `GET /auth/config`.
+2. Google gives the browser an ID token. The frontend posts it to `POST /auth/google`.
+3. The API verifies the token's signature, expiry, issuer and audience with `google-auth-library`, and refuses an account whose email Google has not verified.
+4. It creates or updates a row in `users`, creates a row in `sessions`, and sets the cookie `fusion_session`.
+5. The browser sends the cookie with each later request. A frontend on another origin must use `fetch(url, { credentials: "include" })`.
+
+**Sessions.** The cookie holds a random 32-byte token and is `httpOnly`, so scripts on the page cannot read it. Postgres stores only the token's SHA-256 hash. A session ends 7 days after sign-in and is not extended by use. `POST /auth/logout` deletes it. Expired rows are deleted at startup.
+
+**Roles.** A user is either an `owner` or a `bank` officer. The role is not stored: on every request it is worked out from the user's email and the `AUTH_BANK_EMAILS` and `AUTH_BANK_DOMAINS` settings, so changing those settings and restarting the API changes existing sessions too. Everyone not listed is an owner.
+
+| Role | Can do |
+| --- | --- |
+| Not signed in | `/health`, `/demo/`, `/auth/config`, `/auth/google`, `/auth/logout` |
+| `owner` | `/climate/*`, and the businesses they created through `POST /businesses` |
+| `bank` | Everything an owner can, every business, `/alerts`, the bank-only input routes and `POST /seed/smes` |
+
+An owner who asks for another owner's business gets 404 `BUSINESS_NOT_FOUND`, the same answer as for a business that does not exist. Seeded businesses and businesses created by a bank officer have no owner, so only bank officers can open them.
+
+**Requests from other websites.** Because the session is a cookie, the API checks the `Origin` header that browsers attach. Origins in `AUTH_ALLOWED_ORIGINS` get CORS headers with credentials allowed. A `POST`, `PUT`, `PATCH` or `DELETE` from any other origin is refused with 403 `ORIGIN_NOT_ALLOWED`. Requests with no `Origin` header (curl, other servers) and pages the API serves itself are not affected.
+
+**Setting it up.** In Google Cloud Console, create an OAuth client ID of type "Web application". Add each frontend origin, and `http://localhost:4000` for the demo page, to its authorised JavaScript origins. Put the client ID in `GOOGLE_CLIENT_ID`. Until it is set, `POST /auth/google` answers 503 `AUTH_NOT_CONFIGURED`.
+
+To call a protected route with curl, sign in on the demo page and copy the `fusion_session` cookie from the browser's developer tools:
+
+```bash
+curl -X POST http://localhost:4000/climate/profile \
+  -H 'Content-Type: application/json' \
+  -H 'Cookie: fusion_session=<value>' \
+  -d '{"lat": 26.1445, "lon": 91.7362}'
+```
 
 ### Rate limits and idempotency
 
 Both are applied to the whole app in `createApp`, so a new route gets them without extra code.
 
-**Rate limits** are per client, over one minute. Every route allows 120 requests. `/climate/*` also has its own limit of 60, because one request there can cost several upstream calls. Responses carry the standard `RateLimit` headers. Over the limit, the answer is 429 `RATE_LIMITED`.
+**Rate limits** are per client, over one minute. Every route allows 120 requests. `/climate/*` also has its own limit of 60, because one request there can cost several upstream calls, and `/auth/*` has a limit of 20. Responses carry the standard `RateLimit` headers. Over the limit, the answer is 429 `RATE_LIMITED`.
 
 **Idempotency** applies to `POST`, `PUT`, `PATCH` and `DELETE`. Send an `Idempotency-Key` header (1 to 255 printable ASCII characters, no spaces) and a retry with the same key gets the first response back, with `Idempotency-Replayed: true`, without running the request again. The header is optional.
 
@@ -144,11 +190,12 @@ Both are applied to the whole app in `createApp`, so a new route gets them witho
 curl -X POST http://localhost:4000/climate/profile \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: 7c1f0a52-profile-guwahati' \
+  -H 'Cookie: fusion_session=<value>' \
   -d '{"lat": 26.1445, "lon": 91.7362}'
 ```
 
 - A stored response is replayed for 24 hours.
-- A key belongs to one method and path. Reusing it there with a different URL or body returns 422 `IDEMPOTENCY_KEY_REUSED`.
+- A key belongs to one user, method and path, so one user is never sent another user's stored response. Reusing it there with a different URL or body returns 422 `IDEMPOTENCY_KEY_REUSED`.
 - A retry that arrives while the first request is still running returns 409 `IDEMPOTENCY_IN_PROGRESS`. A request that never finishes holds its key for 5 minutes at most.
 - 5xx and 429 responses are not stored, so the client can retry with the same key.
 - Keys are kept in Postgres (`idempotency_keys`), so they hold across restarts. Expired rows are deleted at startup.
@@ -228,8 +275,15 @@ Every error has the same shape:
 | 400 | `INVALID_IDEMPOTENCY_KEY` | `Idempotency-Key` is empty, too long or has spaces or non-ASCII characters |
 | 409 | `IDEMPOTENCY_IN_PROGRESS` | The first request with this key is still running |
 | 422 | `IDEMPOTENCY_KEY_REUSED` | The key was already used with a different URL or body |
+| 401 | `UNAUTHORIZED` | A protected route was called without a session, or the session has ended |
+| 401 | `INVALID_CREDENTIAL` | `POST /auth/google` got a token that Google did not issue for this app, or that has expired |
+| 403 | `EMAIL_NOT_VERIFIED` | The Google account's email is not verified |
+| 403 | `FORBIDDEN` | A bank-only route was called by an owner |
+| 403 | `ORIGIN_NOT_ALLOWED` | A write came from a website that is not in `AUTH_ALLOWED_ORIGINS` |
 | 404 | `NOT_FOUND` | Unknown route or method, or a valid cell with no data |
-| 429 | `RATE_LIMITED` | Over 120 requests per minute, or over 60 on `/climate/*` |
+| 429 | `RATE_LIMITED` | Over 120 requests per minute, over 60 on `/climate/*`, or over 20 on `/auth/*` |
+| 503 | `AUTH_NOT_CONFIGURED` | `GOOGLE_CLIENT_ID` is not set |
+| 503 | `AUTH_UNAVAILABLE` | Google's signing keys could not be downloaded |
 | 503 | `UPSTREAM_UNAVAILABLE` | Weather history could not be fetched and nothing is cached |
 | 500 | `INVALID_OUTPUT` | The generated profile failed its own schema check |
 | 500 | `INTERNAL_ERROR` | Anything unexpected. The message is hidden in production |
@@ -440,7 +494,7 @@ Two things it depends on are not built, so they sit behind small interfaces in `
 ```
 api/
 ├── prisma/schema.prisma          Database schema
-├── prisma/migrations/            Four migrations: climate_tool, idempotency_keys, alerts, climate_monitor
+├── prisma/migrations/            Six migrations: climate_tool, idempotency_keys, alerts, climate_monitor, input_service, auth
 ├── data/monitor-locations.json   Locations the monitor watches, until the loans DB exists
 ├── prisma.config.ts              Prisma 7 config; the datasource URL lives here
 ├── public/index.html             Demo page, served at /demo/
@@ -448,7 +502,7 @@ api/
 ├── vitest.global-setup.ts        Applies migrations to the test database
 └── src/
     ├── server.ts                 Entry point: connects, wires dependencies, listens
-    ├── app.ts                    createApp(deps): rate limits, idempotency, routes
+    ├── app.ts                    createApp(deps): rate limits, CORS, sessions, idempotency, routes
     ├── config/
     │   ├── env.ts                Validated environment variables
     │   ├── db.ts                 Prisma client, connectDb, disconnectDb
@@ -458,15 +512,22 @@ api/
     ├── middleware/
     │   ├── error-handler.ts      404 handler and the single error formatter
     │   ├── rate-limit.ts         rateLimiter(limit): per-client, one minute window
+    │   ├── cors.ts               CORS for the allowed frontends, and the Origin check on writes
+    │   ├── auth.ts               loadSession, requireAuth, requireBank: who is calling and who may
     │   └── idempotency.ts        Idempotency-Key handling and the in-memory store
-    ├── routes/                   health.ts, climate.ts, alerts.ts
-    ├── controllers/              climate.controller.ts, alerts.controller.ts: parse input, call the service
+    ├── routes/                   health.ts, auth.ts, climate.ts, alerts.ts
+    ├── controllers/              auth, climate and alerts controllers: parse input, call the service
     ├── jobs/climate-refresh.ts   Six-hourly forecast refresh of every known location
     ├── prompts/climate.ts        The agent's two system prompts
     ├── generated/prisma/         Generated client. Gitignored; never edit
     └── services/
         ├── cache/cache.ts        Cache interface, Redis implementation, no-op cache
         ├── idempotency/prisma-store.ts   Postgres store for idempotency keys
+        ├── auth/
+        │   ├── config.ts         Session lifetime, cookie name, and the GOOGLE_CLIENT_ID and AUTH_* settings
+        │   ├── google.ts         Verifies a Google ID token
+        │   ├── service.ts        Sign-in, session lookup, sign-out, roles
+        │   └── testing/fake-auth.ts   Stand-ins for the auth service and for Google
         ├── alerts/
         │   ├── job.md                The design document
         │   ├── index.ts              enqueue(), the only function other modules call
@@ -529,7 +590,7 @@ Where to change things:
 
 ## Database
 
-Seventeen tables, defined in `api/prisma/schema.prisma`:
+Nineteen tables are described here, all defined in `api/prisma/schema.prisma`. The input service's tables are described in `api/src/services/input/README.md`.
 
 | Table | Holds |
 | --- | --- |
@@ -548,6 +609,8 @@ Seventeen tables, defined in `api/prisma/schema.prisma`:
 | `alert_deliveries` | Every send attempt: provider, result, error and the message as rendered |
 | `alert_contacts` | Who can be contacted, their language, and when they consented or opted out |
 | `alert_businesses` | Name, city and sector of a business, as shown in alert messages |
+| `users` | One row per Google account that has signed in: Google's account id, email, name, picture. No role column; see [Authentication](#authentication) |
+| `sessions` | One row per signed-in browser: the hash of the session token, the user and the expiry |
 | `monitored_cells` | One row per watched forecast cell: level, calm count, next check time, the last check's snapshot, and the lease of the monitor checking it |
 | `disaster_events` | One row per sudden change the monitor detected, with the forecast values, and later the observed values and a `hit`, `false_alarm` or `missed` label |
 
@@ -563,6 +626,7 @@ npm test
 - Tests run against a separate database. `vitest.config.ts` appends `_test` to the database name in `DATABASE_URL`, and the global setup applies migrations to it and refuses to run against a database whose name does not end in `_test`. Postgres must be running.
 - Redis is separated the same way: tests use logical database 1 and development uses 0. Only `src/services/cache/cache.test.ts` talks to the real Redis, so Redis must be running too. Other tests use the in-memory cache in `testing/memory-cache.ts`.
 - Tests never call Open-Meteo. `fakeOpenMeteo` generates synthetic history and forecasts, records which APIs were called, and can simulate outages through its `failing` option.
+- Tests never call Google. Route tests that are not about signing in pass `fakeAuth()` from `src/services/auth/testing/fake-auth.ts` to `createApp` and send requests with `signedIn(app, user)`. `src/routes/auth.test.ts` runs the real auth service against Postgres with `fakeGoogle` in place of the token check.
 - Tests never call OpenAI. `testing/fake-agent.ts` stands in for the agent in pipeline tests, and `agent.test.ts` passes a stub client to `createOpenAiAgent`.
 - `src/services/alerts/worker.test.ts` runs the alert worker against real Postgres with a fake email provider and a controllable clock. Tests never call SMTP.
 - The route tests in `src/routes/climate.test.ts` are integration tests: the real Express app and real Postgres, with a controllable clock. They truncate all climate tables before each test.
@@ -598,6 +662,9 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 - **The refresh job is in-process too.** It is a `setInterval`, not a queue. With several API instances, each one would run it.
 - **Without Redis the agent is asked on every request.** Its forecast scores are cached only in Redis. If Redis is down, each profile request with a forecast calls the model again, which is slower and costs more.
 - **Redis runs with `noeviction`** (set in `docker-compose.yml` for a future BullMQ queue). Cache entries all have a time to live, but if memory fills, writes fail and are dropped instead of evicting old keys.
+- **A new route is open unless you guard it.** `loadSession` only works out who is calling. Mount the route with `requireAuth` or `requireBank` in `createApp`, as `/climate` and `/alerts` are.
+- **The session cookie is `SameSite=Lax` by default.** That works when the frontend and the API are on the same site, such as two ports on `localhost`. If they are deployed on different sites, set `AUTH_COOKIE_SAMESITE=none` and serve both over HTTPS, or the browser will not send the cookie.
+- **Removing someone from `AUTH_BANK_EMAILS` needs a restart.** The lists are read once at startup. Their open sessions lose the bank role from then on.
 - **Rate limiting is by IP address, counted in process memory, and `trust proxy` is not set.** Behind a reverse proxy, every client would share one limit; with several instances, each would count separately.
 - **The `stale` value of `climate_responses.status` is unused.** Nothing writes it since stale data stopped being served. Expired screening rows stay in Postgres until the next re-screening overwrites them, and nothing reads them.
 - **Prisma 7.** The client is generated into `src/generated/prisma` and uses the `@prisma/adapter-pg` driver adapter. The database URL is in `prisma.config.ts`, not in `schema.prisma`.
@@ -612,7 +679,8 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 
 - The frontend. `web/` still shows the default Next.js page. The only UI is the static demo page at `/demo/`.
 - The ML service and the financial side of the score. `ml/` is empty, and the API has no route that talks to it. The climate profile is currently the only output.
-- Authentication. `request_log.requester_id` is null for every client request; only the monitor sets it.
+- A way to manage users. Bank officers are named in `api/.env`; there is no admin screen, and no way to hand a business to a different owner except by editing `businesses.owner_user_id`.
+- `request_log.requester_id` for signed-in users. It is still null for every client request; only the monitor sets it.
 - The World Bank flood exposure raster. `createClimateService` accepts an `exposure` provider, but none is passed, so every response carries a `flood_exposure_unavailable` warning and confidence is `med` at best.
 - Evidence for agent decisions. The agent works from its own knowledge with no search or retrieval, so the `evidence_urls` column is always empty.
 - The loans DB. The monitor reads its watched locations from `api/data/monitor-locations.json`, behind the `WatchedLocationSource` interface.

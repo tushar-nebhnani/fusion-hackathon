@@ -1,6 +1,6 @@
-import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
+import { fakeAuth, signedIn } from "../services/auth/testing/fake-auth.js";
 import { connectDb, disconnectDb, prisma } from "../config/db.js";
 import type { ClimateAgent } from "../services/climate/agent.js";
 import { createClimateService } from "../services/climate/profile.service.js";
@@ -28,13 +28,14 @@ function setup(climate: Partial<FakeClimate> = {}, rateLimit = 1000, agent?: Cli
     logger: silent,
   });
   const app = createApp({
+    auth: { service: fakeAuth() },
     climate: service,
     checkDb: connectDb,
     upstreamStatus: () => om.status(),
     climateRateLimit: rateLimit,
   });
   const profile = async (point: object = GUWAHATI) => {
-    const res = await request(app).post("/climate/profile").send(point);
+    const res = await signedIn(app).post("/climate/profile").send(point);
     return { res, body: res.body as ClimateProfile };
   };
   return { app, om, cache, profile, service };
@@ -468,7 +469,7 @@ describe("POST /climate/profile", () => {
   ])("rejects %s", async (_name, payload, status, code) => {
     const { app, om } = setup();
 
-    const res = await request(app).post("/climate/profile").send(payload);
+    const res = await signedIn(app).post("/climate/profile").send(payload);
 
     expect(res.status).toBe(status);
     expect(res.body).toMatchObject({ error: { code, step: "input_validation" } });
@@ -477,7 +478,7 @@ describe("POST /climate/profile", () => {
   });
 
   it("rejects malformed JSON with 400", async () => {
-    const res = await request(setup().app)
+    const res = await signedIn(setup().app)
       .post("/climate/profile")
       .set("content-type", "application/json")
       .send('{"lat": 26.1, "lon": ');
@@ -488,7 +489,7 @@ describe("POST /climate/profile", () => {
 
   it("rate limits each client", async () => {
     const { app } = setup({}, 2);
-    const bad = () => request(app).post("/climate/profile").send({});
+    const bad = () => signedIn(app).post("/climate/profile").send({});
 
     expect((await bad()).status).toBe(400);
     expect((await bad()).status).toBe(400);
@@ -781,7 +782,7 @@ describe("GET /climate/events", () => {
   it("returns active events only", async () => {
     const { app } = setup({ forecastTmax: [38, 46, 47] });
 
-    const res = await request(app).get("/climate/events?lat=26.1445&lon=91.7362");
+    const res = await signedIn(app).get("/climate/events?lat=26.1445&lon=91.7362");
 
     expect(res.status).toBe(200);
     expect(Object.keys(res.body as object).sort()).toEqual([
@@ -812,7 +813,7 @@ describe("GET /climate/events", () => {
   ])("validates %s", async (url, status, code) => {
     const { app, om } = setup();
 
-    const res = await request(app).get(url);
+    const res = await signedIn(app).get(url);
 
     expect(res.status).toBe(status);
     expect(res.body).toMatchObject({ error: { code } });
@@ -825,7 +826,7 @@ describe("GET /climate/cell/:cellId", () => {
     const { app, profile } = setup();
     await profile();
 
-    const res = await request(app).get("/climate/cell/0.1:26.1:91.7");
+    const res = await signedIn(app).get("/climate/cell/0.1:26.1:91.7");
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
@@ -850,7 +851,7 @@ describe("GET /climate/cell/:cellId", () => {
   });
 
   it("returns 404 for a valid cell with no data", async () => {
-    const res = await request(setup().app).get("/climate/cell/0.1:19.1:72.9");
+    const res = await signedIn(setup().app).get("/climate/cell/0.1:19.1:72.9");
 
     expect(res.status).toBe(404);
     expect(res.body).toMatchObject({ error: { code: "NOT_FOUND" } });
@@ -862,7 +863,7 @@ describe("GET /climate/cell/:cellId", () => {
     ["sql fragment", "/climate/cell/0.1:26.1:91.7'%20OR%20'1'='1"],
     ["encoded traversal", "/climate/cell/..%2F..%2Fetc%2Fpasswd"],
   ])("rejects %s with 400", async (_name, url) => {
-    const res = await request(setup().app).get(url);
+    const res = await signedIn(setup().app).get(url);
 
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: { code: "INVALID_CELL_ID" } });
@@ -875,7 +876,7 @@ describe("unsupported methods", () => {
     ["post", "/climate/events"],
     ["delete", "/climate/cell/0.1:26.1:91.7"],
   ] as const)("%s %s is a 404", async (method, url) => {
-    const res = await request(setup().app)[method](url);
+    const res = await signedIn(setup().app)[method](url);
     expect(res.status).toBe(404);
   });
 });
