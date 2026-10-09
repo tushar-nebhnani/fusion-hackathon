@@ -8,13 +8,15 @@ This README is the handover document for anyone, human or AI agent, picking up t
 
 | Part | Folder | State |
 | --- | --- | --- |
-| Climate risk API | `api/` | Built and tested. 162 tests pass; typecheck and lint are clean. |
+| Climate risk API | `api/` | Built and tested. 229 tests pass; typecheck and lint are clean. |
+| Climate agent | `api/src/services/climate/agent.ts` | Built. Optional: an OpenAI model reviews the screening and scores the forecast. Off without an API key. |
+| Demo page | `api/public/index.html` | Built. A single static page served by the API at `/demo/`. |
 | Web frontend | `web/` | Untouched `create-next-app` scaffold. No project UI yet. |
 | ML service | `ml/` | Dependencies declared only. No code, models, data or tests. |
-| Postgres | `docker-compose.yml` | Used by the API. |
-| Redis | `docker-compose.yml` | Running but unused. Reserved for a BullMQ job queue that does not exist yet. |
+| Postgres | `docker-compose.yml` | Used by the API as the durable store. |
+| Redis | `docker-compose.yml` | Used by the API as a read cache in front of Postgres. No job queue yet. |
 
-Everything of substance is in `api/`. Most of it is uncommitted: the two commits on `main` only contain the project skeleton.
+Everything of substance is in `api/`, and all of it is committed on `main`.
 
 ## Repository layout
 
@@ -60,7 +62,9 @@ curl -X POST http://localhost:4000/climate/profile \
 
 Or open the demo page at http://localhost:4000/demo/. Opened straight from disk (`api/public/index.html`) it cannot reach the API and shows captured sample responses instead.
 
-The first request for a new location downloads about 30 years of daily history from Open-Meteo and can take up to a minute. Later requests are served from Postgres.
+The first request for a new location downloads about 30 years of daily history from Open-Meteo and can take up to a minute. Later requests are served from Redis and Postgres.
+
+The climate agent is off until you put an `OPENAI_API_KEY` in `api/.env`. Without it the API works the same way with rule-based results only. The startup log says which mode is running.
 
 ### Environment variables (`api/.env`)
 
@@ -69,8 +73,12 @@ The first request for a new location downloads about 30 years of daily history f
 | `NODE_ENV` | `development` | `development`, `test` or `production` |
 | `PORT` | `4000` | |
 | `DATABASE_URL` | none, required | `postgresql://fusion:fusion@localhost:5432/fusion?schema=public` matches Docker Compose |
+| `REDIS_URL` | `redis://localhost:6379` | Matches Docker Compose. The API still works when Redis is unreachable |
+| `OPENAI_API_KEY` | none | Enables the climate agent. Blank means not set |
+| `CLIMATE_AGENT_ENABLED` | `true` | Set to `false` to switch the agent off while keeping the key |
+| `CLIMATE_AGENT_MODEL` | `gpt-5-nano` | OpenAI model the agent uses |
 
-They are validated at startup by `api/src/config/env.ts`; the process exits if one is invalid. No API key is needed: Open-Meteo's free tier is used without one.
+They are validated at startup by `api/src/config/env.ts`; the process exits if one is invalid. Open-Meteo needs no key: its free tier is used without one.
 
 ### API commands (run inside `api/`)
 
@@ -96,7 +104,9 @@ Given a latitude and longitude in India, the API returns a climate risk profile:
 - active events, raised when the 7-day forecast crosses a danger threshold;
 - a confidence level and warnings that say which data sources were missing.
 
-All weather data comes from [Open-Meteo](https://open-meteo.com). Postgres stores every response, so it is both the database and the cache.
+All weather data comes from [Open-Meteo](https://open-meteo.com). Postgres stores every response and is the durable copy. Redis sits in front of it as a faster read cache and holds nothing that Postgres or a new model call cannot replace.
+
+When the climate agent is on, an OpenAI model does two jobs on top of the rules: it reviews each hazard's category after screening, and it sets the forecast part of each hazard's score. See [The climate agent](#the-climate-agent).
 
 ### Endpoints
 
@@ -108,9 +118,30 @@ All weather data comes from [Open-Meteo](https://open-meteo.com). Postgres store
 | `GET` | `/climate/events?lat=..&lon=..` | Same pipeline, returning only location, active events, freshness, cache and warnings |
 | `GET` | `/climate/cell/:cellId` | Debug view of what is stored for one grid cell, without raw payloads |
 
-`/climate/*` is rate limited to 60 requests per minute per client. Request bodies are limited to 10 kB. There is no authentication.
+Request bodies are limited to 10 kB. There is no authentication.
 
-`/health` returns 200 with `status: "ok"`, or `"degraded"` when the last Open-Meteo call failed, and 503 with `status: "down"` when Postgres is unreachable. It reports the outcome of the most recent real upstream call, so it never spends Open-Meteo quota.
+`/health` returns 200 with `status: "ok"`, or `"degraded"` when the last Open-Meteo call failed, and 503 with `status: "down"` when Postgres is unreachable. It reports the outcome of the most recent real upstream call, so it never spends Open-Meteo quota. It does not report on Redis or the agent.
+
+### Rate limits and idempotency
+
+Both are applied to the whole app in `createApp`, so a new route gets them without extra code.
+
+**Rate limits** are per client, over one minute. Every route allows 120 requests. `/climate/*` also has its own limit of 60, because one request there can cost several upstream calls. Responses carry the standard `RateLimit` headers. Over the limit, the answer is 429 `RATE_LIMITED`.
+
+**Idempotency** applies to `POST`, `PUT`, `PATCH` and `DELETE`. Send an `Idempotency-Key` header (1 to 255 printable ASCII characters, no spaces) and a retry with the same key gets the first response back, with `Idempotency-Replayed: true`, without running the request again. The header is optional.
+
+```bash
+curl -X POST http://localhost:4000/climate/profile \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: 7c1f0a52-profile-guwahati' \
+  -d '{"lat": 26.1445, "lon": 91.7362}'
+```
+
+- A stored response is replayed for 24 hours.
+- A key belongs to one method and path. Reusing it there with a different URL or body returns 422 `IDEMPOTENCY_KEY_REUSED`.
+- A retry that arrives while the first request is still running returns 409 `IDEMPOTENCY_IN_PROGRESS`. A request that never finishes holds its key for 5 minutes at most.
+- 5xx and 429 responses are not stored, so the client can retry with the same key.
+- Keys are kept in Postgres (`idempotency_keys`), so they hold across restarts. Expired rows are deleted at startup.
 
 ### Profile response
 
@@ -136,6 +167,8 @@ The values below are illustrative. The exact shape is enforced by `climateProfil
       "hazard": "flash_flood",
       "relevance": "primary",
       "relevance_method": "static",
+      "forecast_source": "agent",
+      "forecast_note": "Two days near 40 mm, below the cell's 95th percentile for 3-day rain",
       "score": 0.598,
       "components": { "structural": 0.75, "historical": 0.667, "forecast": 0.2 },
       "reason": "Rain of 50 mm or more on 4.0 days per year"
@@ -159,7 +192,11 @@ The values below are illustrative. The exact shape is enforced by `climateProfil
 }
 ```
 
-`hazards` always has all six hazards; the example shows one. `components.structural` only appears for the two flood hazards. `tripwire_promoted: true` appears on a hazard that is normally dormant but has an active event. `cache` is `miss` when a cell had to be screened, `partial_hit` when only some layers were refetched, and `complete_hit` when no upstream call was made.
+`hazards` always has all six hazards; the example shows one. `components.structural` only appears for the two flood hazards. `tripwire_promoted: true` appears on a hazard that is normally dormant but has an active event.
+
+`relevance_method` is `agent_raised` when the agent moved a hazard to a higher category than the rules gave it; the agent's reason is then appended to `reason`. `forecast_source: "agent"` and `forecast_note` appear on every hazard when the agent set the forecast components, and are absent when the rule formula did.
+
+`cache` is `miss` when a cell had to be screened, `partial_hit` when only some layers were refetched or the agent was called, and `complete_hit` when no outside call was made.
 
 ### Errors
 
@@ -178,8 +215,11 @@ Every error has the same shape:
 | 400 | `INVALID_CELL_ID` | Cell id is not canonical, for example not `0.05:26.15:91.75` |
 | 400 | `BAD_REQUEST` | Malformed JSON |
 | 413 | `BAD_REQUEST` | Body over 10 kB |
+| 400 | `INVALID_IDEMPOTENCY_KEY` | `Idempotency-Key` is empty, too long or has spaces or non-ASCII characters |
+| 409 | `IDEMPOTENCY_IN_PROGRESS` | The first request with this key is still running |
+| 422 | `IDEMPOTENCY_KEY_REUSED` | The key was already used with a different URL or body |
 | 404 | `NOT_FOUND` | Unknown route or method, or a valid cell with no data |
-| 429 | `RATE_LIMITED` | More than 60 requests per minute |
+| 429 | `RATE_LIMITED` | Over 120 requests per minute, or over 60 on `/climate/*` |
 | 503 | `UPSTREAM_UNAVAILABLE` | Weather history could not be fetched and nothing is cached |
 | 500 | `INVALID_OUTPUT` | The generated profile failed its own schema check |
 | 500 | `INTERNAL_ERROR` | Anything unexpected. The message is hidden in production |
@@ -220,12 +260,16 @@ From about 30 years of history, one indicator is computed per hazard and compare
 
 Screening also fetches the elevation of the exact point and its eight neighbours about 1 km away, to work out whether the point sits lower than its surroundings.
 
-### 3. Fetch the current forecast (fast, cached for hours)
+When the agent is on, it then reviews the six categories. It can confirm a category or raise it, never lower it.
+
+### 3. Fetch the current forecast (fast, cached for 6 hours)
 
 The weather forecast and the river forecast are each cached for 6 hours and refetched once older than that. Dormant hazards cost almost nothing:
 
 - only the two tripwire variables, `precipitation_sum` and `temperature_2m_max`, are always requested; other variables are added only for primary and secondary hazards;
 - the river forecast is skipped entirely while `river_flood` is dormant.
+
+A background job (`api/src/jobs/climate-refresh.ts`) also refetches the forecasts of every location the API has been asked about, every 6 hours, and updates scores and events from them. It handles one location at a time, fetches a shared cell once per run, and skips a location that fails. Its first run is 6 hours after startup, so restarting the server causes no burst of upstream calls.
 
 ### 4. Score
 
@@ -233,7 +277,7 @@ Each hazard has up to three components, each between 0 and 1:
 
 - **structural**: built-in exposure of the exact point. Only the flood hazards have one. A point 10 m below its surroundings scores 1, and 10 m above scores 0.
 - **historical**: the screening indicator. Reaching the primary threshold scores 0.5; twice the threshold scores 1.
-- **forecast**: how close the next 7 days come to the hazard's danger level.
+- **forecast**: how close the next 7 days come to the hazard's danger level. A one-variable rule formula computes it; when the agent is on, the agent's score replaces it.
 
 ```
 hazard score = 0.3 × structural + 0.5 × historical + 0.2 × forecast + projection adjustment
@@ -268,55 +312,100 @@ Stored events are kept in step with the forecast: opened, updated, marked `escal
 | A forecast | That forecast signal is left out, confidence `low` |
 | Climate projections, elevation or exposure | No adjustment or structural score, confidence `med` |
 | A database write | Retried once, then logged. The response is still sent with a `persistence_failed` warning |
+| The agent | Rule-based categories or forecast scores are used, with an `agent_unavailable` warning. Confidence is unchanged |
+| Redis | Reads fall through to Postgres and writes are dropped. No warning; the outage is logged once |
 
-Stale data is never served: an expired screening profile or a forecast past its 6 hours is refetched or left out, not reused. Each case adds an entry to `warnings`. Upstream calls are retried up to 3 times with backoff for timeouts, 429 and 5xx; other 4xx responses are not retried.
+Stale data is never served: an expired screening profile or a forecast past its 6 hours is refetched or left out, not reused. Each case adds an entry to `warnings`, except a Redis outage. Upstream calls are retried up to 3 times with backoff for timeouts, 429 and 5xx; other 4xx responses are not retried.
+
+### Caching
+
+| What | Redis key | Kept for | Durable copy |
+| --- | --- | --- | --- |
+| Screening result of a cell | `climate:relevance:<cell>` | Until the cell is due for re-screening (90 days, or 1 day if a source was missing) | `cell_hazard_relevance` |
+| A forecast payload | `climate:response:<api>:<cell>:<hash>` | 6 hours | `climate_responses` |
+| The agent's forecast scores | `climate:agent-forecast:<cells>:<hash>` | 6 hours | None; the agent is asked again |
+
+All keys carry the prefix `fusion:`. An entry that does not match its expected shape is treated as a miss. Writes go to Postgres first, and the Redis entry is then rebuilt from what was stored.
+
+## The climate agent
+
+The agent is `createOpenAiAgent` in `api/src/services/climate/agent.ts`. It uses the OpenAI Responses API with structured output, and its two prompts are in `api/src/prompts/climate.ts`. It runs only when `OPENAI_API_KEY` is set and `CLIMATE_AGENT_ENABLED` is `true`.
+
+| Call | When | What it does |
+| --- | --- | --- |
+| Screening review | Once per cell, after screening | Checks each rule-based category against what it knows of the place, to cover blind spots in gridded data such as cyclone gusts on a coast or a river the grid misses |
+| Forecast scoring | Once per forecast refresh | Scores how threatening the next 7 days are for each hazard, from 0 to 1, using the rule score as a reference |
+
+Limits placed on it:
+
+- **It can raise a category, never lower it.** A lower verdict is recorded as agreement. A raised hazard gets `relevance_method: "agent_raised"` and the agent's reason.
+- **Every reviewed category stores `agent_version`**, which is `<model>/<prompt version>`, for example `gpt-5-nano/agent-1`. Bump `CLIMATE.agent.promptVersion` in `src/config/climate.ts` whenever a prompt changes.
+- **A failure never fails a request.** The rule-based result is used, and the agent is left alone for 5 minutes so a bad key does not slow every request.
+- **A cell screened while the agent was off or failing is reviewed on a later request**, keeping its original re-screening date.
+- **A reply must cover every hazard asked about.** One that is cut off, refused or incomplete counts as a failure. A forecast score is clamped to between 0 and 1.
+- **Requests are sent with `store: false`**, so locations are not kept on OpenAI's side.
+
+Events are still detected by the fixed thresholds in step 5. The agent has no say in them.
 
 ## Code map (`api/`)
 
 ```
 api/
 ├── prisma/schema.prisma          Database schema
-├── prisma/migrations/            One migration: 20261009054117_climate_tool
+├── prisma/migrations/            Two migrations: climate_tool, idempotency_keys
 ├── prisma.config.ts              Prisma 7 config; the datasource URL lives here
-├── vitest.config.ts              Points tests at a separate *_test database
+├── public/index.html             Demo page, served at /demo/
+├── vitest.config.ts              Points tests at a *_test database and Redis database 1
 ├── vitest.global-setup.ts        Applies migrations to the test database
 └── src/
     ├── server.ts                 Entry point: connects, wires dependencies, listens
-    ├── app.ts                    createApp(deps): middleware, rate limit, routes
+    ├── app.ts                    createApp(deps): rate limits, idempotency, routes
     ├── config/
     │   ├── env.ts                Validated environment variables
     │   ├── db.ts                 Prisma client, connectDb, disconnectDb
-    │   └── climate.ts            Every tunable number in the pipeline
+    │   ├── redis.ts              Redis client that fails fast when Redis is down
+    │   └── climate.ts            Every tunable number in the pipeline and the agent
     ├── errors/app-error.ts       AppError and its 400/401/403/404/409 subclasses
-    ├── middleware/error-handler.ts   404 handler and the single error formatter
+    ├── middleware/
+    │   ├── error-handler.ts      404 handler and the single error formatter
+    │   ├── rate-limit.ts         rateLimiter(limit): per-client, one minute window
+    │   └── idempotency.ts        Idempotency-Key handling and the in-memory store
     ├── routes/                   health.ts, climate.ts
     ├── controllers/climate.controller.ts   Parses input and calls the service
+    ├── jobs/climate-refresh.ts   Six-hourly forecast refresh of every known location
+    ├── prompts/climate.ts        The agent's two system prompts
     ├── generated/prisma/         Generated client. Gitignored; never edit
-    └── services/climate/
-        ├── profile.service.ts    The pipeline: cache, fetch, score, save, respond
-        ├── open-meteo.ts         HTTP client with retries, timeouts and validation
-        ├── repository.ts         All database reads and writes
-        ├── hazards.ts            Hazard catalog, thresholds and variable lists
-        ├── screening.ts          Indicator to primary / secondary / dormant
-        ├── scoring.ts            Component scores, overall risk, grade, events
-        ├── stats.ts              Percentiles, rolling sums, indicators, projections
-        ├── grid.ts               Cell snapping and cell id parsing
-        ├── coordinates.ts        Input validation for lat and lon
-        ├── schema.ts             Zod schema of the profile response
-        ├── types.ts              Shared types
-        └── testing/fake-open-meteo.ts   Synthetic Open-Meteo used by tests
+    └── services/
+        ├── cache/cache.ts        Cache interface, Redis implementation, no-op cache
+        ├── idempotency/prisma-store.ts   Postgres store for idempotency keys
+        └── climate/
+            ├── profile.service.ts    The pipeline: cache, fetch, review, score, save
+            ├── agent.ts              ClimateAgent interface and the OpenAI agent
+            ├── open-meteo.ts         HTTP client with retries, timeouts and validation
+            ├── repository.ts         All database reads and writes
+            ├── hazards.ts            Hazard catalog, thresholds and variable lists
+            ├── screening.ts          Indicator to primary / secondary / dormant
+            ├── scoring.ts            Component scores, overall risk, grade, events
+            ├── stats.ts              Percentiles, rolling sums, indicators, projections
+            ├── grid.ts               Cell snapping and cell id parsing
+            ├── coordinates.ts        Input validation for lat and lon
+            ├── schema.ts             Zod schemas of the response and of Redis entries
+            ├── types.ts              Shared types
+            └── testing/              fake-open-meteo.ts, fake-agent.ts, memory-cache.ts
 ```
 
 Where to change things:
 
 - **A threshold, weight, cache lifetime or grid size**: `src/config/climate.ts`, or `LIMITS` and `HAZARD_CATALOG` in `hazards.ts`.
 - **The response shape**: `schema.ts`, then the object built at the end of `run()`. The schema is strict, so an extra key fails with `INVALID_OUTPUT`.
-- **A new endpoint**: add a handler in a controller and register it in `routes/`. Throw an `AppError`; do not format error responses by hand.
+- **What the agent is told**: `src/prompts/climate.ts`, then bump `CLIMATE.agent.promptVersion`.
+- **A rate limit**: `rateLimit` and `climateRateLimit` in `createApp`'s arguments; the defaults are in `app.ts`.
+- **A new endpoint**: add a handler in a controller and register it in `routes/`. Throw an `AppError`; do not format error responses by hand. It inherits the global rate limit and idempotency; add a stricter limit in `app.ts` if a request is expensive.
 - **A database column**: edit `schema.prisma`, then run `npm run db:migrate`.
 
 ## Database
 
-Ten tables, defined in `api/prisma/schema.prisma`:
+Eleven tables, defined in `api/prisma/schema.prisma`:
 
 | Table | Holds |
 | --- | --- |
@@ -324,12 +413,13 @@ Ten tables, defined in `api/prisma/schema.prisma`:
 | `grid_cells` | One row per snapped cell |
 | `points` | Each exact location requested, with its four cell ids |
 | `point_static_features` | Elevation, relative elevation and flood exposure for a point |
-| `cell_hazard_relevance` | Screening result per cell and hazard, with stored indicators and `review_after` |
-| `climate_responses` | Raw Open-Meteo payloads. This table is the cache |
+| `cell_hazard_relevance` | Screening result per cell and hazard, with stored indicators, `review_after`, and `agent_version` once the agent has reviewed it |
+| `climate_responses` | Raw Open-Meteo payloads. The durable cache behind Redis |
 | `climate_metrics` | The same data normalised to one row per cell, date and variable |
 | `hazard_scores` | Score history per point |
 | `cell_events` | Events and their status: `open`, `escalated` or `closed` |
-| `request_log` | Cache result and latency of each profile request |
+| `request_log` | Cache result and latency of each profile request. The background refresh is not logged |
+| `idempotency_keys` | One row per `Idempotency-Key`: the request fingerprint and, once finished, the stored response |
 
 A cached response is identified by cell, API name and a hash of the requested variables. Observed and projection metrics use the Unix epoch as `issued_at`, so refetching history never duplicates a day.
 
@@ -341,9 +431,11 @@ npm test
 ```
 
 - Tests run against a separate database. `vitest.config.ts` appends `_test` to the database name in `DATABASE_URL`, and the global setup applies migrations to it and refuses to run against a database whose name does not end in `_test`. Postgres must be running.
+- Redis is separated the same way: tests use logical database 1 and development uses 0. Only `src/services/cache/cache.test.ts` talks to the real Redis, so Redis must be running too. Other tests use the in-memory cache in `testing/memory-cache.ts`.
 - Tests never call Open-Meteo. `fakeOpenMeteo` generates synthetic history and forecasts, records which APIs were called, and can simulate outages through its `failing` option.
+- Tests never call OpenAI. `testing/fake-agent.ts` stands in for the agent in pipeline tests, and `agent.test.ts` passes a stub client to `createOpenAiAgent`.
 - The route tests in `src/routes/climate.test.ts` are integration tests: the real Express app and real Postgres, with a controllable clock. They truncate all climate tables before each test.
-- The full run takes about 30 seconds, because a cache miss stores roughly 30 years of daily metrics.
+- The full run takes about a minute, because a cache miss stores roughly 30 years of daily metrics.
 
 Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`. All three pass today.
 
@@ -351,7 +443,8 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 
 - **ES modules with NodeNext resolution.** Relative imports must end in `.js`, even though the files are `.ts`.
 - **Strict TypeScript** with `noUncheckedIndexedAccess`: indexing an array gives `T | undefined`.
-- **Dependencies are passed in, not imported.** `createApp(deps)` and `createClimateService(deps)` take the database, the Open-Meteo client, the clock and the logger as arguments. Keep it that way; it is what makes the tests possible.
+- **Dependencies are passed in, not imported.** `createApp(deps)` and `createClimateService(deps)` take the database, the Open-Meteo client, the cache, the agent, the idempotency store, the clock and the logger as arguments. Keep it that way; it is what makes the tests possible.
+- **Every endpoint is rate limited and honours `Idempotency-Key`.** Both are mounted once in `createApp`, above the routes. Mount new routes below them.
 - **Express 5.** A rejected promise in an async handler reaches the error handler without a wrapper.
 - **Latitude always comes first**, in function arguments, cell ids and upstream requests.
 - **Unused arguments** are prefixed with `_`.
@@ -363,20 +456,27 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 
 - **Comments mention "README section 12", "section 17" and "Call 7".** They refer to the original climate tool specification, which was never committed, not to this file. Read `src/config/climate.ts` and `schema.ts` instead.
 - **Fetch the archive before the climate projections, never at the same time.** Open-Meteo counts both against one per-minute limit, and a 30-year request uses all of it. When projections fail, the profile is still returned and they are retried 5 minutes later. A test protects this order.
+- **A first lookup can fail with 503 when another heavy call ran in the same minute.** One 30-year archive request uses most of Open-Meteo's free per-minute allowance. The retries on a 429 all happen within about two seconds, so they cannot outlast the limit. Screening a second new city straight after the first is the usual trigger; waiting a minute and retrying works. Not fixed yet.
 - **The per-cell lock is in-process.** It stops two simultaneous requests for a new cell from both downloading 30 years of history, but only inside one API instance.
-- **Rate limiting is by IP address and `trust proxy` is not set.** Behind a reverse proxy, every client would share one limit.
+- **The refresh job is in-process too.** It is a `setInterval`, not a queue. With several API instances, each one would run it.
+- **Without Redis the agent is asked on every request.** Its forecast scores are cached only in Redis. If Redis is down, each profile request with a forecast calls the model again, which is slower and costs more.
+- **Redis runs with `noeviction`** (set in `docker-compose.yml` for a future BullMQ queue). Cache entries all have a time to live, but if memory fills, writes fail and are dropped instead of evicting old keys.
+- **Rate limiting is by IP address, counted in process memory, and `trust proxy` is not set.** Behind a reverse proxy, every client would share one limit; with several instances, each would count separately.
+- **The `stale` value of `climate_responses.status` is unused.** Nothing writes it since stale data stopped being served. Expired screening rows stay in Postgres until the next re-screening overwrites them, and nothing reads them.
 - **Prisma 7.** The client is generated into `src/generated/prisma` and uses the `@prisma/adapter-pg` driver adapter. The database URL is in `prisma.config.ts`, not in `schema.prisma`.
 - **`web/` uses Next.js 16, which has breaking changes.** Read `web/AGENTS.md` and the guides in `web/node_modules/next/dist/docs/` before writing frontend code.
 - **Never commit `.env` files or `src/generated/`.** Both are gitignored.
 
 ## Not built yet
 
-- The frontend. `web/` still shows the default Next.js page, and nothing calls the API.
+- The frontend. `web/` still shows the default Next.js page. The only UI is the static demo page at `/demo/`.
 - The ML service and the financial side of the score. `ml/` is empty, and the API has no route that talks to it. The climate profile is currently the only output.
 - Authentication. `request_log.requester_id` exists but is always null.
 - The World Bank flood exposure raster. `createClimateService` accepts an `exposure` provider, but none is passed, so every response carries a `flood_exposure_unavailable` warning and confidence is `med` at best.
-- Agent-raised relevance. The `agent_raised` method and the `evidence_urls` and `agent_version` columns exist, but screening is rule-based only.
-- Background jobs. Redis is configured for BullMQ, but forecasts are refreshed only when a request arrives.
+- Evidence for agent decisions. The agent works from its own knowledge with no search or retrieval, so the `evidence_urls` column is always empty.
+- A job queue. The forecast refresh runs on a timer inside the API process; Redis is configured for BullMQ, but BullMQ is not installed.
+- Handling of Open-Meteo's rate limits: waiting out a 429, queueing heavy calls, or pre-warming the demo cities.
+- Shared state for several API instances: the cell lock, the refresh job and the rate limit counters are all per process.
 - `severe` events for anything other than river flood, which would need ensemble forecasts.
 - Dockerfiles, CI and deployment.
 - CORS. A browser on another origin cannot call the API yet.
