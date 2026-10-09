@@ -43,6 +43,7 @@ All three must pass before you say a task is done. If one fails, say so and show
 - `npm test` needs Postgres and Redis running. It uses its own database (`<name>_test`) and Redis database 1, so it never touches development data.
 - The full run takes a few minutes. To run one file: `npx vitest run src/services/climate/scoring.test.ts`.
 - Test files run one after another because they empty the same tables. Do not turn `fileParallelism` back on.
+- For the same reason, only one test run can use the test database at a time. If another agent or terminal is running `vitest`, the climate and monitor suites fail with wrong row counts and cache results. Check with `pgrep -fl vitest`, wait, and run again before treating such a failure as real.
 - Tests never call Open-Meteo, OpenAI or SMTP. Use the fakes in `src/services/climate/testing/` and `src/services/climate/monitor/testing/`; do not add a test that reaches the network.
 - Tests sit next to the code as `*.test.ts`.
 
