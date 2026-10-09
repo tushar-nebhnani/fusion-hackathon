@@ -1,0 +1,23 @@
+# Python env made by `python3 -m venv --without-pip` (no ensurepip on this machine)
+.venv-data/
+
+# Fetched weather data: large, re-creatable with data/fetch_weather.py
+data/raw/
+data/progress.json
+data/weather_dataset.csv
+data/run.out
+data/*.tmp
+
+# The root .gitignore ignores ml/data/*; keep the fetcher itself tracked
+!data/fetch_weather.py
+!data/locations.json
+!data/README.md
+!data/fetch_power.py
+!data/fetch_geoglows.py
+# Derived tables, small: commit so model training can start without re-running
+!data/spine.csv
+!data/events_flood.csv
+!data/events_storm.csv
+!data/synthetic_businesses.csv
+!data/features_flood.csv
+!data/features_storm.csv
