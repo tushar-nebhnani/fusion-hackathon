@@ -63,6 +63,16 @@ export interface ClimateAgent {
 
 const RANK: Record<Relevance, number> = { dormant: 0, secondary: 1, primary: 2 };
 
+// The add-or-raise guard, shared by every place a model is consulted: its
+// answer counts only when it ranks above what the rules already decided.
+export function raises<T extends string>(
+  rank: Record<T, number>,
+  current: T,
+  proposed: T,
+): boolean {
+  return rank[proposed] > rank[current];
+}
+
 // The agent can confirm a category or raise it, never lower it: a model must
 // not be able to argue a measured hazard away. Either way the profile is
 // marked as reviewed.
@@ -73,7 +83,7 @@ export function applyReview(
 ): HazardProfile {
   if (!verdict) return profile;
   const reviewed = { ...profile, agentVersion: version };
-  if (RANK[verdict.category] <= RANK[profile.relevance]) return reviewed;
+  if (!raises(RANK, profile.relevance, verdict.category)) return reviewed;
   return {
     ...reviewed,
     relevance: verdict.category,

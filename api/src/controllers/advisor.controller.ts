@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import { z } from "zod";
 import { BadRequestError } from "../errors/app-error.js";
+import { requireUser } from "../middleware/auth.js";
 import { buildFakeAlert, fakeAlertOptionsSchema } from "../services/advisor/dev/fakeAlert.js";
 import type { Advisor } from "../services/advisor/index.js";
 import { damageSchema } from "../services/advisor/types.js";
@@ -22,7 +23,6 @@ const damageBody = damageSchema.extend({
 const decisionBody = z.object({
   decision: z.enum(["accept", "reject"]),
   note: z.string().max(1000).optional(),
-  decidedBy: z.string().min(1).max(100).optional(),
 });
 
 const noteBody = z.object({ note: z.string().max(1000).optional() });
@@ -51,7 +51,9 @@ export function advisorController(advisor: Advisor) {
 
   const decide: RequestHandler = async (req, res) => {
     const proposalId = parse(z.uuid(), req.params.id, "proposal id");
-    res.json(await advisor.decideProposal(proposalId, parse(decisionBody, req.body, "body")));
+    // The signed-in bank officer, never a name taken from the body
+    const decidedBy = requireUser(res).email;
+    res.json(await advisor.decideProposal(proposalId, { ...parse(decisionBody, req.body, "body"), decidedBy }));
   };
 
   const conversations: RequestHandler = async (req, res) => {

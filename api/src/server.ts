@@ -5,11 +5,17 @@ import { startClimateRefresh } from "./jobs/climate-refresh.js";
 import { createRedis } from "./config/redis.js";
 import { createAdvisorFromEnv } from "./services/advisor/bootstrap.js";
 import { createAlertReader } from "./services/alerts/reader.js";
+import { loadAuthEnv } from "./services/auth/config.js";
+import { createGoogleVerifier } from "./services/auth/google.js";
+import { createAuthService } from "./services/auth/service.js";
 import { createRedisCache } from "./services/cache/cache.js";
 import { createOpenAiAgent } from "./services/climate/agent.js";
 import { createOpenMeteoClient } from "./services/climate/open-meteo.js";
 import { createClimateService } from "./services/climate/profile.service.js";
 import { createPrismaIdempotencyStore } from "./services/idempotency/prisma-store.js";
+import { createOpenAiClassifier } from "./services/input/classifier/openai.js";
+import { INPUT, loadInputEnv } from "./services/input/config.js";
+import { createInputService } from "./services/input/service.js";
 
 await connectDb();
 
@@ -17,6 +23,21 @@ const redis = createRedis();
 const openMeteo = createOpenMeteoClient();
 const idempotencyStore = createPrismaIdempotencyStore(prisma);
 await idempotencyStore.purgeExpired();
+
+const authEnv = loadAuthEnv();
+const auth = createAuthService({
+  prisma,
+  googleClientId: authEnv.googleClientId,
+  verifier: authEnv.googleClientId ? createGoogleVerifier(authEnv.googleClientId) : undefined,
+  bankEmails: authEnv.bankEmails,
+  bankDomains: authEnv.bankDomains,
+});
+await auth.purgeExpired();
+console.log(
+  authEnv.googleClientId
+    ? "Sign in with Google: on"
+    : "Sign in with Google: off (set GOOGLE_CLIENT_ID; protected routes answer 401 until then)",
+);
 
 const agent =
   env.OPENAI_API_KEY && env.CLIMATE_AGENT_ENABLED === "true"
@@ -30,9 +51,37 @@ const climate = createClimateService({ prisma, openMeteo, cache: createRedisCach
 const refresh = startClimateRefresh(climate);
 const advisor = createAdvisorFromEnv({ prisma, climate });
 
+const inputEnv = loadInputEnv();
+const classifier =
+  env.OPENAI_API_KEY && inputEnv.classifierEnabled
+    ? createOpenAiClassifier({ apiKey: env.OPENAI_API_KEY, model: inputEnv.classifierModel })
+    : undefined;
+console.log(
+  classifier
+    ? `Weather-impact classifier: ${classifier.model}`
+    : "Weather-impact classifier: off (sector defaults)",
+);
+// The input service runs on its own: the climate unit and the finance
+// service are not connected to its triggers yet, so those wait as jobs
+const input = createInputService({ prisma, llm: classifier });
+const inputRetry = setInterval(() => {
+  input.retryPending().catch((error: unknown) => {
+    console.error("input: retry of pending work failed", error);
+  });
+}, INPUT.retryMinutes * 60_000);
+
 const app = createApp({
+  auth: {
+    service: auth,
+    allowedOrigins: authEnv.allowedOrigins,
+    cookie: { sameSite: authEnv.cookieSameSite, secure: authEnv.cookieSecure },
+  },
   idempotency: idempotencyStore,
   climate,
+  input: {
+    service: input,
+    options: { seed: { enabled: env.NODE_ENV !== "production", file: inputEnv.seedFile } },
+  },
   alerts: createAlertReader(prisma),
   advisor: { service: advisor.advisor, devRoutes: advisor.config.enableDevRoutes },
   checkDb: connectDb,
@@ -47,6 +96,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     refresh.stop();
     advisor.stop();
+    clearInterval(inputRetry);
     server.close(() => {
       redis.disconnect();
       void disconnectDb().then(() => process.exit(0));

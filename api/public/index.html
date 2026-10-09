@@ -74,6 +74,13 @@
     padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px;
     background: var(--card); font-size: 13px; white-space: nowrap;
   }
+  .side { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+  .account { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); min-height: 32px; }
+  .account button {
+    font: inherit; color: inherit; cursor: pointer; padding: 3px 10px;
+    border: 1px solid var(--line); border-radius: 999px; background: transparent;
+  }
+  .account button:hover { border-color: var(--accent); }
   .mode::before {
     content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted);
   }
@@ -245,7 +252,10 @@
       <h1>Climate risk profile for a business location</h1>
       <p>Pick a point in India. The API screens about 30 years of weather and river history, adds the 7-day forecast, and returns one grade plus a score for six hazards.</p>
     </div>
-    <span class="mode" id="mode" data-mode="checking" role="status">Checking API…</span>
+    <div class="side">
+      <span class="mode" id="mode" data-mode="checking" role="status">Checking API…</span>
+      <div class="account" id="account"></div>
+    </div>
   </header>
 
   <div class="layout">
@@ -354,6 +364,85 @@ function setMode(next) {
   el.dataset.mode = next;
   el.textContent =
     next === "live" ? "Live API" : next === "sample" ? "Sample data · API not reachable" : "Checking API…";
+}
+
+/* ---------- Sign in with Google ---------- */
+
+// The API keeps the session in an httpOnly cookie, so the page only knows
+// who is signed in from GET /auth/me
+let user = null;
+
+function drawAccount(note) {
+  const box = $("account");
+  if (user) {
+    box.replaceChildren(
+      h("span", { text: `${user.name ?? user.email} · ${user.role}` }),
+      h("button", { type: "button", onclick: signOut }, "Sign out"),
+    );
+  } else {
+    box.replaceChildren(note ? h("span", { text: note }) : h("div", { id: "gsi" }));
+  }
+}
+
+async function signOut() {
+  await fetch(`${API}/auth/logout`, { method: "POST" }).catch(() => null);
+  user = null;
+  await showSignIn();
+  void score();
+}
+
+async function onCredential(response) {
+  const res = await fetch(`${API}/auth/google`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credential: response.credential }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    drawAccount(body.error?.message ?? "Sign-in failed");
+    return;
+  }
+  user = body.user;
+  drawAccount();
+  void score();
+}
+
+function loadGoogle() {
+  if (window.google?.accounts) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.append(script);
+  });
+}
+
+async function showSignIn() {
+  try {
+    const config = await (await fetch(`${API}/auth/config`)).json();
+    if (!config.google_client_id) {
+      drawAccount("Sign-in is off: set GOOGLE_CLIENT_ID in api/.env");
+      return;
+    }
+    await loadGoogle();
+    drawAccount();
+    google.accounts.id.initialize({ client_id: config.google_client_id, callback: onCredential });
+    google.accounts.id.renderButton($("gsi"), { theme: "outline", size: "medium", shape: "pill" });
+  } catch {
+    drawAccount("Sign-in is unavailable");
+  }
+}
+
+async function loadAccount() {
+  try {
+    const res = await fetch(`${API}/auth/me`);
+    user = res.ok ? (await res.json()).user : null;
+  } catch {
+    user = null;
+  }
+  if (user) drawAccount();
+  else await showSignIn();
 }
 
 /* ---------- Location picker ---------- */
@@ -523,6 +612,7 @@ async function score(reuseKey) {
     setMode("live");
     last = { point, key };
     if (result.ok) renderProfile(result.body, name, result.meta);
+    else if (result.status === 401) renderSignedOut();
     else renderError(result, name);
   } catch {
     setMode("sample");
@@ -547,6 +637,20 @@ function renderOffline(preset) {
         : "Sample data only covers the preset cities. ",
       "Start it with ", h("code", { text: "npm run dev" }), " in ", h("code", { text: "api/" }),
       " and open ", h("code", { text: "http://localhost:4000/demo/" }), ".",
+    ),
+  );
+}
+
+function renderSignedOut() {
+  if (user) {
+    // The session ended on the server
+    user = null;
+    void showSignIn();
+  }
+  $("results").replaceChildren(
+    h("div", { class: "notice" },
+      h("strong", { text: "Sign in to score a location" }),
+      "The climate routes need a signed-in user. Use Sign in with Google at the top of the page.",
     ),
   );
 }
@@ -731,6 +835,7 @@ drawMap();
 fetch(`${API}/health`)
   .then((res) => setMode(res.ok || res.status === 503 ? "live" : "sample"))
   .catch(() => setMode("sample"))
+  .then(() => (mode === "live" ? loadAccount() : null))
   .finally(() => void score());
 </script>
 </body>

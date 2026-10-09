@@ -50,4 +50,39 @@ export const CLIMATE = {
     timeoutMs: 15_000,
     historyTimeoutMs: 60_000,
   },
+  // Background monitor (services/climate/monitor). It runs as its own
+  // process; MONITOR_* in .env overrides the first three values.
+  monitor: {
+    tickMinutes: 15,
+    // Cells checked at once, so the monitor cannot flood Open-Meteo
+    concurrency: 5,
+    // Hours between two checks of a cell, by its level
+    intervalHours: { NORMAL: 6, WATCH: 3, WARNING: 1, SEVERE: 1 },
+    // Calm checks in a row before a cell steps down one level
+    calmRunsToStepDown: 2,
+    entryTimeoutMs: 15_000,
+    // A cell's first check may have to screen ~30 years of history
+    firstCheckTimeoutMs: 90_000,
+    agentTimeoutMs: 20_000,
+    // The agent reviews a cell at most this often
+    agentReviewHours: 6,
+    // A claimed cell is handed back if its monitor dies for this long
+    leaseSeconds: 300,
+    // IMD daily rainfall classes (mm): heavy, very heavy, extremely heavy.
+    // Rain below `minProbabilityPct` does not count.
+    rain: { minProbabilityPct: 25, heavyMm: 64.5, veryHeavyMm: 115.6, extremelyHeavyMm: 204.5 },
+    // River above its historical high plus heavy rain this soon is SEVERE
+    riverRainWithinHours: 72,
+    // Least level of a dormant hazard whose tripwire trips
+    dormantTripLevel: "WARNING",
+    // Agent forecast score (0-1) from which it may raise a hazard to a level.
+    // It cannot raise to SEVERE: that needs measured values.
+    agentLevels: { watch: 0.6, warning: 0.85 },
+    verify: {
+      // Days of observed data scanned for extremes nobody forecast
+      scanDays: 7,
+      // An observed extreme this close to an event's window counts as forecast
+      matchToleranceDays: 2,
+    },
+  },
 } as const;

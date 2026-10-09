@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { advisorController } from "../controllers/advisor.controller.js";
+import { requireBank } from "../middleware/auth.js";
 import type { Advisor } from "../services/advisor/index.js";
 
 export function advisorRouter(advisor: Advisor, options: { devRoutes: boolean }): Router {
@@ -9,11 +10,12 @@ export function advisorRouter(advisor: Advisor, options: { devRoutes: boolean })
   router.get("/businesses", controller.businesses);
   router.post("/chat", controller.chat);
   router.post("/damage-report", controller.damageReport);
-  router.post("/proposals/:id/decision", controller.decide);
+  // Bank decisions: README §1 rule 3, the agent proposes and the bank decides
+  router.post("/proposals/:id/decision", requireBank, controller.decide);
   router.get("/conversations/:businessId", controller.conversations);
   router.get("/loans/:loanId/state", controller.loanState);
-  router.post("/loans/:loanId/disburse", controller.disburse);
-  router.post("/loans/:loanId/close-recovery", controller.closeRecovery);
+  router.post("/loans/:loanId/disburse", requireBank, controller.disburse);
+  router.post("/loans/:loanId/close-recovery", requireBank, controller.closeRecovery);
 
   // Never mounted in production (see loadAdvisorConfig)
   if (options.devRoutes) {

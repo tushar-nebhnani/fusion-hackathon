@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { RequestHandler } from "express";
+import type { Request, RequestHandler, Response } from "express";
 import { AppError } from "../errors/app-error.js";
 
 const HOUR_MS = 3_600_000;
@@ -77,12 +77,24 @@ export function createMemoryIdempotencyStore(): IdempotencyStore {
 export interface IdempotencyOptions {
   // Reject unsafe requests that carry no Idempotency-Key
   required?: boolean;
+  // Who is calling, when known. Keys are kept apart per subject, so one
+  // user is never replayed another user's response.
+  subject?: (req: Request, res: Response) => string | null;
   now?: () => Date;
   logger?: Pick<Console, "error">;
 }
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const KEY_PATTERN = /^[\x21-\x7e]{1,255}$/;
+
+// For routers whose writes must carry a key. It only checks that the header
+// is there; `idempotency` below, mounted on the app, does the handling.
+export const requireIdempotencyKey: RequestHandler = (req, _res, next) => {
+  if (UNSAFE_METHODS.has(req.method) && req.get("Idempotency-Key") === undefined) {
+    throw new AppError("Idempotency-Key header is required", 400, "MISSING_IDEMPOTENCY_KEY");
+  }
+  next();
+};
 
 // Honours the Idempotency-Key header on unsafe methods: the first request runs
 // and its response is stored, repeats with the same key get that response back
@@ -121,7 +133,8 @@ export function idempotency(
       );
     }
 
-    const scope = `${req.method} ${req.baseUrl}${req.path}`;
+    const subject = options.subject?.(req, res);
+    const scope = `${req.method} ${req.baseUrl}${req.path}${subject ? ` as ${subject}` : ""}`;
     const fingerprint = createHash("sha256")
       .update(JSON.stringify([req.originalUrl, (req.body as unknown) ?? null]))
       .digest("hex");

@@ -1,9 +1,11 @@
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import { createApp, type AppDeps } from "./app.js";
+import { OTHER_OWNER, OWNER, fakeAuth, signedIn } from "./services/auth/testing/fake-auth.js";
 
 function app(overrides: Partial<AppDeps> = {}) {
   return createApp({
+    auth: { service: fakeAuth() },
     climate: {
       getProfile: () => Promise.reject(new Error("not used")),
       getCell: () => Promise.reject(new Error("not used")),
@@ -92,7 +94,7 @@ describe("idempotency", () => {
     const getProfile = vi.fn(() => Promise.resolve({ grade: "C" } as never));
     const server = app({ climate: { getProfile, getCell: () => Promise.reject(new Error("no")) } });
     const send = () =>
-      request(server)
+      signedIn(server)
         .post("/climate/profile")
         .set("Idempotency-Key", "abc-123")
         .send({ lat: 26.1445, lon: 91.7362 });
@@ -112,15 +114,115 @@ describe("idempotency", () => {
       climate: { getProfile, getCell: () => Promise.reject(new Error("no")) },
       climateRateLimit: 1,
     });
-    await request(server).post("/climate/profile").send({ lat: 26.1445, lon: 91.7362 });
+    await signedIn(server).post("/climate/profile").send({ lat: 26.1445, lon: 91.7362 });
 
-    const limited = await request(server)
+    const limited = await signedIn(server)
       .post("/climate/profile")
       .set("Idempotency-Key", "abc-123")
       .send({ lat: 26.1445, lon: 91.7362 });
 
     expect(limited.status).toBe(429);
     expect(limited.headers).not.toHaveProperty("idempotency-replayed");
+  });
+});
+
+describe("authentication", () => {
+  const point = { lat: 26.1445, lon: 91.7362 };
+
+  it("answers 401 on protected routes without a session, and runs nothing", async () => {
+    const getProfile = vi.fn(() => Promise.resolve({ grade: "C" } as never));
+    const list = vi.fn(() => Promise.resolve({ alerts: [] }));
+    const server = app({ climate: { getProfile, getCell: getProfile }, alerts: { list } });
+
+    const results = await Promise.all([
+      request(server).post("/climate/profile").send(point),
+      request(server).get("/climate/events?lat=26.1&lon=91.7"),
+      request(server).get("/climate/cell/0.1:26.1:91.7"),
+      request(server).get("/alerts"),
+      request(server).post("/climate/profile").set("Cookie", "fusion_session=forged").send(point),
+    ]);
+
+    for (const res of results) {
+      expect(res.status).toBe(401);
+      expect(res.body).toMatchObject({ error: { code: "UNAUTHORIZED" } });
+    }
+    expect(getProfile).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("leaves /health, /demo and /auth/config open", async () => {
+    const server = app();
+
+    expect((await request(server).get("/health")).status).toBe(200);
+    expect((await request(server).get("/demo/")).status).toBe(200);
+    expect((await request(server).get("/auth/config")).body).toEqual({
+      google_client_id: "test-client-id",
+    });
+  });
+
+  it("does not replay one user's response to another user or to nobody", async () => {
+    const getProfile = vi.fn(() => Promise.resolve({ grade: "C" } as never));
+    const server = app({ climate: { getProfile, getCell: () => Promise.reject(new Error("no")) } });
+    const send = (client: ReturnType<typeof request>) =>
+      client.post("/climate/profile").set("Idempotency-Key", "shared-key").send(point);
+
+    const mine = await send(signedIn(server, OWNER));
+    const theirs = await send(signedIn(server, OTHER_OWNER));
+    const anonymous = await send(request(server));
+
+    expect(mine.status).toBe(200);
+    expect(theirs.status).toBe(200);
+    expect(theirs.headers).not.toHaveProperty("idempotency-replayed");
+    expect(anonymous.status).toBe(401);
+    expect(getProfile).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("cross-origin requests", () => {
+  const WEB = "http://localhost:3000";
+  const server = () => app({ auth: { service: fakeAuth(), allowedOrigins: [WEB] } });
+
+  it("lets an allowed frontend send the session cookie", async () => {
+    const preflight = await request(server())
+      .options("/climate/profile")
+      .set({ Origin: WEB, "Access-Control-Request-Method": "POST" });
+    const res = await request(server()).get("/health").set("Origin", WEB);
+
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers).toMatchObject({
+      "access-control-allow-origin": WEB,
+      "access-control-allow-credentials": "true",
+      "access-control-allow-headers": "Content-Type, Idempotency-Key",
+    });
+    expect(res.headers["access-control-allow-origin"]).toBe(WEB);
+  });
+
+  it("refuses a write from any other website, even with a valid session", async () => {
+    const getProfile = vi.fn(() => Promise.resolve({ grade: "C" } as never));
+    const evil = app({ climate: { getProfile, getCell: getProfile } });
+
+    const res = await signedIn(evil)
+      .post("/climate/profile")
+      .set("Origin", "https://evil.example")
+      .send({ lat: 26.1445, lon: 91.7362 });
+    const read = await request(evil).get("/health").set("Origin", "https://evil.example");
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: { code: "ORIGIN_NOT_ALLOWED" } });
+    expect(getProfile).not.toHaveBeenCalled();
+    expect(read.status).toBe(200);
+    expect(read.headers).not.toHaveProperty("access-control-allow-origin");
+  });
+
+  it("accepts a write from a page the API serves itself", async () => {
+    const server = app({ climate: { getProfile: () => Promise.resolve({ grade: "C" } as never), getCell: () => Promise.reject(new Error("no")) } });
+
+    const res = await signedIn(server)
+      .post("/climate/profile")
+      .set({ Host: "localhost:4000", Origin: "http://localhost:4000" })
+      .send({ lat: 26.1445, lon: 91.7362 });
+
+    expect(res.status).toBe(200);
   });
 });
 

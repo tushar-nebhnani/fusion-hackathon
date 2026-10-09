@@ -52,8 +52,10 @@ import {
   type HazardProfile,
   type LatLon,
   type Relevance,
+  type RiverIndicators,
   type StaticFeatures,
   type TimeSeries,
+  type WeatherIndicators,
 } from "./types.js";
 
 const HOUR_MS = 3_600_000;
@@ -80,9 +82,44 @@ export interface ClimateServiceDeps {
   logger?: Pick<Console, "error" | "warn">;
 }
 
+export interface ProfileOptions {
+  // Refetch the two forecast layers (weather and river) even while they are
+  // fresh. History, projections, static features and screening stay cached.
+  forceFreshForecast?: boolean;
+}
+
+// The daily values the forecast scores and events were computed from, for a
+// caller that applies its own thresholds (the background monitor)
+export interface ForecastDetail {
+  window: { start: string; end: string };
+  // Null when that forecast is unavailable or, for the river, skipped
+  weather: TimeSeries | null;
+  flood: TimeSeries | null;
+  weatherHistory: WeatherIndicators | null;
+  riverHistory: RiverIndicators | null;
+}
+
+export interface DetailedProfile {
+  profile: ClimateProfile;
+  forecast: ForecastDetail;
+}
+
 export interface ClimateService {
-  getProfile(point: LatLon, requesterId?: string | null): Promise<ClimateProfile>;
+  getProfile(
+    point: LatLon,
+    requesterId?: string | null,
+    options?: ProfileOptions,
+  ): Promise<ClimateProfile>;
   getCell(cellId: string): Promise<unknown>;
+}
+
+export interface ClimateInspector {
+  // The same pipeline as getProfile, also returning the forecast values
+  getProfileWithForecast(
+    point: LatLon,
+    requesterId?: string | null,
+    options?: ProfileOptions,
+  ): Promise<DetailedProfile>;
 }
 
 export interface RefreshSummary {
@@ -96,7 +133,7 @@ export interface ClimateRefresher {
   refreshAll(): Promise<RefreshSummary>;
 }
 
-interface RunOptions {
+interface RunOptions extends ProfileOptions {
   // Forecast layers fetched before this moment are refetched even if fresh
   refreshBefore?: Date;
   // Scheduled run, not a client request: nothing is added to request_log
@@ -134,7 +171,7 @@ function window(data: TimeSeries, start: string, end: string): TimeSeries {
 
 export function createClimateService(
   deps: ClimateServiceDeps,
-): ClimateService & ClimateRefresher {
+): ClimateService & ClimateRefresher & ClimateInspector {
   const repo = createRepository(deps.prisma);
   const om = deps.openMeteo;
   const store = deps.cache ?? noopCache;
@@ -186,7 +223,7 @@ export function createClimateService(
     requesterId: string | null,
     startedAt: number,
     options: RunOptions = {},
-  ): Promise<ClimateProfile> {
+  ): Promise<DetailedProfile> {
     const at = now();
     const today = istDate(at);
     const warnings = new Set<string>();
@@ -618,7 +655,8 @@ export function createClimateService(
       // During a scheduled refresh a layer only counts if this run fetched it,
       // so each cell is refetched once however many locations share it
       const current = (fetchedAt: Date) =>
-        !options.refreshBefore || fetchedAt >= options.refreshBefore;
+        !options.forceFreshForecast &&
+        (!options.refreshBefore || fetchedAt >= options.refreshBefore);
 
       const hit = cachedLayerSchema.safeParse(await store.get(cacheKey));
       if (hit.success && hit.data.staleAfter > at && current(hit.data.fetchedAt)) {
@@ -942,16 +980,43 @@ export function createClimateService(
         "output_validation",
       );
     }
-    return checked.data;
+    return {
+      profile: checked.data,
+      forecast: {
+        window: { start: today, end: windowEnd },
+        weather: current.weather,
+        flood: current.flood,
+        weatherHistory: profiles.heat.indicators.weather ?? null,
+        riverHistory: profiles.river_flood.indicators.river ?? null,
+      },
+    };
   }
 
   const lockKey = (cells: Cells) => `${cells.historical.id}|${cells.flood.id}`;
 
+  // Every request takes the cell lock, whether it turns out to be a miss, a
+  // partial hit or a complete hit
+  function locked(
+    point: LatLon,
+    requesterId: string | null,
+    options: ProfileOptions,
+  ): Promise<DetailedProfile> {
+    const startedAt = performance.now();
+    const cells = snapPoint(point.lat, point.lon);
+    return withCellLock(lockKey(cells), () =>
+      run(point, cells, requesterId, startedAt, {
+        forceFreshForecast: options.forceFreshForecast ?? false,
+      }),
+    );
+  }
+
   return {
-    getProfile(point, requesterId = null) {
-      const startedAt = performance.now();
-      const cells = snapPoint(point.lat, point.lon);
-      return withCellLock(lockKey(cells), () => run(point, cells, requesterId, startedAt));
+    async getProfile(point, requesterId = null, options = {}) {
+      return (await locked(point, requesterId, options)).profile;
+    },
+
+    getProfileWithForecast(point, requesterId = null, options = {}) {
+      return locked(point, requesterId, options);
     },
 
     // One location at a time, to stay well inside the upstream rate limits.
