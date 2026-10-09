@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { securityAuditLogger } from "./middleware/security-audit.js";
 import express, { type Express } from "express";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
 import {
@@ -30,9 +31,31 @@ export interface AppDeps extends HealthDeps {
 
 export function createApp(deps: AppDeps): Express {
   const app = express();
-  app.disable("x-powered-by");
+app.disable("x-powered-by");
+
+  // Baseline HTTP security headers
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader(
+      "Permissions-Policy",
+      "camera=(), microphone=(), geolocation=()",
+    );
+    next();
+  });
+
+// Baseline security headers for API and same-origin demo responses.
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  next();
+});
   // Every endpoint is rate limited and honours Idempotency-Key. New routes
   // mounted below inherit both.
+  app.use(securityAuditLogger);
   app.use(rateLimiter(deps.rateLimit ?? 120));
   app.use(express.json({ limit: "10kb" }));
   app.use(idempotency(deps.idempotency ?? createMemoryIdempotencyStore()));

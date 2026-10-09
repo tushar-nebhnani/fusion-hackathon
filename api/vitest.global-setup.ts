@@ -7,5 +7,9 @@ export default function setup(): void {
   if (!new URL(url).pathname.endsWith("_test")) {
     throw new Error("Refusing to run tests: DATABASE_URL is not a *_test database");
   }
-  execFileSync("npx", ["prisma", "migrate", "deploy"], { stdio: "pipe" });
+ execFileSync(
+  process.execPath,
+  ["./node_modules/prisma/build/index.js", "migrate", "deploy"],
+  { stdio: "pipe" },
+);
 }
