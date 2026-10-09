@@ -206,7 +206,7 @@ An owner who asks for another owner's business gets 404 `BUSINESS_NOT_FOUND`, th
 
 **Requests from other websites.** Because the session is a cookie, the API checks the `Origin` header that browsers attach. Origins in `AUTH_ALLOWED_ORIGINS` get CORS headers with credentials allowed. A `POST`, `PUT`, `PATCH` or `DELETE` from any other origin is refused with 403 `ORIGIN_NOT_ALLOWED`. Setting it to `*` turns this check off so any local page can sign in; that also turns off the CSRF protection, so it is ignored in production. Requests with no `Origin` header (curl, other servers) and pages the API serves itself are not affected.
 
-**Setting it up.** In Google Cloud Console, create an OAuth client ID of type "Web application". Add each frontend origin, such as the one the web console is served from, to its authorised JavaScript origins. Put the client ID in `GOOGLE_CLIENT_ID`. Until it is set, `POST /auth/google` answers 503 `AUTH_NOT_CONFIGURED`.
+**Setting it up.** In Google Cloud Console, create an OAuth client ID of type "Web application". Add each frontend origin, such as `http://localhost:3000` for the web console, to its authorised JavaScript origins. Put the client ID in `GOOGLE_CLIENT_ID`. Until it is set, `POST /auth/google` answers 503 `AUTH_NOT_CONFIGURED`.
 
 To call a protected route with curl, sign in on the web console and copy the `fusion_session` cookie from the browser's developer tools:
 

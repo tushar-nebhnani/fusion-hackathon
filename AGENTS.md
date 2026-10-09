@@ -61,6 +61,16 @@ All three must pass before you say a task is done. If one fails, say so and show
 - **Keep `README.md` true.** When you change a threshold, endpoint, table, setting or command, update the README in the same piece of work. It is the handover document.
 - **Do not weaken a safety limit to make something pass**: the agent's raise-only rule, the finance score's uplift cap, the alert consent and cooldown checks, the test database name check, the strict response schema, the loan lock on an owner's changes, or the sign-in, ownership, sharing-consent and `Origin` checks.
 
+## Sharing `main`
+
+Several people and their agents commit to `main`. Most past conflicts were in `README.md`, `api/src/app.ts`, `web/app.js` and `web/index.html`.
+
+- **Start from the latest `main`.** Run `git pull --rebase --autostash` before you begin and again before you commit.
+- **Rebase unpushed commits; do not merge `origin/main` into `main`.** A merge commit is only for work that is already pushed.
+- **Touch only the lines your change needs in the shared files above.** Do not reorder, reformat or rewrap them. Add a table row or a route mount next to the related ones, not at the end of the file.
+- **Keep work small and hand it back soon.** Work that sits unpushed for hours is what conflicts. Use a branch and a pull request for anything larger than a few files.
+- **If a rebase conflicts, keep both sides' intent** and run the checks again. Never resolve by discarding the other person's change.
+
 ## Commands that reach outside this machine
 
 Run the safe one unless the task needs the real one.

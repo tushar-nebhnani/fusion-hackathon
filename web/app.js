@@ -86,7 +86,7 @@ function scoreStrip(cells) {
 // ── State ────────────────────────────────────────────────────────────────────
 
 const state = {
-  // Served by the API itself (/demo style) it calls its own origin; otherwise the dev default
+  // Served from port 4000 it calls its own origin; otherwise the dev default
   base: store.get("base") || (location.port === "4000" ? location.origin : "http://localhost:4000"),
   mode: "live", // "live" calls the API; "sample" answers reads from SAMPLES and sends nothing
   reachable: null,

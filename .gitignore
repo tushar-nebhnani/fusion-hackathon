@@ -396,10 +396,6 @@ api/src/generated/
 .env*
 !.env.example
 
-# ML artifacts and datasets (keep the folders)
-!ml/models/.gitkeep
-!ml/data/.gitkeep
-
 # Next.js / Vercel
 next-env.d.ts
 .vercel
