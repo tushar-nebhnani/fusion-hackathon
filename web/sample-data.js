@@ -686,6 +686,21 @@ const { SAMPLES, HAND } = (() => {
     [on("GET /advisor/loans/:id/state"), loanState, HAND],
     [on("POST /advisor/loans/:id/disburse"), disburse, HAND],
     [on("POST /advisor/loans/:id/close-recovery"), closeRecovery, HAND],
+
+    [on("GET /health"), { status: "ok", db: "up", upstream: { open_meteo: { state: "ok", checked_at: ist(-2 * HOUR) } } }, HAND],
+    [on("GET /ml/status"), { status: "ok", models: { alert_calibration_flood: true, alert_calibration_storm: true, cashflow_anomaly: true }, hazard_params: true }, HAND],
+    [on("POST /ml/alerts/calibrate"), (body) => ({ p_event: body.hazard === "storm" ? 0.21 : 0.41, band: body.hazard === "storm" ? "medium" : "high", model_version: "alert-cal-synthetic", cell: "Chennai", distance_km: 2.4, reason: null }), "Synthetic. The band follows the hazard in the form; live, the model reads the rain series."],
+    [on("POST /ml/anomaly"), { anomaly_score: 0.63, flagged: true, type: "systemic", months_flagged: 2, model_version: "cashflow-anomaly-synthetic", reason: null }, HAND],
+    [on("POST /ml/climate-cashflow"), {
+      scored: true, cell: "Chennai", distance_km: 2.4,
+      pd_without_climate: 0.0011, pd_with_climate: 0.0482, delta_pd_climate: 0.0471, climate_adjusted_pd: 0.0612, climate_premium_bps: 212.4,
+      expected_annual_climate_loss: 61200, climate_cfar95: 214500, cash_reserve_target: 184000,
+      p_cash_short_30d: 0.03, p_cash_short_30d_without_climate: 0.0,
+      loss_by_hazard: { flash_flood: 38400, storm: 16900, river_flood: 5900 },
+      what_if: [{ condition: "insure 50% of climate losses", pd_with_climate: 0.0213, pd_change: -0.0269 }, { condition: "backup power", pd_with_climate: 0.0431, pd_change: -0.0051 }],
+      paths: 20000, hazards: { flash_flood: { events_per_year: 2.1, mean_duration: 3.4 }, storm: { events_per_year: 0.9, mean_duration: 2.2 } },
+      assumptions: ["Synthetic sample: the costs per event are made up for this walk-through"],
+    }, "Synthetic. Live, the simulation runs 20,000 paths from the hazard history of the nearest measured cell."],
   ];
 
   return { SAMPLES, HAND };
