@@ -3,6 +3,7 @@ import { connectDb, disconnectDb, prisma } from "./config/db.js";
 import { env } from "./config/env.js";
 import { startClimateRefresh } from "./jobs/climate-refresh.js";
 import { createRedis } from "./config/redis.js";
+import { createAdvisorFromEnv } from "./services/advisor/bootstrap.js";
 import { createAlertReader } from "./services/alerts/reader.js";
 import { createPrismaAuditRecorder } from "./services/audit/recorder.js";
 import { loadAuthEnv } from "./services/auth/config.js";
@@ -55,6 +56,7 @@ console.log(
 
 const climate = createClimateService({ prisma, openMeteo, cache: createRedisCache(redis), agent });
 const refresh = startClimateRefresh(climate);
+const advisor = createAdvisorFromEnv({ prisma, climate });
 
 const inputEnv = loadInputEnv();
 const classifier =
@@ -106,6 +108,7 @@ const app = createApp({
   },
   finance: { service: finance, assertAccess: (id, actor) => input.assertAccess(id, actor) },
   alerts: createAlertReader(prisma),
+  advisor: { service: advisor.advisor, devRoutes: advisor.config.enableDevRoutes },
   checkDb: connectDb,
   upstreamStatus: () => openMeteo.status(),
 });
@@ -117,6 +120,7 @@ const server = app.listen(env.PORT, () => {
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     refresh.stop();
+    advisor.stop();
     clearInterval(inputRetry);
     server.close(() => {
       redis.disconnect();

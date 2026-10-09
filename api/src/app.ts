@@ -12,11 +12,13 @@ import {
 } from "./middleware/idempotency.js";
 import { rateLimiter } from "./middleware/rate-limit.js";
 import { securityHeaders } from "./middleware/security-headers.js";
+import { advisorRouter } from "./routes/advisor.js";
 import { alertsRouter } from "./routes/alerts.js";
 import { authRouter } from "./routes/auth.js";
 import { climateRouter } from "./routes/climate.js";
 import { financeRouter, type FinanceRouterDeps } from "./routes/finance.js";
 import { healthRouter, type HealthDeps } from "./routes/health.js";
+import type { Advisor } from "./services/advisor/index.js";
 import type { AlertReader } from "./services/alerts/reader.js";
 import type { AuditRecorder } from "./services/audit/recorder.js";
 import { AUTH } from "./services/auth/config.js";
@@ -48,12 +50,16 @@ export interface AppDeps extends HealthDeps {
   trustProxy?: number;
   // Read side of the alert system. /alerts is mounted only when it is given
   alerts?: AlertReader;
+  // Chat advisor. /advisor is mounted only when it is given
+  advisor?: { service: Advisor; devRoutes: boolean };
   // Defaults to an in-process store, which only suits tests and one instance
   idempotency?: IdempotencyStore;
   // Requests per minute per client across the whole API
   rateLimit?: number;
   // Stricter limit on /climate; each request can cost upstream calls
   climateRateLimit?: number;
+  // Stricter limit on /advisor; each request can cost several model calls
+  advisorRateLimit?: number;
   // Input service. /businesses, /loans and /seed are mounted only when it is given
   input?: { service: InputService; options?: InputRouterOptions };
   // Finance service. /finance is mounted only when it is given
@@ -117,6 +123,15 @@ export function createApp(deps: AppDeps): Express {
   }
   // Guards its own paths: it is mounted at the root
   if (deps.input) app.use(inputRouter(deps.input.service, deps.input.options));
+  // Signed in to chat; the bank's own actions are bank officers only (see the router)
+  if (deps.advisor) {
+    app.use(
+      "/advisor",
+      rateLimiter(deps.advisorRateLimit ?? 30),
+      requireAuth,
+      advisorRouter(deps.advisor.service, { devRoutes: deps.advisor.devRoutes }),
+    );
+  }
 
   app.use(notFoundHandler);
   app.use(errorHandler);
