@@ -90,6 +90,8 @@ export interface InputService {
   // Rejects with BUSINESS_NOT_FOUND unless the business exists and the
   // actor is the owner who created it, or a bank officer it is shared with
   assertAccess(id: string, actor: Actor): Promise<void>;
+  // The same rule for many businesses in one read: those of `ids` the actor may see
+  visibleTo(ids: string[], actor: Actor): Promise<string[]>;
   getBusiness(id: string): Promise<BusinessDetail>;
   // The three below change what the risk is worked out from. Once a loan is
   // authorised or active they are the bank's to make (LOCKED_BY_LOAN);
@@ -130,6 +132,14 @@ interface ScheduledClassification {
 // A pending profile younger than this is still being classified by the
 // request that created it, so a retry leaves it alone
 const RETRY_PROFILE_AFTER_MS = 2 * 60_000;
+
+// The bank sees what it entered itself and what the owner agreed to share
+// (consent.share_with_bank); an owner sees the businesses they created
+function maySee(business: { ownerUserId: string | null; sharedWithBank: boolean }, actor: Actor): boolean {
+  return actor.role === "bank"
+    ? business.ownerUserId === null || business.sharedWithBank
+    : business.ownerUserId === actor.id;
+}
 
 function requireBank(actor: Actor): string {
   if (actor.role !== "bank" || !actor.id) throw bankOnly();
@@ -293,15 +303,13 @@ export function createInputService(deps: InputServiceDeps): InputService {
 
     async assertAccess(id, actor) {
       const business = await store.businessOwner(prisma, id);
-      // The bank sees what it entered itself and what the owner agreed to
-      // share (consent.share_with_bank)
-      const allowed =
-        business !== null &&
-        (actor.role === "bank"
-          ? business.ownerUserId === null || business.sharedWithBank
-          : business.ownerUserId === actor.id);
       // Someone else's business looks the same as one that does not exist
-      if (!allowed) throw businessNotFound(id);
+      if (!business || !maySee(business, actor)) throw businessNotFound(id);
+    },
+
+    async visibleTo(ids, actor) {
+      const owners = await store.businessOwners(prisma, ids);
+      return owners.filter((business) => maySee(business, actor)).map((business) => business.id);
     },
 
     getBusiness(id) {

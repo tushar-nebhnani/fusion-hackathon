@@ -54,7 +54,7 @@ All three must pass before you say a task is done. If one fails, say so and show
 
 - **Show a major change to existing code before making it.** If a fix or update rewrites behaviour that already works, describe the change and wait for the owner's approval. New files and small, local fixes do not need this.
 - **Every endpoint is rate limited and honours `Idempotency-Key`.** Both are mounted once in `createApp` (`src/app.ts`). Mount new routes below them, and add a stricter limit there if a request is expensive.
-- **Every endpoint needs a signed-in user unless it is meant to be public.** Mount new routes with `requireAuth` or `requireBank` from `src/middleware/auth.ts`; without one a route is open. Only `/health`, `/demo` and `/auth` are public.
+- **Every endpoint needs a signed-in user unless it is meant to be public.** Mount new routes with `requireAuth` or `requireBank` from `src/middleware/auth.ts`; without one a route is open. Only `/health` and `/auth` are public.
 - **Every write and every refusal is audited.** `auditTrail` in `src/middleware/audit.ts` records them for all routes. In a new handler, call `auditNote(res, { target })` to name the record it changes. Never put a request body, token or financial value in an event, and never update or delete `audit_events`.
 - **Do not commit or push unless asked.** Never commit `.env` files or `src/generated/`.
 - **Do not read out or copy secrets** from `api/.env`. `api/.env.example` lists every variable.
@@ -97,6 +97,8 @@ Do not change `ALERTS_MODE`, `MONITOR_ALERT_SINK` or the OpenAI key in `api/.env
 | The finance profile's shape | `services/finance/profile/schema.ts`, then `buildProfile` in `profile/build.ts`. The schema is strict |
 | The profile response shape | `services/climate/schema.ts`, then the object built at the end of `run()` in `profile.service.ts`. The schema is strict: an extra key fails with `INVALID_OUTPUT` |
 | What the climate agent is told | `src/prompts/climate.ts`, then bump `CLIMATE.agent.promptVersion` |
+| What the chat advisor is told | `src/prompts/advisor.ts`, then bump `PROMPT_VERSION` in the same file |
+| What the weather-impact classifier is told | `src/prompts/classifier.ts`, then bump `INPUT.classifier.promptVersion` |
 | An endpoint | A handler in `src/controllers/`, registered in `src/routes/`, mounted in `src/app.ts` with `requireAuth` or `requireBank` |
 | Who is a bank officer | `AUTH_BANK_EMAILS` and `AUTH_BANK_DOMAINS` in `api/.env` |
 | Session lifetime or the cookie name | `AUTH` in `src/services/auth/config.ts` |

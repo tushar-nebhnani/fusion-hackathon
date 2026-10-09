@@ -48,23 +48,6 @@ describe("GET /health", () => {
   });
 });
 
-describe("GET /demo", () => {
-  it("serves the demo page", async () => {
-    const res = await request(app()).get("/demo/");
-
-    expect(res.status).toBe(200);
-    expect(res.headers["content-type"]).toContain("text/html");
-    expect(res.text).toContain("Climate risk profile");
-  });
-
-  it("answers an unknown demo file with the standard 404", async () => {
-    const res = await request(app()).get("/demo/nope.js");
-
-    expect(res.status).toBe(404);
-    expect(res.body).toMatchObject({ error: { code: "NOT_FOUND" } });
-  });
-});
-
 describe("rate limiting", () => {
   it("limits every endpoint, including /health and unknown routes", async () => {
     const limited = app({ rateLimit: 2 });
@@ -76,16 +59,6 @@ describe("rate limiting", () => {
     expect(res.status).toBe(429);
     expect(res.body).toMatchObject({ error: { code: "RATE_LIMITED" } });
     expect(res.headers).toHaveProperty("ratelimit");
-  });
-
-  it("limits the demo page too", async () => {
-    const limited = app({ rateLimit: 1 });
-
-    await request(limited).get("/demo/");
-    const res = await request(limited).get("/demo/");
-
-    expect(res.status).toBe(429);
-    expect(res.body).toMatchObject({ error: { code: "RATE_LIMITED" } });
   });
 });
 
@@ -172,11 +145,10 @@ describe("authentication", () => {
     expect(() => app({ auth: { service: fakeAuth(), devUser: OWNER } })).not.toThrow();
   });
 
-  it("leaves /health, /demo and /auth/config open", async () => {
+  it("leaves /health and /auth/config open", async () => {
     const server = app();
 
     expect((await request(server).get("/health")).status).toBe(200);
-    expect((await request(server).get("/demo/")).status).toBe(200);
     expect((await request(server).get("/auth/config")).body).toEqual({
       google_client_id: "test-client-id",
     });

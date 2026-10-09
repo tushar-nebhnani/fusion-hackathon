@@ -43,48 +43,45 @@ function getSafeHttpError(
   };
 }
 
-// Must be registered after all routes.
-// Express error handlers require four parameters.
-export const errorHandler: ErrorRequestHandler = (
-  err,
-  _req,
-  res,
-  _next,
-) => {
-  // Handle errors intentionally created by our application.
-  if (err instanceof AppError) {
-    // Read by the audit trail as the reason a request did not succeed
-    res.locals.errorCode = err.code;
-    res.status(err.statusCode).json({
-      error: {
-        code: err.code,
-        message: err.message,
-        step: err.step,
-        details: err.details,
-      },
+// Must be registered after all routes; Express needs the 4-argument signature
+export const createErrorHandler =
+  (logger: Pick<Console, "error"> = console): ErrorRequestHandler =>
+  (err, _req, res, _next) => {
+    if (err instanceof AppError) {
+      // Read by the audit trail as the reason a request did not succeed
+      res.locals.errorCode = err.code;
+      res.status(err.statusCode).json({
+        error: {
+          code: err.code,
+          message: err.message,
+          step: err.step,
+          details: err.details,
+        },
+      });
+      return;
+    }
+
+    // Handle common HTTP errors without exposing parser internals.
+    const safeHttpError = getSafeHttpError(err);
+
+    if (safeHttpError) {
+      res.locals.errorCode = safeHttpError.code;
+      res.status(safeHttpError.status).json({
+        error: {
+          code: safeHttpError.code,
+          message: safeHttpError.message,
+        },
+      });
+      return;
+    }
+
+    res.locals.errorCode = "INTERNAL_ERROR";
+    // The detail stays in the server's log, whatever NODE_ENV says. The
+    // request id, also sent as X-Request-Id, is how to find this line.
+    logger.error(`request ${String(res.locals.requestId ?? "-")} failed:`, err);
+    res.status(500).json({
+      error: { code: "INTERNAL_ERROR", message: "Internal server error" },
     });
-    return;
-  }
+  };
 
-  // Handle common HTTP errors without exposing parser internals.
-  const safeHttpError = getSafeHttpError(err);
-
-  if (safeHttpError) {
-    res.locals.errorCode = safeHttpError.code;
-    res.status(safeHttpError.status).json({
-      error: {
-        code: safeHttpError.code,
-        message: safeHttpError.message,
-      },
-    });
-    return;
-  }
-
-  res.locals.errorCode = "INTERNAL_ERROR";
-  // The detail stays in the server's log, whatever NODE_ENV says. The
-  // request id, also sent as X-Request-Id, is how to find this line.
-  console.error(`request ${String(res.locals.requestId ?? "-")} failed:`, err);
-  res.status(500).json({
-    error: { code: "INTERNAL_ERROR", message: "Internal server error" },
-  });
-};
+export const errorHandler = createErrorHandler();

@@ -172,9 +172,11 @@ describe("input directory", () => {
     const rejected = await business("rejected");
     const directory = createInputDirectory(prisma);
 
+    // The day the loan row was last written, in IST
+    const { updatedAt } = await prisma.loan.findUniqueOrThrow({ where: { id: active.loanId } });
     expect((await directory.findLoan(active.loanId))?.loan).toMatchObject({
       initialState: "ACTIVE",
-      disbursedOn: "2026-10-09",
+      disbursedOn: new Date(updatedAt.getTime() + 330 * 60_000).toISOString().slice(0, 10),
     });
     expect(await directory.findLoan(rejected.loanId)).toBeNull();
   });

@@ -20,7 +20,7 @@ const body = <T>(res: request.Response) => res.body as T;
 // Every business is open unless a test passes its own access rule
 const open: AdvisorAccess = () => Promise.resolve();
 
-function app(devRoutes = true, assertAccess = open) {
+function app(devRoutes = true, assertAccess = open, advisorAnswerRateLimit?: number) {
   const { advisor } = createTestAdvisor();
   return createApp({
     auth: { service: fakeAuth() },
@@ -31,6 +31,7 @@ function app(devRoutes = true, assertAccess = open) {
     checkDb: () => Promise.resolve(),
     upstreamStatus: () => ({ state: "unknown", checked_at: null }),
     advisor: { service: advisor, devRoutes, assertAccess },
+    advisorAnswerRateLimit,
   });
 }
 
@@ -99,6 +100,32 @@ describe("/advisor routes", () => {
     const res = await signedIn(app()).post("/advisor/chat").send({ businessId: "SME-0101" });
     expect(res.status).toBe(400);
     expect(body<ErrorBody>(res).error.code).toBe("BAD_REQUEST");
+  });
+
+  it("allows five answers a minute for each user by default", async () => {
+    const server = app();
+    const chat = (user = OWNER) =>
+      signedIn(server, user).post("/advisor/chat").send({ businessId: "SME-9999", message: "hi" });
+
+    for (let i = 0; i < 5; i += 1) expect((await chat()).status).toBe(404);
+    const limited = await chat();
+    expect(limited.status).toBe(429);
+    expect(body<ErrorBody>(limited).error.code).toBe("RATE_LIMITED");
+
+    // Another user has their own count, and reading is not an answer
+    expect((await chat(BANK)).status).toBe(404);
+    expect((await signedIn(server).get("/advisor/businesses")).status).toBe(200);
+  });
+
+  it("counts chat and damage reports as one limit", async () => {
+    const server = app(true, open, 2);
+    const chat = () => signedIn(server).post("/advisor/chat").send({ businessId: "SME-9999", message: "hi" });
+    const damage = () => signedIn(server).post("/advisor/damage-report").send({ loanId: "LN-9999", daysClosed: 2 });
+
+    expect((await chat()).status).toBe(404);
+    expect((await damage()).status).toBe(404);
+    expect((await chat()).status).toBe(429);
+    expect((await damage()).status).toBe(429);
   });
 
   it("answers an unknown business with 404", async () => {

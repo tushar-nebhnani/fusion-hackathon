@@ -416,5 +416,5 @@ The classifier's own tests (valid, invalid-then-valid, double-invalid fallback, 
 - **Severity is the climate hazard's `score`**, which blends history and the 7-day forecast. A profile therefore moves a little as the forecast changes; `climate.profile_ref` records which forecast run was used.
 - **Each `GET …/profile` stores a new row**, even when nothing changed. Add a "same snapshot, same forecast run" check if the table grows too fast.
 - **Weights, bands, the insurance share and the penalty formula are starting assumptions.** Calibrate them once outcomes exist.
-- **`/finance/demo` needs a signed-in user**, unlike the static `/demo/` page: only `/health`, `/demo` and `/auth` are public. Its first call for the Chennai location can take the 30-year climate download if that cell is not cached yet.
+- **`/finance/demo` needs a signed-in user**: only `/health` and `/auth` are public. Its first call for the Chennai location can take the 30-year climate download if that cell is not cached yet.
 - **The climate trigger of the input service is still not connected.** A new business's cell is screened on its first finance profile instead.

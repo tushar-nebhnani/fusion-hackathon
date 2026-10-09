@@ -1,18 +1,31 @@
-import { Router } from "express";
-import { advisorController, type AdvisorAccess, type EnqueueAlert } from "../controllers/advisor.controller.js";
+import { Router, type RequestHandler } from "express";
+import {
+  advisorController,
+  type AdvisorAccess,
+  type AdvisorVisible,
+  type EnqueueAlert,
+} from "../controllers/advisor.controller.js";
 import { requireBank } from "../middleware/auth.js";
 import type { Advisor } from "../services/advisor/index.js";
 
 export function advisorRouter(
   advisor: Advisor,
-  options: { devRoutes: boolean; assertAccess: AdvisorAccess; enqueue?: EnqueueAlert },
+  options: {
+    devRoutes: boolean;
+    assertAccess: AdvisorAccess;
+    // Limit on the routes that run the agent for the signed-in user
+    answerLimit: RequestHandler;
+    enqueue?: EnqueueAlert;
+    visible?: AdvisorVisible;
+  },
 ): Router {
-  const controller = advisorController(advisor, options.assertAccess, options.enqueue);
+  const controller = advisorController(advisor, options.assertAccess, options.enqueue, options.visible);
   const router = Router();
 
   router.get("/businesses", controller.businesses);
-  router.post("/chat", controller.chat);
-  router.post("/damage-report", controller.damageReport);
+  // Each of these is an answer from the model, so they share one small limit
+  router.post("/chat", options.answerLimit, controller.chat);
+  router.post("/damage-report", options.answerLimit, controller.damageReport);
   // Bank decisions: README §1 rule 3, the agent proposes and the bank decides
   router.post("/proposals/:id/decision", requireBank, controller.decide);
   router.get("/conversations/:businessId", controller.conversations);

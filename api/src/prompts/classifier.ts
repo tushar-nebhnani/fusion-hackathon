@@ -1,7 +1,14 @@
-import { INPUT } from "../config.js";
-import type { Sector } from "../schemas/profile.js";
-import { renderReference } from "./reference.js";
-import { MECHANISMS, type ClassifierOutput, type Mechanism } from "./schema.js";
+// System prompt and messages for the weather-impact classifier
+// (services/input/classifier). Bump INPUT.classifier.promptVersion whenever
+// one changes.
+import { INPUT } from "../services/input/config.js";
+import type { Sector } from "../services/input/schemas/profile.js";
+import { renderReference } from "../services/input/classifier/reference.js";
+import {
+  MECHANISMS,
+  type ClassifierOutput,
+  type Mechanism,
+} from "../services/input/classifier/schema.js";
 
 // Everything the model is told about a business, and nothing else: no name,
 // contacts, coordinates, financials, loan details or registration numbers.
