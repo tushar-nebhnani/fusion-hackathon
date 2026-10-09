@@ -158,7 +158,7 @@
                 <a class="ep" href="#ep-advisor-chat"><span class="verb">POST</span><code>/advisor/chat</code></a>
               </div>
               <p>"Should I take a ₹3L loan?"</p></section>
-            <section><h4>System does</h4><p>Reads your snapshot, loans, weather impact, climate profile and finance score; asks up to two questions it cannot answer from your data; runs the numbers in code, never in the model.</p></section>
+            <section><h4>System does</h4><p>Reads your snapshot, loans and weather impact, and the climate and finance answers only through the <a href="#ep-evaluate">evaluator</a>, which checks them first; asks up to two questions it cannot answer from your data; runs the numbers in code, never in the model.</p></section>
             <section><h4>You see</h4>
               <p>A verdict (viable / with conditions / not advisable) with cited figures.</p>
               <div class="eps"><a class="ep" href="/advisor/conversations/SME-0101" target="_blank" rel="noopener"><span class="verb get">GET</span><code>/advisor/conversations/{businessId}</code></a></div></section>
@@ -174,6 +174,7 @@
                 <a class="ep" href="#ep-finance-profile"><span class="verb get">GET</span><code>/finance/business/{id}/profile</code></a>
                 <a class="ep" href="#ep-finance-scenario"><span class="verb">POST</span><code>/finance/business/{id}/scenario</code></a>
                 <a class="ep" href="#ep-finance-capacity"><span class="verb">POST</span><code>/finance/business/{id}/repayment-capacity</code></a>
+                <a class="ep" href="#ep-evaluate"><span class="verb get">GET</span><code>/evaluate/business/{id}</code></a>
                 <a class="ep" href="#ep-verify-snapshot"><span class="verb">POST</span><code>/businesses/{id}/snapshots/{v}/verify</code></a>
               </div></section>
             <section><h4>System does</h4><p>Scores financial health, stress-tests it against each relevant hazard, and caps the climate penalty. The bank can mark a snapshot as verified.</p></section>
@@ -411,6 +412,15 @@
   "duration_months": 2 }</pre></td></tr>
         <tr id="ep-finance-capacity"><td><a class="ep" href="#ep-finance-capacity"><span class="verb">POST</span><code>/finance/business/{id}/repayment-capacity</code></a></td><td>Owner, bank</td><td>Largest EMI affordable under a revenue drop</td><td><pre>{ "revenue_drop_pct": 30, "months": 3 }</pre></td></tr>
         <tr id="ep-finance-evaluate"><td><a class="ep" href="#ep-finance-evaluate"><span class="verb">POST</span><code>/finance/evaluate-location</code></a></td><td>Signed in</td><td>Scores a business that is not stored, at a candidate place</td><td><pre>{ "lat": 19.07, "lon": 72.87, "business": {…} }</pre></td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Evaluator</h3>
+    <div class="table"><table>
+      <thead><tr><th>Endpoint</th><th>Who</th><th>What it does</th><th>Try it</th></tr></thead>
+      <tbody>
+        <tr id="ep-evaluate"><td><a class="ep" href="#ep-evaluate"><span class="verb get">GET</span><code>/evaluate/business/{id}</code></a></td><td>Owner, bank</td><td>Checks the climate and finance answers together and rates them: favourable to unfavourable, or insufficient data when a check fails. The chatbot reads only this</td><td>Needs an id</td></tr>
+        <tr id="ep-evaluate-history"><td><a class="ep" href="#ep-evaluate-history"><span class="verb get">GET</span><code>/evaluate/business/{id}/history</code></a></td><td>Owner, bank</td><td>Stored evaluations, newest first</td><td>Needs an id</td></tr>
       </tbody>
     </table></div>
 

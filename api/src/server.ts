@@ -14,6 +14,7 @@ import { createRedisCache } from "./services/cache/cache.js";
 import { createOpenAiAgent } from "./services/climate/agent.js";
 import { createOpenMeteoClient } from "./services/climate/open-meteo.js";
 import { createClimateService } from "./services/climate/profile.service.js";
+import { createEvaluatorService, createPrismaEvaluationStore } from "./services/evaluator/index.js";
 import { chooseScorer, createFinanceService, loadFinanceEnv } from "./services/finance/index.js";
 import { createPrismaIdempotencyStore } from "./services/idempotency/prisma-store.js";
 import { createOpenAiClassifier } from "./services/input/classifier/openai.js";
@@ -90,7 +91,14 @@ const financeEnv = loadFinanceEnv();
 const scorer = chooseScorer(financeEnv);
 console.log(`Finance scorer: ${scorer.name}`);
 const finance = createFinanceService({ prisma, businesses: input, climate, scorer });
-const advisor = createAdvisorFromEnv({ prisma, climate, finance });
+// Checks the climate and finance answers together; the advisor reads both only through it
+const evaluator = createEvaluatorService({
+  climate,
+  businesses: input,
+  finance,
+  store: createPrismaEvaluationStore(prisma),
+});
+const advisor = createAdvisorFromEnv({ prisma, evaluator });
 const inputRetry = setInterval(() => {
   input.retryPending().catch((error: unknown) => {
     console.error("input: retry of pending work failed", error);
@@ -112,6 +120,7 @@ const app = createApp({
     options: { seed: { enabled: env.NODE_ENV !== "production", file: inputEnv.seedFile } },
   },
   finance: { service: finance, assertAccess: (id, actor) => input.assertAccess(id, actor) },
+  evaluator: { service: evaluator, assertAccess: (id, actor) => input.assertAccess(id, actor) },
   alerts: createAlertReader(prisma),
   advisor: {
     service: advisor.advisor,

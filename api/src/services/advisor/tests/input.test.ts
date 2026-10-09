@@ -1,5 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { disconnectDb, prisma } from "../../../config/db.js";
+import { createEvaluatorService, createPrismaEvaluationStore } from "../../evaluator/index.js";
+import { createFinanceService } from "../../finance/index.js";
 import { createInputService, type InputService } from "../../input/service.js";
 import { businessBody, financialsBody, loanBody } from "../../input/testing/fixtures.js";
 import { loadAdvisorConfig } from "../config.js";
@@ -38,6 +40,20 @@ async function business(status: "applied" | "authorised" | "active" | "rejected"
   return { id, loanId: loan.id, service };
 }
 
+// The real evaluator, input and finance services over a stand-in climate unit
+function evaluator() {
+  const climate = { getProfile: () => Promise.resolve(climateProfile({ flash_flood: { relevance: "primary", score: 0.6 } })) };
+  const businesses = input();
+  return createEvaluatorService({
+    climate,
+    businesses,
+    finance: createFinanceService({ prisma, businesses, climate, now: () => NOW, logger: silent }),
+    store: createPrismaEvaluationStore(prisma),
+    now: () => NOW,
+    logger: silent,
+  });
+}
+
 function advisor() {
   const sent: OutgoingMessage[] = [];
   const messenger: Messenger = {
@@ -50,7 +66,7 @@ function advisor() {
   const created = createAdvisor({
     repo: createPrismaAdvisorRepository(prisma),
     directory,
-    climate: { getProfile: () => Promise.resolve(climateProfile({ flash_flood: { relevance: "primary", score: 0.6 } })) },
+    evaluator: evaluator(),
     messenger,
     contacts: createContactBook(prisma),
     llm: createOfflineLlm(),
@@ -89,7 +105,7 @@ async function sentOwnerAlert(businessId: string, status: "sent" | "suppressed" 
 
 beforeEach(async () => {
   await prisma.$executeRaw`
-    TRUNCATE TABLE businesses, users, alert_outbox, alert_contacts, advisor_conversations,
+    TRUNCATE TABLE businesses, users, evaluations, alert_outbox, alert_contacts, advisor_conversations,
       loan_states, advisor_alert_events, repayment_proposals, business_facts
     RESTART IDENTITY CASCADE`;
 });
@@ -188,31 +204,33 @@ describe("advisor on input businesses", () => {
   });
 });
 
-describe("finance tool", () => {
-  it("carries the finance service's latest score for an input business", async () => {
+describe("evaluation tool", () => {
+  it("gives the chatbot the evaluated climate and finance answers with the business's own figures", async () => {
     const { id } = await business();
     const record = (await createInputDirectory(prisma).getBusiness(id))!;
     const repo = createPrismaAdvisorRepository(prisma);
     const conversation = await repo.createConversation({ businessId: id, loanId: null, mode: "preLoan" });
-    const score = { baselineScore: 72, climateAdjustedScore: 64, scoredAt: "2026-10-09", modelVersion: "f-1" };
     const runner = createToolRunner(
-      {
-        repo,
-        climate: { getProfile: () => Promise.reject(new Error("not used")) },
-        messenger: { send: () => Promise.reject(new Error("not used")) },
-        financeScore: (businessId) => Promise.resolve(businessId === id ? score : null),
-      },
+      { repo, evaluator: evaluator(), messenger: { send: () => Promise.reject(new Error("not used")) } },
       { conversationId: conversation.id, business: record, loan: null, loanState: null, alertId: null, now: NOW },
       1,
     );
 
-    const result = await runner.run("getFinanceProfile", {}, "code");
+    const first = await runner.run("getEvaluation", {}, "code");
+    const second = await runner.run("getEvaluation", {}, "code");
 
-    expect(result.output).toMatchObject({
-      source: "input service: latest financial snapshot",
-      fixedMonthlyCosts: 60_000,
-      riskScore: score,
+    expect(first.error).toBeUndefined();
+    expect(first.output).toMatchObject({
+      business_id: id,
+      reliable: true,
+      climate: { grade: "C" },
+      finance: { origin: "computed", snapshot_version: 1 },
+      business: { source: "input service: latest financial snapshot", fixedMonthlyCosts: 60_000 },
     });
+    // The second turn reuses the stored finance profile instead of adding one
+    expect(second.output).toMatchObject({ finance: { origin: "reused" } });
+    expect(await prisma.financeProfile.count({ where: { businessId: id } })).toBe(1);
+    expect(await prisma.evaluation.count({ where: { businessId: id } })).toBe(2);
   });
 });
 

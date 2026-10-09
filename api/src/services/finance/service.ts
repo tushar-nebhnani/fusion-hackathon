@@ -136,6 +136,8 @@ export interface FinanceService {
   getFinanceProfile(businessId: string, options?: ProfileOptions): Promise<FinanceProfile>;
   // Stored profiles of a business, newest first
   listProfiles(businessId: string, limit?: number): Promise<store.ProfileSummary[]>;
+  // The newest stored profile, read only; null when none was stored yet
+  latestProfile(businessId: string): Promise<store.StoredProfile | null>;
   // The stress test for a hypothetical event
   simulateScenario(businessId: string, scenario: unknown): Promise<ScenarioResult>;
   // Scores a business that is not stored, at a candidate location
@@ -410,6 +412,10 @@ export function createFinanceService(deps: FinanceServiceDeps): FinanceService {
 
     listProfiles(businessId, limit = 20) {
       return store.listProfiles(prisma, businessId, limit);
+    },
+
+    latestProfile(businessId) {
+      return store.latestProfile(prisma, businessId);
     },
 
     simulateScenario(businessId, scenario) {

@@ -851,3 +851,26 @@ model AuditEvent {
   @@index([targetType, targetId, occurredAt])
   @@map("audit_events")
 }
+
+// One evaluation of a business's climate and finance responses
+// (services/evaluator). No foreign key: the advisor's demo businesses are
+// evaluated too, and they are not in `businesses`.
+model Evaluation {
+  id               Int      @id @default(autoincrement())
+  businessId       String   @map("business_id")
+  requesterId      String?  @map("requester_id")
+  evaluatorVersion String   @map("evaluator_version")
+  // favourable | acceptable | caution | unfavourable | insufficient_data
+  rating           String
+  // False when any check failed
+  reliable         Boolean
+  // The stored finance profile and the climate forecast run it was built from
+  financeProfileId Int?     @map("finance_profile_id")
+  climateRef       String?  @map("climate_ref")
+  // The validated response, as it was returned
+  result           Json
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([businessId, createdAt])
+  @@map("evaluations")
+}

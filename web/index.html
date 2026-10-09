@@ -367,6 +367,8 @@
             <div class="actions">
               <button class="btn">Compute profile</button>
               <button class="btn ghost" data-call="GET /finance/business/:id/profiles" data-render="history">Stored history</button>
+              <button class="btn ghost" data-call="GET /evaluate/business/:id" data-render="generic">Evaluate climate + finance</button>
+              <button class="btn ghost" data-call="GET /evaluate/business/:id/history" data-render="generic">Evaluation history</button>
               <button class="btn quiet" data-call="GET /finance/demo" data-render="finance" formnovalidate>Built-in sample business</button>
             </div>
           </form>
@@ -617,7 +619,7 @@
             <tr><th>Routes</th><th class="num">Per minute</th></tr>
             <tr><td>Everything</td><td class="num">120</td></tr>
             <tr><td><code>/climate/*</code> · <code>/businesses</code> <code>/loans</code> <code>/seed</code></td><td class="num">60</td></tr>
-            <tr><td><code>/finance/*</code> · <code>/advisor/*</code></td><td class="num">30</td></tr>
+            <tr><td><code>/finance/*</code> · <code>/evaluate/*</code> · <code>/advisor/*</code></td><td class="num">30</td></tr>
             <tr><td><code>/auth/*</code></td><td class="num">20</td></tr>
           </table></div>
           <dl class="kv flush" id="rate-last" style="border-top:1px solid var(--rule)"></dl>

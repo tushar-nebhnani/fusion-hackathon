@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ClimateService } from "../../climate/profile.service.js";
+import type { EvaluatorService } from "../../evaluator/service.js";
 import type { LlmTool } from "../llm/client.js";
 import type { AdvisorRepository } from "../repository.js";
 import type { LoanStateRecord } from "../state.js";
@@ -16,8 +16,8 @@ import {
   type LoanStateName,
 } from "../types.js";
 import { recomputeCashflow, type CompleteDamage } from "./cashflow.js";
-import { getClimateProfile, hazardSeasons } from "./climate.js";
-import { getFinanceProfile, type FinanceScore } from "./finance.js";
+import { hazardSeasons } from "./climate.js";
+import { businessFinances } from "./finance.js";
 import { getBusinessFacts, saveBusinessFact } from "./memory.js";
 import type { Channel, Messenger } from "./messaging.js";
 import { outstanding } from "./money.js";
@@ -27,11 +27,10 @@ import { getWeatherImpact, sensitivityFor } from "./weatherImpact.js";
 
 export interface ToolDeps {
   repo: AdvisorRepository;
-  climate: Pick<ClimateService, "getProfile">;
+  // The only way the advisor reaches the climate unit and the finance
+  // service: their answers come checked, with one combined rating
+  evaluator: Pick<EvaluatorService, "evaluate">;
   messenger: Messenger;
-  // The finance service's latest stored score for a business, read only.
-  // Without it, or for a demo business, the finance tool carries no score.
-  financeScore?: (businessId: string) => Promise<FinanceScore | null>;
 }
 
 // What a tool may touch. The business and loan come from the request, never
@@ -140,24 +139,23 @@ export const TOOLS: ToolDefinition<unknown>[] = [
       saveBusinessFact(deps.repo, ctx.business.id, key, value, "owner_chat"),
   }),
   tool({
-    name: "getFinanceProfile",
+    name: "getEvaluation",
     description:
-      "Revenue by month, costs, monthly net operating income, other debt and loan details for this business, and the finance unit's latest credit score (0-100, higher is safer) when it has one.",
+      "The evaluated climate and finance picture for this business. rating (favourable / acceptable / caution / unfavourable / insufficient_data), reliable, reasons and checks come from the evaluator. climate is the climate unit's profile: grade, each hazard's relevance (primary/secondary/dormant), score 0-1 and reason, and active forecast events; null when unavailable. finance is the finance service's baseline and climate-adjusted score (0-100, higher is safer) with its drivers; null for a business it does not know. business has the revenue by month, costs, monthly net operating income, other debt and loan details. If reliable is false or climate is null, say the data is unavailable and give no verdict.",
     schema: empty,
     modes: ALL,
-    run: async (_input, ctx, deps) => ({
-      ...getFinanceProfile(ctx.business, await loanStates(ctx, deps.repo), istToday(ctx.now)),
-      riskScore:
-        ctx.business.origin === "input" && deps.financeScore ? await deps.financeScore(ctx.business.id) : null,
-    }),
-  }),
-  tool({
-    name: "getClimateProfile",
-    description:
-      "Climate hazard profile at the business location from the climate unit: each hazard's relevance (primary/secondary/dormant), score 0-1 and reason, plus active forecast events.",
-    schema: empty,
-    modes: ["preLoan", "alert"],
-    run: (_input, ctx, deps) => getClimateProfile(deps.climate, ctx.business),
+    run: async (_input, ctx, deps) => {
+      const { business } = ctx;
+      const evaluation = await deps.evaluator.evaluate({
+        businessId: business.id,
+        point: { lat: business.lat, lon: business.lon },
+        requesterId: `advisor:${business.id}`,
+      });
+      return {
+        ...evaluation,
+        business: businessFinances(business, await loanStates(ctx, deps.repo), istToday(ctx.now)),
+      };
+    },
   }),
   tool({
     name: "getHazardSeasons",

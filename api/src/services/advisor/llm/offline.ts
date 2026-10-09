@@ -6,6 +6,14 @@ import type { ScenarioResult } from "../tools/scenario.js";
 import type { Hazard, MonthName, RiskFactKey } from "../types.js";
 import type { LlmClient, LlmMessage, LlmReply } from "./client.js";
 
+// The parts of getEvaluation's output the planner reads
+interface EvaluationView {
+  reliable: boolean;
+  checks: { status: string; detail: string }[];
+  climate: ClimateProfile | null;
+  business?: { loans?: { loanId: string; emi: number; outstandingBalance: number; remainingMonths: number }[] };
+}
+
 // A deterministic stand-in for the model, used when no API key is set
 // (ADVISOR_LLM_PROVIDER=offline). It drives the same tool loop the model
 // does: it picks tools from the conversation so far, then writes the answer
@@ -206,19 +214,23 @@ function preLoan(ctx: Context, turn: Turn): LlmReply {
     );
   }
 
-  const needed = ["getFinanceProfile", "getWeatherImpact", "getClimateProfile", "getHazardSeasons"];
+  const needed = ["getEvaluation", "getWeatherImpact", "getHazardSeasons"];
   if (needed.some((name) => !seen.has(name))) return fetch(...needed.filter((name) => !seen.has(name)));
 
-  const climate = seen.get("getClimateProfile");
-  if (!climate?.result) {
+  // Only an evaluated, reliable answer is used; otherwise no verdict
+  const evaluated = seen.get("getEvaluation");
+  const evaluation = evaluated?.result as EvaluationView | undefined;
+  if (!evaluation?.climate || !evaluation.reliable) {
+    const failed = evaluation?.checks.filter((check) => check.status === "fail").map((check) => check.detail) ?? [];
+    const why = failed[0] ?? evaluated?.error ?? "no result";
     return respond({
-      reply: `Climate data for your location is unavailable right now (${climate?.error ?? "no result"}). I cannot give a fair verdict without it, so please try again shortly.`,
+      reply: `Climate or finance data for your business is unavailable or could not be checked right now (${why}). I cannot give a fair verdict without it, so please try again shortly.`,
       questions: [],
       assessment: null,
       citations: [],
     });
   }
-  const profile = climate.result as ClimateProfile;
+  const profile = evaluation.climate;
   const seasons = (seen.get("getHazardSeasons")?.result as { seasons?: Record<Hazard, MonthName[]> } | undefined)
     ?.seasons;
 
@@ -243,11 +255,9 @@ function preLoan(ctx: Context, turn: Turn): LlmReply {
 }
 
 function activeLoan(ctx: Context, turn: Turn): LlmReply {
-  const finance = turn.seen.get("getFinanceProfile");
-  if (!finance) return fetch("getFinanceProfile");
-  const loans =
-    (finance.result as { loans?: { loanId: string; emi: number; outstandingBalance: number; remainingMonths: number }[] } | undefined)
-      ?.loans ?? [];
+  const finance = turn.seen.get("getEvaluation");
+  if (!finance) return fetch("getEvaluation");
+  const loans = (finance.result as EvaluationView | undefined)?.business?.loans ?? [];
   const index = loans.findIndex((l) => l.loanId === ctx.loan?.loanId);
   const loan = loans[index];
   return respond({
@@ -256,7 +266,9 @@ function activeLoan(ctx: Context, turn: Turn): LlmReply {
       : "Your loan is active, but its details are unavailable right now.",
     questions: [],
     assessment: null,
-    citations: loan ? [`${finance.callId}.loans[${index}].emi`, `${finance.callId}.loans[${index}].outstandingBalance`] : [],
+    citations: loan
+      ? [`${finance.callId}.business.loans[${index}].emi`, `${finance.callId}.business.loans[${index}].outstandingBalance`]
+      : [],
   });
 }
 
@@ -323,7 +335,7 @@ function assessment(ctx: Context, turn: Turn, facts: Seen, seasons: Record<Hazar
   const bankSummary = worst
     ? `${ctx.business.name}: ${verdict.replace(/_/g, " ")}. Worst simulated DSCR ${worst.result.dscrStressed ?? "n/a"} (${LABEL[worst.result.hazard]}, ${worst.result.month}); lowest ordinary-month DSCR ${worst.result.lowestNormalDscr ?? "n/a"} (${worst.result.lowestNormalMonth}).`
     : `${ctx.business.name}: no scenario could be run.`;
-  const climate = turn.seen.get("getClimateProfile");
+  const climate = turn.seen.get("getEvaluation");
   return {
     reply: [
       summary,
@@ -340,7 +352,7 @@ function assessment(ctx: Context, turn: Turn, facts: Seen, seasons: Record<Hazar
     assessment: { verdict, summary, risks, loanStructureSuggestions: unique, bankSummary },
     citations: [
       facts.callId,
-      ...(climate ? [`${climate.callId}.grade`] : []),
+      ...(climate ? [`${climate.callId}.climate.grade`] : []),
       ...(worst ? [`${worst.callId}.maxPrincipalStressDscr1`, `${worst.callId}.lowestNormalDscr`] : []),
     ],
   };

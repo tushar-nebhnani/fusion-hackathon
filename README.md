@@ -8,11 +8,12 @@ This README is the handover document for anyone, human or AI agent, picking up t
 
 | Part | Folder | State |
 | --- | --- | --- |
-| Climate risk API | `api/` | Built and tested. 874 tests pass across `api/`; typecheck and lint are clean. |
+| Climate risk API | `api/` | Built and tested. 890 tests pass across `api/`; typecheck and lint are clean. |
 | Climate agent | `api/src/services/climate/agent.ts` | Built. Optional: an OpenAI model reviews the screening and scores the forecast. Off without an API key. |
 | Alert system | `api/src/services/alerts/` | Built. Email warnings to business owners and banks, sent by a separate worker process. SMS was removed (see `RESOLVE_LATER.md`). Triggered by the background monitor. |
 | Background monitor | `api/src/services/climate/monitor/` | Built. Part of the climate unit, run as its own process. Watches the businesses with an authorised or active loan in the input service's tables, checks them more often when the forecast worsens, queues alerts and records events for the ML model. The logs system it will write to is a stand-in. |
 | Finance service | `api/src/services/finance/` | Built. Baseline financial health score and a climate-adjusted score per business, from the input service's data and the climate profile. Rule-based; the ML scorer is a stub. Has its own `README.md`. |
+| Evaluator | `api/src/services/evaluator/` | Built. Checks the climate and finance answers for one business against each other and against their own rules, gives one combined rating with reasons, and stores each evaluation. The chat advisor reads climate and finance only through it. See [The evaluator](#the-evaluator). |
 | Chat advisor | `api/src/services/advisor/` | Built on the `chatbot-work` branch and merged. Mounted at `/advisor` for signed-in users, with the input service's ownership and sharing rule; bank decisions need a bank officer. Runs an offline planner without an API key. Reads businesses, snapshots, loans and weather-impact profiles from the input service and scores from the finance service; the `api/data/smes.json` demo businesses stay behind them outside production. Advises owners after each alert the alert system sends. Its `NOTES.md` has the details. |
 | Demo page | `api/public/index.html`, `api/public/workflow.html` | Built. Two static pages served by the API: the climate map at `/demo/`, and at `/demo/workflow.html` a guide to the whole loan workflow, step by step and by role, with every endpoint linked. |
 | Web console | `web/` | Built. A static HTML, CSS and JavaScript page with no build step. It walks one loan through every unit on a single page and calls every endpoint; see [The web console](#the-web-console). Checked against the live API only as far as the public routes and the 401 answers; the signed-in flows have not been exercised from it yet. |
@@ -166,6 +167,8 @@ When the climate agent is on, an OpenAI model does two jobs on top of the rules:
 | `GET` | `/finance/business/:id/profiles` | owner of it, bank | Stored finance profiles of a business, newest first |
 | `POST` | `/finance/business/:id/scenario` | owner of it, bank | Stress test for a hypothetical event. Body: `{"hazard", "severity", "duration_months"?}` |
 | `POST` | `/finance/business/:id/repayment-capacity` | owner of it, bank | Largest affordable EMI and monthly shortfall. Body: `{"revenue_drop_pct", "months"}` |
+| `GET` | `/evaluate/business/:id` | owner of it, bank | Evaluation of the business's climate and finance answers: checks, combined rating, reasons, the climate profile and a finance summary. Stores each one |
+| `GET` | `/evaluate/business/:id/history` | owner of it, bank | Stored evaluations of a business, newest first |
 | `POST` | `/finance/evaluate-location` | signed in | Scores an unsaved business at a candidate location. Body: `{"business", "lat", "lon"}` |
 | `GET` | `/finance/demo` | signed in | Runs a built-in sample business through the finance pipeline |
 
@@ -220,7 +223,7 @@ curl -X POST http://localhost:4000/climate/profile \
 
 Both are applied to the whole app in `createApp`, so a new route gets them without extra code.
 
-**Rate limits** are per client, over one minute. Every route allows 120 requests. `/climate/*` also has its own limit of 60, because one request there can cost several upstream calls, `/auth/*` has a limit of 20, and `/finance/*` has a limit of 30, because a profile can cost a climate lookup. Responses carry the standard `RateLimit` headers. Over the limit, the answer is 429 `RATE_LIMITED`.
+**Rate limits** are per client, over one minute. Every route allows 120 requests. `/climate/*` also has its own limit of 60, because one request there can cost several upstream calls, `/auth/*` has a limit of 20, `/finance/*` has a limit of 30, because a profile can cost a climate lookup, and `/evaluate/*` has a limit of 30 for the same reason. Responses carry the standard `RateLimit` headers. Over the limit, the answer is 429 `RATE_LIMITED`.
 
 **Idempotency** applies to `POST`, `PUT`, `PATCH` and `DELETE`. Send an `Idempotency-Key` header (1 to 255 printable ASCII characters, no spaces) and a retry with the same key gets the first response back, with `Idempotency-Replayed: true`, without running the request again. The header is optional.
 
@@ -340,14 +343,44 @@ input service ──climate_warm──▶ climate pipeline           (cache warm
       ├─ authorised/active loans ─▶ monitor ──enqueue()──▶ alert outbox ──▶ alert worker ──▶ email
       │                                                         │ owner rows that were sent
       └─ businesses, snapshots, loans, impact ─▶ advisor ◀──────┘ (loan → ALERT, ranked actions)
-                                                     ▲ latest finance score
+                                                     ▲ getEvaluation
+                       climate pipeline + finance service ─▶ evaluator (checks, rating, stored)
 ```
 
 - **Climate warm-up.** `server.ts` connects the input service's `climate` port: a saved or moved primary location calls `getProfile` with `historyYears: 15` (`CLIMATE.warmHistoryYears`). The archive and river history then start on 1 January 15 years back, never before `CLIMATE.historyStart`. The screening is cached per cell, so a cell first screened this way keeps the 15-year screening for API callers too until it is reviewed again (90 days). A warm-up that fails stays a pending job and is retried with the input service's other pending work.
 - **Finance triggers.** Unchanged: an authorised loan and a new snapshot on a live loan each store a fresh finance profile.
 - **Monitor.** `MONITOR_LOCATION_SOURCE=input` (the default) watches the primary location of every business with an `authorised` or `active` loan, read again on every tick. `json` reads `MONITOR_LOCATIONS_FILE` instead; `monitor:simulate` always reads the file.
 - **Alerts.** The worker looks a business up in `alert_businesses` first and then in the input service's `businesses` (city from the primary location's PIN code). An owner with no row in `alert_contacts` is emailed at `contacts.owner.email` only when `consent.alerts` is true and `email` is one of `contacts.alerts.channels`. Any owner row in `alert_contacts`, opted out or not, decides instead. Bank alerts still go to the consenting bank rows in `alert_contacts`; the per-business bank officer is not added, because a bank digest covers several businesses.
-- **Advisor.** Reads each business from the input service (`advisor/inputDirectory.ts`), and the finance service's latest stored score through its `getFinanceProfile` tool. Every `/advisor` route that names a business or loan applies the input service's access rule: owners see their own businesses, the bank sees those shared with it. Every 60 seconds (`ADVISOR_SWEEP_SECONDS`) it takes the owner alerts the worker **sent** in the last 48 hours, so consent, opt-out and cooldown have already been applied, and advises on each once (`advisor/monitorAlerts.ts`): live loans move to `ALERT` and the owner gets ranked actions. That is a second message to the owner after the alert email; `ADVISOR_MONITOR_ALERTS=false` turns it off.
+- **Evaluator.** Asks the climate unit and the finance service about one business, checks the two answers and rates them together. See [The evaluator](#the-evaluator).
+- **Advisor.** Reads each business from the input service (`advisor/inputDirectory.ts`). It reaches the climate unit and the finance service only through the evaluator, with one tool, `getEvaluation`; a failed check means no verdict. Every `/advisor` route that names a business or loan applies the input service's access rule: owners see their own businesses, the bank sees those shared with it. Every 60 seconds (`ADVISOR_SWEEP_SECONDS`) it takes the owner alerts the worker **sent** in the last 48 hours, so consent, opt-out and cooldown have already been applied, and advises on each once (`advisor/monitorAlerts.ts`): live loans move to `ALERT` and the owner gets ranked actions. That is a second message to the owner after the alert email; `ADVISOR_MONITOR_ALERTS=false` turns it off.
+
+## The evaluator
+
+`api/src/services/evaluator/`. One call, `evaluate({ businessId })`, for a business of the input service:
+
+1. Reads the business's primary location and latest snapshot version from the input service.
+2. Asks the climate unit for the profile at that location.
+3. Takes the finance service's latest stored profile when it is current: built from the latest snapshot, by the current `FINANCE.modelVersion`, less than 24 hours ago. Otherwise it asks for a new one, which the finance service stores as usual. A chat turn therefore does not add a finance profile each time.
+4. Runs twelve checks. Each is `pass`, `warn`, `fail` or `skip`:
+
+| Check | Fails or warns when |
+| --- | --- |
+| `climate_available`, `finance_available` | Fails when the unit could not answer (a business with no snapshot has no finance profile) |
+| `climate_schema`, `finance_schema` | Fails when the answer does not match its strict schema |
+| `climate_confidence` | Warns when the climate unit's confidence is `low` |
+| `forecast_fresh` | Warns when the forecast run is older than 12 hours, or there is none |
+| `finance_current` | Fails when the finance profile was built from an older snapshot than the latest |
+| `snapshot_verified` | Warns when the bank has not verified the snapshot |
+| `same_location` | Fails when finance was stress-tested on a different forecast cell; warns when it has no climate adjustment |
+| `same_climate_run` | Warns when the forecast has been refreshed since finance was stress-tested on it |
+| `stress_coverage` | Warns when no hazard was stress-tested although a climate profile exists |
+| `adjustment_cap` | Fails when the adjusted score is more than `FINANCE.adjusted.maxUplift` above the baseline |
+
+5. Rates the business: `favourable`, `acceptable`, `caution`, `unfavourable` or `insufficient_data`. The rating comes from a table of the finance band (the climate-adjusted one when there is one) against the climate grade, in `EVALUATOR.rating` (`evaluator/config.ts`). A stress test that breached lowers a better rating to `caution`. Any failed check, or a missing side, gives `insufficient_data` and `reliable: false`.
+6. Writes `reasons`: failed checks first, then the scores, breaches and drivers, the climate grade and primary hazards, and caveats from warnings.
+7. Validates the evaluation against a strict schema and stores it in `evaluations`.
+
+The advisor's demo businesses (`smes.json`) are not in the input service. For them only the climate side is evaluated; the finance checks are `skip` and the rating is `insufficient_data`, but `reliable` stays true, so the advisor still advises from the climate profile and its own cash-flow maths. Settings are in `EVALUATOR`; bump `EVALUATOR.version` when a check or the table changes.
 
 ## How the climate pipeline works
 
@@ -598,6 +631,13 @@ api/
         │   ├── profile/              Output schema; assembling and validating the profile
         │   ├── store.ts              finance_profiles and finance_request_log
         │   └── testing/fixtures.ts   Sample inputs and a stand-in climate unit
+        ├── evaluator/            The evaluator; see "The evaluator"
+        │   ├── service.ts            evaluate() and history()
+        │   ├── checks.ts             The twelve checks
+        │   ├── rating.ts             Combined rating and reasons
+        │   ├── config.ts             EVALUATOR: version, freshness limits, rating table
+        │   ├── schema.ts             Strict output schema
+        │   └── store.ts              evaluations
         ├── alerts/
         │   ├── job.md                The design document
         │   ├── index.ts              enqueue(), the only function other modules call
@@ -661,7 +701,7 @@ Where to change things:
 
 ## Database
 
-Twenty-two tables are described here, all defined in `api/prisma/schema.prisma`. The input service's tables are described in `api/src/services/input/README.md`.
+Twenty-three tables are described here, all defined in `api/prisma/schema.prisma`. The input service's tables are described in `api/src/services/input/README.md`.
 
 | Table | Holds |
 | --- | --- |
@@ -685,6 +725,7 @@ Twenty-two tables are described here, all defined in `api/prisma/schema.prisma`.
 | `monitored_cells` | One row per watched forecast cell: level, calm count, next check time, the last check's snapshot, and the lease of the monitor checking it |
 | `disaster_events` | One row per sudden change the monitor detected, with the forecast values, and later the observed values and a `hit`, `false_alarm` or `missed` label |
 | `finance_profiles` | Every finance profile generated, append only: the response, the raw inputs behind it, the snapshot version, both scores, the scorer and the model version |
+| `evaluations` | Every evaluation, append only: the response, the rating, whether it was reliable, the finance profile and the climate forecast run it was built from, and who asked |
 | `audit_events` | The security audit trail, append only: who (user id and role) did what (method and route) to which record, the outcome and the request id. See [Authentication](#authentication) |
 | `finance_request_log` | One row per finance call: request id, operation, business, outcome, sources, fallbacks used and milliseconds per stage |
 
@@ -753,7 +794,7 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 
 - A production frontend. `web/` is a static console for showing and testing the API, not the product UI. It has no tests.
 - The ML service. `ml/` is empty. The finance service scores with rules; its ML scorer is a stub that would call a model over HTTP (`FINANCE_SCORER=ml`), and no model exists.
-- The advisor's use of the finance service's other functions. It shows the latest stored score; the scenario, location and repayment-capacity functions are not tools yet, and the advisor still runs its own cash-flow and repayment maths.
+- The advisor's use of the finance service's other functions. It sees the finance service only through the evaluation; the scenario, location and repayment-capacity functions are not tools yet, and the advisor still runs its own cash-flow and repayment maths on the business's own figures.
 - A way to manage users. Bank officers are named in `api/.env`; there is no admin screen, and no way to hand a business to a different owner except by editing `businesses.owner_user_id`.
 - `request_log.requester_id` for signed-in users. It is still null for every client request; only the monitor sets it.
 - The World Bank flood exposure raster. `createClimateService` accepts an `exposure` provider, but none is passed, so every response carries a `flood_exposure_unavailable` warning and confidence is `med` at best.

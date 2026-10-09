@@ -17,6 +17,7 @@ import { advisorRouter } from "./routes/advisor.js";
 import { alertsRouter } from "./routes/alerts.js";
 import { authRouter } from "./routes/auth.js";
 import { climateRouter } from "./routes/climate.js";
+import { evaluatorRouter, type EvaluatorRouterDeps } from "./routes/evaluator.js";
 import { financeRouter, type FinanceRouterDeps } from "./routes/finance.js";
 import { healthRouter, type HealthDeps } from "./routes/health.js";
 import type { Advisor } from "./services/advisor/index.js";
@@ -25,6 +26,7 @@ import type { AuditRecorder } from "./services/audit/recorder.js";
 import { AUTH } from "./services/auth/config.js";
 import type { AuthService } from "./services/auth/service.js";
 import type { ClimateService } from "./services/climate/profile.service.js";
+import { EVALUATOR } from "./services/evaluator/config.js";
 import { FINANCE } from "./services/finance/index.js";
 import { inputRouter, type InputRouterOptions } from "./services/input/index.js";
 import type { InputService } from "./services/input/service.js";
@@ -64,6 +66,11 @@ export interface AppDeps extends HealthDeps {
   advisorRateLimit?: number;
   // Input service. /businesses, /loans and /seed are mounted only when it is given
   input?: { service: InputService; options?: InputRouterOptions };
+  // Evaluator. /evaluate is mounted only when it is given
+  evaluator?: EvaluatorRouterDeps & {
+    // Requests per minute per client on /evaluate
+    rateLimit?: number;
+  };
   // Finance service. /finance is mounted only when it is given
   finance?: FinanceRouterDeps & {
     // Requests per minute per client on /finance; a profile can cost a climate lookup
@@ -121,6 +128,14 @@ export function createApp(deps: AppDeps): Express {
       rateLimiter(deps.finance.rateLimit ?? FINANCE.rateLimit),
       requireAuth,
       financeRouter(deps.finance),
+    );
+  }
+  if (deps.evaluator) {
+    app.use(
+      "/evaluate",
+      rateLimiter(deps.evaluator.rateLimit ?? EVALUATOR.rateLimit),
+      requireAuth,
+      evaluatorRouter(deps.evaluator),
     );
   }
   // Guards its own paths: it is mounted at the root
