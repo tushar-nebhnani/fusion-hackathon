@@ -15,6 +15,7 @@ This README is the handover document for anyone, human or AI agent, picking up t
 | Finance service | `api/src/services/finance/` | Built. Baseline financial health score and a climate-adjusted score per business, from the input service's data and the climate profile. Rule-based; the ML scorer is a stub. Has its own `README.md`. |
 | Chat advisor | `api/src/services/advisor/` | Built on the `chatbot-work` branch and merged. Mounted at `/advisor` for signed-in users, with the input service's ownership and sharing rule; bank decisions need a bank officer. Runs an offline planner without an API key. Reads businesses, snapshots, loans and weather-impact profiles from the input service and scores from the finance service; the `api/data/smes.json` demo businesses stay behind them outside production. Advises owners after each alert the alert system sends. Its `NOTES.md` has the details. |
 | Demo page | `api/public/index.html`, `api/public/workflow.html` | Built. Two static pages served by the API: the climate map at `/demo/`, and at `/demo/workflow.html` a guide to the whole loan workflow, step by step and by role, with every endpoint linked. |
+| Web console | `web/` | Built. A static HTML, CSS and JavaScript page with no build step. It walks one loan through every unit on a single page and calls every endpoint; see [The web console](#the-web-console). Checked against the live API only as far as the public routes and the 401 answers; the signed-in flows have not been exercised from it yet. |
 | ML service | `ml/` | Dependencies declared only. No code, models, data or tests. |
 | Postgres | `docker-compose.yml` | Used by the API as the durable store. |
 | Redis | `docker-compose.yml` | Used by the API as a read cache in front of Postgres. No job queue yet. |
@@ -31,6 +32,7 @@ fusion-hackathon/
 ├── AGENTS.md               Working rules for AI coding agents
 ├── CLAUDE.md               One line that makes Claude Code load AGENTS.md
 ├── api/                    Express + TypeScript + Prisma API (the real work)
+├── web/                    Static console for every unit: index.html, styles.css, app.js
 └── ml/                     Python 3.13 project (FastAPI, scikit-learn), empty
 ```
 
@@ -65,6 +67,24 @@ curl -X POST http://localhost:4000/climate/profile \
 ```
 
 Or open the demo page at http://localhost:4000/demo/. Opened straight from disk (`api/public/index.html`) it cannot reach the API and shows captured sample responses instead.
+
+### The web console
+
+`web/` is one static page that follows a single loan through every unit, in order: sign in, the business applies, its weather-impact profile, climate risk at its location, financials, the loan and its finance profile, authorisation and the alert outbox, then an event and the advisor. The advisor chat stays docked beside the steps. It has no dependencies and no build step.
+
+```bash
+# from the repository root, with the API running on port 4000
+python3 -m http.server 3000 --directory web
+```
+
+Open http://localhost:3000. The port matters: `http://localhost:3000` is the default in `AUTH_ALLOWED_ORIGINS`, and the API refuses writes from any other origin. To sign in from it, add `http://localhost:3000` to the OAuth client's authorised JavaScript origins.
+
+- **Run the whole workflow.** The button at the top submits the main form of each step in turn (`WORKFLOW` in `web/app.js`) and stops at the first one the API refuses, showing the answer in that step. Creating a loan and authorising it need a bank officer. The secondary endpoints of each step sit under its "More" fold.
+- **The advisor step continues with the same business.** Creating the business and recording the loan fill their ids into the chat and the step 08 forms. Before that, the chat uses `SME-0142`, a demo business from `api/data/smes.json`.
+- **Live and sample modes.** The page probes `GET /health` on load. If the API does not answer it switches to sample mode: reads show built-in sample answers, each labelled as a sample, and writes are not sent. The mode button in the header switches back.
+- **Wire log.** The bar at the bottom lists every request the page made, with its status, time, `RateLimit` header, `Idempotency-Key`, whether it was replayed, and `X-Request-Id`.
+- **Adding an endpoint to it** needs no JavaScript for a plain form: give a `<form>` a `data-call="METHOD /path/:param"` attribute and name its inputs after the body fields. The comment at the top of `web/index.html` lists the conventions. A bespoke view is a function in `RENDER` in `web/app.js`; without one the answer is drawn as plain fields.
+- The `.next` folder, `node_modules` and `next-env.d.ts` in `web/` are ignored leftovers of the removed Next.js scaffold and are not used.
 
 The first request for a new location downloads about 30 years of daily history from Open-Meteo and can take up to a minute. A location saved through the input service is warmed with 15 years instead (see "How the services connect"). Later requests are served from Redis and Postgres.
 
@@ -731,7 +751,7 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 
 ## Not built yet
 
-- The frontend. The `web/` scaffold was removed from the repository. The only UI is the static demo page at `/demo/`.
+- A production frontend. `web/` is a static console for showing and testing the API, not the product UI. It has no tests.
 - The ML service. `ml/` is empty. The finance service scores with rules; its ML scorer is a stub that would call a model over HTTP (`FINANCE_SCORER=ml`), and no model exists.
 - The advisor's use of the finance service's other functions. It shows the latest stored score; the scenario, location and repayment-capacity functions are not tools yet, and the advisor still runs its own cash-flow and repayment maths.
 - A way to manage users. Bank officers are named in `api/.env`; there is no admin screen, and no way to hand a business to a different owner except by editing `businesses.owner_user_id`.

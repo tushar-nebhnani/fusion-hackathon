@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Kshetra · climate credit risk console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600;800&family=Chivo+Mono:wght@400;600&family=Hind:wght@400;600&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!--
+  One page, one loan, start to finish. Each .step is a stage of the workflow;
+  the advisor chat stays beside it. "Run the whole workflow" submits the forms
+  listed in WORKFLOW (app.js) in order.
+
+  How forms work (see app.js):
+    data-call="METHOD /path/:param"   the endpoint; a button's data-call overrides the form's
+    data-render="name"                which renderer draws the answer (default: generic)
+    name=":param"                     path parameter        name="$body"  the whole JSON body
+    name="a.b.0.c"                    body field, by path   data-t="num|csv|csvnum|json"
+    data-bind="biz|loan|..."          value shared between forms and kept across reloads
+  The answer is drawn in the .out element of the same panel.
+-->
+
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="#s-start">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="11.5" fill="none" stroke="var(--cy)" stroke-width="1.5"/><path d="M13 13 L13 1.5 A11.5 11.5 0 0 1 24 10 Z" fill="var(--acc)"/></svg>
+      <b>Kshetra</b><span>/ climate credit risk · console</span>
+    </a>
+    <div class="top-tools">
+      <label class="chip" title="Where the API runs">API <input id="api-base" class="code" type="text" spellcheck="false" aria-label="API base URL"></label>
+      <button class="chip" id="mode-btn" type="button" title="Switch between the live API and built-in sample answers"><span class="dot" id="mode-dot"></span><span id="mode-label">Checking</span></button>
+      <button class="chip" id="theme-btn" type="button">Light</button>
+      <span id="account" class="user"></span>
+    </div>
+  </div>
+</header>
+<div class="banner" id="banner" hidden></div>
+
+<div class="shell">
+  <nav class="nav" id="rail" aria-label="Workflow steps">
+    <a href="#s-start"><i>00</i>Start<small>system status</small></a>
+    <a href="#s-signin"><i>01</i>Sign in<small>auth · roles</small></a>
+    <a href="#s-business"><i>02</i>Business applies<small>input service</small></a>
+    <a href="#s-impact"><i>03</i>Weather impact<small>classifier</small></a>
+    <a href="#s-climate"><i>04</i>Climate risk<small>climate pipeline</small></a>
+    <a href="#s-financials"><i>05</i>Financials<small>snapshots · ratios</small></a>
+    <a href="#s-loan"><i>06</i>Loan and score<small>finance service</small></a>
+    <a href="#s-authorise"><i>07</i>Authorise and watch<small>monitor · alerts</small></a>
+    <a href="#s-event"><i>08</i>An event hits<small>advisor · recovery</small></a>
+    <a href="#s-platform"><i>09</i>Under every step<small>limits · replay · audit</small></a>
+  </nav>
+
+  <main>
+
+  <!-- ═══ 00 Start ══════════════════════════════════════════════════════ -->
+  <section class="step" id="s-start">
+    <div class="hero">
+      <div>
+        <div class="eyebrow">Climate-adjusted credit risk · India</div>
+        <h1>One loan, from application to recovery.</h1>
+        <p>This page follows a single business through every service: it applies, its weather sensitivity is classified, its location is scored for six hazards, the bank scores and authorises the loan, the monitor watches its cell, and the advisor helps when an event hits.</p>
+        <div class="actions">
+          <button class="btn" id="run-btn" type="button">Run the whole workflow</button>
+          <a class="btn ghost" href="#s-business" style="display:inline-flex;align-items:center;text-decoration:none">Step through it</a>
+        </div>
+        <div id="run-status" class="run-status" aria-live="polite"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><span>Grid · all India · 0.1°</span><span>Illustrative</span></div>
+        <div class="india-box"><div class="india" id="india" aria-hidden="true"></div></div>
+        <div class="panel-h" style="border-top:1px solid var(--rule)"><span>System status</span><span class="ep"><span class="verb">GET</span>/health</span></div>
+        <dl class="kv flush" id="status"></dl>
+      </div>
+    </div>
+    <div class="scale">
+      <div><div class="swatch g-A"></div><b>A</b><span>Stable</span><small>&lt; 0.20</small></div>
+      <div><div class="swatch g-B"></div><b>B</b><span>Watch</span><small>0.20–0.35</small></div>
+      <div><div class="swatch g-C"></div><b>C</b><span>Exposed</span><small>0.35–0.50</small></div>
+      <div><div class="swatch g-D"></div><b>D</b><span>High</span><small>0.50–0.70</small></div>
+      <div><div class="swatch g-E"></div><b>E</b><span>Critical</span><small>≥ 0.70</small></div>
+    </div>
+  </section>
+
+  <!-- ═══ 01 Sign in ════════════════════════════════════════════════════ -->
+  <section class="step" id="s-signin">
+    <header class="step-h"><span class="step-n">01</span><div><h2>Sign in</h2><p>Google sign-in, no passwords. The session is an <code>httpOnly</code> cookie; Postgres stores only its hash. The role, owner or bank, is worked out from the email on every request.</p></div></header>
+    <div class="panel">
+      <div class="panel-h"><span>Session</span><span class="ep"><span class="verb">GET</span>/auth/me</span><span class="who">Anyone</span></div>
+      <div class="panel-b">
+        <div id="gsi" style="margin-bottom:12px"></div>
+        <form data-call="GET /auth/me">
+          <div class="actions" style="margin-top:0">
+            <button class="btn ghost">Who am I</button>
+            <button class="btn quiet" data-call="GET /auth/config">Sign-in config</button>
+            <button class="btn quiet" type="button" id="signout-btn">Sign out</button>
+          </div>
+        </form>
+      </div>
+      <div class="out"></div>
+    </div>
+    <details class="more"><summary>Who can do what</summary>
+      <div class="panel"><div class="tbl-wrap"><table>
+        <tr><th>Role</th><th>Can reach</th></tr>
+        <tr><td><span class="tag">not signed in</span></td><td><code>/health</code>, <code>/auth/*</code>, the demo page</td></tr>
+        <tr><td><span class="tag cy">owner</span></td><td>Climate, the advisor's chat, and the businesses they created. Another owner's business answers 404, as if it did not exist.</td></tr>
+        <tr><td><span class="tag am">bank</span></td><td>Everything an owner can, businesses shared with the bank, <code>/alerts</code>, loans, verification, overrides and decisions.</td></tr>
+      </table></div></div>
+    </details>
+  </section>
+
+  <!-- ═══ 02 Business applies ═══════════════════════════════════════════ -->
+  <section class="step" id="s-business">
+    <header class="step-h"><span class="step-n">02</span><div><h2>A business applies</h2><p>The input service validates each group, refuses anything without consent, and stores it. Every write carries an <code>Idempotency-Key</code>, which this page adds.</p></div></header>
+    <div class="panel">
+      <div class="panel-h"><span>New business</span><span class="ep"><span class="verb w">POST</span>/businesses</span><span class="who">Signed in</span></div>
+      <div class="panel-b">
+        <form id="f-business" data-call="POST /businesses" data-render="business">
+          <div class="fields">
+            <label class="f"><span>Name</span><input type="text" name="profile.name" value="Sri Lakshmi Bakery" required></label>
+            <label class="f"><span>Sector</span><select name="profile.sector">
+              <option>retail</option><option>apparel_footwear</option><option selected>food_beverage</option><option>food_processing</option><option>delivery_ecommerce</option><option>agriculture</option><option>construction</option><option>manufacturing</option><option>hospitality_tourism</option><option>logistics</option><option>entertainment_leisure</option><option>healthcare_pharmacy</option><option>home_improvement</option><option>automotive</option><option>other</option></select></label>
+            <label class="f"><span>Latitude</span><input class="code" type="number" step="any" name="locations.primary.lat" data-t="num" value="13.0827" required></label>
+            <label class="f"><span>Longitude</span><input class="code" type="number" step="any" name="locations.primary.lon" data-t="num" value="80.2707" required></label>
+            <label class="f wide"><span>Description <em>30–500 chars · what the classifier reads</em></span><textarea name="profile.description" required>Neighbourhood bakery selling bread, cakes and snacks to walk-in customers from a ground-floor shop, with some delivery orders.</textarea></label>
+          </div>
+          <details class="more inline"><summary>All other fields · prefilled with an example bakery in Chennai</summary>
+            <fieldset><legend>A · Profile</legend>
+              <div class="fields">
+                <label class="f"><span>Sub-sector</span><input type="text" name="profile.sub_sector" value="bakery"></label>
+                <label class="f"><span>Year started</span><input type="number" name="profile.year_started" data-t="num" value="2015" required></label>
+                <label class="f"><span>Products <em>comma separated</em></span><input type="text" name="profile.products" data-t="csv" value="bread, cakes, snacks"></label>
+                <label class="f"><span>Sales channel</span><select name="profile.sales_channel"><option value="">not given</option><option>walk_in</option><option>delivery</option><option selected>both</option><option>b2b</option></select></label>
+                <label class="f"><span>Indoor or outdoor</span><select name="profile.indoor_outdoor"><option value="">not given</option><option selected>indoor</option><option>outdoor</option><option>both</option></select></label>
+                <label class="f"><span>Employees</span><input type="number" name="profile.employees" data-t="num" value="6"></label>
+              </div>
+            </fieldset>
+            <fieldset><legend>B · Primary location</legend>
+              <div class="fields">
+                <label class="f"><span>Pincode</span><input class="code" type="text" name="locations.primary.pincode" value="600001" required></label>
+                <label class="f"><span>Premises</span><select name="locations.primary.premises"><option value="">not given</option><option>owned</option><option selected>rented</option></select></label>
+                <label class="f"><span>Floor</span><select name="locations.primary.floor"><option value="">not given</option><option>basement</option><option selected>ground</option><option>upper</option></select></label>
+                <label class="f wide"><span>Address</span><input type="text" name="locations.primary.address" value="12 NSC Bose Road, George Town, Chennai" required></label>
+              </div>
+            </fieldset>
+            <fieldset><legend>C · Operations</legend>
+              <div class="fields">
+                <label class="f"><span>Power outage <em>hrs / month</em></span><input type="number" name="operations.power_outage_hrs_month" data-t="num" value="12" required></label>
+                <label class="f"><span>Water dependency</span><select name="operations.water_dependency"><option value="">not given</option><option>low</option><option selected>medium</option><option>high</option></select></label>
+                <label class="f"><span>Insurance covers <em>flood, fire, storm, crop, stock</em></span><input type="text" name="operations.insurance_covers" data-t="csv" value="flood, stock"></label>
+                <label class="f"><span>Peak months <em>1–12</em></span><input type="text" name="operations.seasonal_months" data-t="csvnum" value="10, 11, 12"></label>
+                <label class="check"><input type="checkbox" name="operations.has_insurance" checked>Has insurance</label>
+                <label class="check"><input type="checkbox" name="operations.has_backup_power">Has backup power</label>
+              </div>
+            </fieldset>
+            <fieldset><legend>D · Suppliers · shares must sum to 1.0</legend>
+              <div class="fields">
+                <label class="f"><span>Supplier 1</span><input type="text" name="suppliers.0.name" value="Annai Flour Mills"></label>
+                <label class="f"><span>Latitude</span><input class="code" type="number" step="any" name="suppliers.0.lat" data-t="num" value="13.05"></label>
+                <label class="f"><span>Longitude</span><input class="code" type="number" step="any" name="suppliers.0.lon" data-t="num" value="80.21"></label>
+                <label class="f"><span>Share</span><input class="code" type="number" step="any" name="suppliers.0.share" data-t="num" value="0.6"></label>
+                <label class="f"><span>Supplier 2</span><input type="text" name="suppliers.1.name" value="Madurai Dairy Co-op"></label>
+                <label class="f"><span>Latitude</span><input class="code" type="number" step="any" name="suppliers.1.lat" data-t="num" value="9.9252"></label>
+                <label class="f"><span>Longitude</span><input class="code" type="number" step="any" name="suppliers.1.lon" data-t="num" value="78.1198"></label>
+                <label class="f"><span>Share</span><input class="code" type="number" step="any" name="suppliers.1.share" data-t="num" value="0.4"></label>
+              </div>
+            </fieldset>
+            <fieldset><legend>G · Contacts and alert preferences</legend>
+              <div class="fields">
+                <label class="f"><span>Owner name</span><input type="text" name="contacts.owner.name" value="Lakshmi Narayanan" required></label>
+                <label class="f"><span>Owner phone <em>+91…</em></span><input class="code" type="text" name="contacts.owner.phone" value="+919876543210" required></label>
+                <label class="f"><span>Owner email</span><input type="email" name="contacts.owner.email" value="owner@example.com"></label>
+                <label class="f"><span>Alert language</span><select name="contacts.owner.language"><option>en</option><option>hi</option><option>mr</option></select></label>
+                <label class="f"><span>Bank officer name</span><input type="text" name="contacts.bank_officer.name" value="MSME Desk" required></label>
+                <label class="f"><span>Bank officer email</span><input type="email" name="contacts.bank_officer.email" value="msme-desk@example-bank.in" required></label>
+                <label class="f"><span>Alert channels <em>sms, email</em></span><input type="text" name="contacts.alerts.channels" data-t="csv" value="email" required></label>
+              </div>
+            </fieldset>
+          </details>
+          <fieldset><legend>H · Consent · nothing is stored without it</legend>
+            <div class="fields">
+              <label class="check"><input type="checkbox" name="consent.data_processing" checked>Process this data</label>
+              <label class="check"><input type="checkbox" name="consent.share_with_bank" checked>Share with the bank</label>
+              <label class="check"><input type="checkbox" name="consent.alerts" checked>Send me alerts</label>
+            </div>
+          </fieldset>
+          <div class="actions"><button class="btn">Create business</button><span class="muted" style="font-size:14px">Untick “Process this data” to see <code>403 CONSENT_REQUIRED</code>.</span></div>
+        </form>
+      </div>
+      <div class="out"></div>
+    </div>
+    <details class="more"><summary>More: open, change or seed a business</summary>
+      <div class="stack">
+        <div class="panel">
+          <div class="panel-h"><span>Working on</span><span class="ep"><span class="verb">GET</span>/businesses/:id</span><span class="who">Owner of it · bank</span></div>
+          <div class="panel-b">
+            <p class="help">This id is shared by every step below. Creating a business fills it in.</p>
+            <form data-call="GET /businesses/:id" data-render="business">
+              <div class="fields"><label class="f wide"><span>Business id</span><input class="code" type="text" name=":id" data-bind="biz" placeholder="created above, or paste one" required></label></div>
+              <div class="actions"><button class="btn ghost">Open business</button></div>
+            </form>
+          </div>
+          <div class="out"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-h"><span>Change a business</span><span class="ep"><span class="verb w">PATCH · PUT</span>/businesses/:id…</span><span class="who">Owner of it · bank</span></div>
+          <div class="panel-b">
+            <p class="help">With an authorised or active loan, an owner gets <code>403 LOCKED_BY_LOAN</code> for profile, operations, locations and suppliers.</p>
+            <form data-call-from="op" data-render="business">
+              <div class="fields">
+                <label class="f"><span>Business id</span><input class="code" type="text" name=":id" data-bind="biz" required></label>
+                <label class="f"><span>Change</span><select name="op" data-skip id="edit-op">
+                  <option value="PATCH /businesses/:id">profile · operations · contacts</option>
+                  <option value="PUT /businesses/:id/locations">replace locations</option>
+                  <option value="PUT /businesses/:id/suppliers">replace suppliers</option></select></label>
+                <label class="f wide"><span>Body <em>JSON</em></span><textarea class="code" name="$body" data-t="json" id="edit-body" rows="5"></textarea></label>
+              </div>
+              <div class="actions"><button class="btn ghost">Send change</button></div>
+            </form>
+          </div>
+          <div class="out"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-h"><span>Seed</span><span class="ep"><span class="verb w">POST</span>/seed/smes</span><span class="who bank dev">Bank · dev only</span></div>
+          <div class="panel-b">
+            <form data-call="POST /seed/smes">
+              <div class="fields"><label class="f"><span>Classify with</span><select name="classify"><option>defaults</option><option>llm</option></select></label></div>
+              <div class="actions"><button class="btn quiet">Load seed file</button></div>
+            </form>
+          </div>
+          <div class="out"></div>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ═══ 03 Weather impact ═════════════════════════════════════════════ -->
+  <section class="step" id="s-impact">
+    <header class="step-h"><span class="step-n">03</span><div><h2>How weather moves this business</h2><p>A classifier reads the description and gives two values per hazard: <b>physical</b> (how much of the business stops) and <b>demand</b> (how customers react). Rules bound it: a physical floor, sector defaults at low confidence, a full fallback if the model fails.</p></div></header>
+    <div class="panel">
+      <div class="panel-h"><span>Weather-impact profile</span><span class="ep"><span class="verb">GET</span>/businesses/:id/impact-profile</span><span class="who">Owner of it · bank</span></div>
+      <div class="panel-b">
+        <form id="f-impact" data-call="GET /businesses/:id/impact-profile" data-render="impact">
+          <div class="fields">
+            <label class="f"><span>Business id</span><input class="code" type="text" name=":id" data-bind="biz" required></label>
+            <label class="f wide"><span>Override body <em>bank · JSON · names only what changes</em></span><textarea class="code" name="$body" data-t="json" rows="3">{ "reason": "Shop is on a raised plinth",
+  "conditions": { "river_flood": { "physical": 0.1 } } }</textarea></label>
+          </div>
+          <div class="actions">
+            <button class="btn ghost">Read profile</button>
+            <button class="btn quiet" data-call="POST /businesses/:id/impact-profile/reclassify" data-nobody>Reclassify <span class="tag am">bank</span></button>
+            <button class="btn quiet" data-call="PUT /businesses/:id/impact-profile">Override <span class="tag am">bank</span></button>
+          </div>
+        </form>
+      </div>
+      <div class="out"></div>
+    </div>
+  </section>
+
+  <!-- ═══ 04 Climate risk ═══════════════════════════════════════════════ -->
+  <section class="step" id="s-climate">
+    <header class="step-h"><span class="step-n">04</span><div><h2>Climate risk at its location</h2><p>The pipeline snaps the point to grid cells, screens six hazards against about 30 years of history, reads the 7-day forecast and grades the result. A first lookup for a new place can take up to a minute.</p></div></header>
+    <div class="panel">
+      <div class="panel-h"><span>Risk profile</span><span class="ep"><span class="verb w">POST</span>/climate/profile</span><span class="who">Signed in</span></div>
+      <div class="panel-b">
+        <div class="presets" id="city-presets"></div>
+        <form id="f-climate" data-call="POST /climate/profile" data-render="climate">
+          <div class="fields">
+            <label class="f"><span>Latitude <em>6 to 37</em></span><input class="code" type="number" step="any" name="lat" data-t="num" value="13.0827" required></label>
+            <label class="f"><span>Longitude <em>68 to 98</em></span><input class="code" type="number" step="any" name="lon" data-t="num" value="80.2707" required></label>
+          </div>
+          <div class="actions">
+            <button class="btn">Score this location</button>
+            <button class="btn ghost" data-call="GET /climate/events" data-render="events">Active events only</button>
+          </div>
+        </form>
+      </div>
+      <div class="out"></div>
+    </div>
+    <details class="more"><summary>More: what is stored for a grid cell</summary>
+      <div class="panel">
+        <div class="panel-h"><span>Cell store</span><span class="ep"><span class="verb">GET</span>/climate/cell/:cellId</span><span class="who">Signed in</span></div>
+        <div class="panel-b">
+          <form data-call="GET /climate/cell/:cellId">
+            <div class="fields"><label class="f"><span>Cell id <em>grid size : latitude : longitude</em></span><input class="code" type="text" name=":cellId" data-bind="cell" value="0.1:13.1:80.3" required></label></div>
+            <div class="actions"><button class="btn ghost">Inspect cell</button></div>
+          </form>
+        </div>
+        <div class="out"></div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ═══ 05 Financials ═════════════════════════════════════════════════ -->
+  <section class="step" id="s-financials">
+    <header class="step-h"><span class="step-n">05</span><div><h2>The owner enters financials</h2><p>Raw numbers go in; the service derives DSCR, volatility, margin and cash buffer. Each submission is a new version, never an overwrite.</p></div></header>
+    <div class="panel">
+      <div class="panel-h"><span>Financial snapshot</span><span class="ep"><span class="verb w">POST</span>/businesses/:id/snapshots</span><span class="who">Owner of it · bank</span></div>
+      <div class="panel-b">
+        <form id="f-snapshot" data-call="POST /businesses/:id/snapshots" data-render="snapshot">
+          <div class="fields">
+            <label class="f"><span>Business id</span><input class="code" type="text" name=":id" data-bind="biz" required></label>
+            <label class="f"><span>As of</span><input type="date" name="as_of" value="2026-09-30" required></label>
+            <label class="f wide"><span>Monthly revenue <em>6–12 months, oldest first, INR</em></span><input class="code" type="text" name="monthly_revenue" data-t="csvnum" value="410000, 395000, 420000, 450000, 470000, 430000, 405000, 415000" required></label>
+            <label class="f"><span>Monthly opex</span><input class="code" type="number" name="monthly_opex" data-t="num" value="310000" required></label>
+            <label class="f"><span>Existing EMIs</span><input class="code" type="number" name="existing_emi_total" data-t="num" value="28000" required></label>
+            <label class="f"><span>Outstanding debt</span><input class="code" type="number" name="outstanding_debt" data-t="num" value="650000" required></label>
+            <label class="f"><span>Cash balance</span><input class="code" type="number" name="cash_balance" data-t="num" value="240000" required></label>
+            <label class="f"><span>Late payments <em>12 m</em></span><input class="code" type="number" name="payment_delays_12m" data-t="num" value="1" required></label>
+            <label class="f"><span>Receivables days</span><input class="code" type="number" name="receivables_days" data-t="num" value="20"></label>
+          </div>
+          <div class="actions">
+            <button class="btn">Save snapshot</button>
+            <button class="btn ghost" data-call="GET /businesses/:id/snapshots" data-render="snapshots" data-nobody formnovalidate>History</button>
+          </div>
+        </form>
+      </div>
+      <div class="out"></div>
+    </div>
+    <details class="more"><summary>More: the bank verifies a snapshot</summary>
+      <div class="panel">
+        <div class="panel-h"><span>Verify</span><span class="ep"><span class="verb w">POST</span>…/snapshots/:v/verify</span><span class="who bank">Bank</span></div>
+        <div class="panel-b">
+          <form data-call="POST /businesses/:id/snapshots/:v/verify" data-render="snapshot">
+            <div class="fields">
+              <label class="f"><span>Business id</span><input class="code" type="text" name=":id" data-bind="biz" required></label>
+              <label class="f"><span>Version</span><input class="code" type="number" name=":v" value="1" required></label>
+            </div>
+            <div class="actions"><button class="btn ghost">Mark verified</button></div>
+          </form>
+        </div>
+        <div class="out"></div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ═══ 06 Loan and score ═════════════════════════════════════════════ -->
+  <section class="step" id="s-loan">
+    <header class="step-h"><span class="step-n">06</span><div><h2>The bank records a loan and scores it</h2><p>Rules decide; the model only informs. The finance service scores six sub-scores, stress-tests the business against each hazard in its cell, and reports a climate-adjusted score with the driver behind every point. Good weather adds at most 3 points.</p></div></header>
+    <div class="stack">
+      <div class="panel">
+        <div class="panel-h"><span>New loan</span><span class="ep"><span class="verb w">POST</span>/businesses/:id/loans</span><span class="who bank">Bank</span></div>
+        <div class="panel-b">
+          <form id="f-loan" data-call="POST /businesses/:id/loans" data-render="loan">
+            <div class="fields">
+              <label class="f"><span>Business id</span><input class="code" type="text" name=":id" data-bind="biz" required></label>
+              <label class="f"><span>Amount <em>INR</em></span><input class="code" type="number" name="amount" data-t="num" value="800000" required></label>
+              <label class="f"><span>EMI</span><input class="code" type="number" name="emi" data-t="num" value="21500" required></label>
+              <label class="f"><span>Tenure <em>months</em></span><input class="code" type="number" name="tenure_months" data-t="num" value="48" required></label>
+              <label class="f"><span>Interest <em>%</em></span><input class="code" type="number" step="any" name="interest_rate" data-t="num" value="13"></label>
+              <label class="f"><span>Purpose</span><select name="purpose"><option value="">not given</option><option>working_capital</option><option selected>equipment</option><option>expansion</option><option>other</option></select></label>
+            </div>
+            <div class="actions"><button class="btn">Record loan</button><span class="muted" style="font-size:14px">Starts as <code>applied</code>.</span></div>
+          </form>
+        </div>
+        <div class="out"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><span>Finance profile</span><span class="ep"><span class="verb">GET</span>/finance/business/:id/profile</span><span class="who">Owner of it · bank</span></div>
+        <div class="panel-b">
+          <form id="f-finance" data-call="GET /finance/business/:id/profile" data-render="finance">
+            <div class="fields"><label class="f wide"><span>Business id</span><input class="code" type="text" name=":id" data-bind="biz" required></label></div>
+            <div class="actions">
+              <button class="btn">Compute profile</button>
+              <button class="btn ghost" data-call="GET /finance/business/:id/profiles" data-render="history">Stored history</button>
+              <button class="btn quiet" data-call="GET /finance/demo" data-render="finance" formnovalidate>Built-in sample business</button>
+            </div>
+          </form>
+        </div>
+        <div class="out"></div>
+      </div>
+    </div>
+    <details class="more"><summary>More: what-if scenario, repayment capacity, score a location before lending</summary>
+      <div class="stack">
+        <div class="grid2">
+          <div class="panel">
+            <div class="panel-h"><span>What if</span><span class="ep"><span class="verb w">POST</span>…/scenario</span><span class="who">Owner of it · bank</span></div>
+            <div class="panel-b">
+              <form data-call="POST /finance/business/:id/scenario">
+                <div class="fields">
+                  <label class="f wide"><span>Business id</span><input class="code" type="text" name=":id" data-bind="biz" required></label>
+                  <label class="f"><span>Hazard</span><select name="hazard"><option>river_flood</option><option>flash_flood</option><option>heat</option><option>drought</option><option>storm</option><option>cold_wave</option></select></label>
+                  <label class="f"><span>Severity <em>0 to 1</em></span><input class="code" type="number" step="any" name="severity" data-t="num" value="0.8" required></label>
+                  <label class="f"><span>Duration <em>months</em></span><input class="code" type="number" name="duration_months" data-t="num" value="2"></label>
+                </div>
+                <div class="actions"><button class="btn ghost">Simulate</button></div>
+              </form>
+            </div>
+            <div class="out"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-h"><span>Repayment capacity</span><span class="ep"><span class="verb w">POST</span>…/repayment-capacity</span><span class="who">Owner of it · bank</span></div>
+            <div class="panel-b">
+              <form data-call="POST /finance/business/:id/repayment-capacity">
+                <div class="fields">
+                  <label class="f wide"><span>Business id</span><input class="code" type="text" name=":id" data-bind="biz" required></label>
+                  <label class="f"><span>Revenue drop <em>%</em></span><input class="code" type="number" step="any" name="revenue_drop_pct" data-t="num" value="30" required></label>
+                  <label class="f"><span>For <em>months</em></span><input class="code" type="number" name="months" data-t="num" value="3" required></label>
+                </div>
+                <div class="actions"><button class="btn ghost">Work it out</button></div>
+              </form>
+            </div>
+            <div class="out"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-h"><span>Will this work here?</span><span class="ep"><span class="verb w">POST</span>/finance/evaluate-location</span><span class="who">Signed in</span></div>
+          <div class="panel-b">
+            <p class="help">Scores an unsaved business at a candidate location, on its sector's default weather sensitivity. Stores nothing.</p>
+            <form data-call="POST /finance/evaluate-location" data-render="finance">
+              <div class="fields">
+                <label class="f"><span>Latitude</span><input class="code" type="number" step="any" name="lat" data-t="num" value="19.076" required></label>
+                <label class="f"><span>Longitude</span><input class="code" type="number" step="any" name="lon" data-t="num" value="72.8777" required></label>
+                <label class="f wide"><span>Business draft <em>JSON</em></span><textarea class="code" name="business" data-t="json" rows="8">{
+  "sector": "food_beverage",
+  "years_in_operation": 6,
+  "insurance_covers": ["flood", "stock"],
+  "financials": { "monthly_revenue": [410000, 395000, 420000, 450000, 470000, 430000],
+                  "monthly_opex": 310000, "existing_emi_total": 28000,
+                  "outstanding_debt": 650000, "cash_balance": 240000, "payment_delays_12m": 1 },
+  "loan_request": { "amount": 800000, "tenure_months": 48, "interest_rate": 13 }
+}</textarea></label>
+              </div>
+              <div class="actions"><button class="btn ghost">Evaluate location</button></div>
+            </form>
+          </div>
+          <div class="out"></div>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ═══ 07 Authorise and watch ════════════════════════════════════════ -->
+  <section class="step" id="s-authorise">
+    <header class="step-h"><span class="step-n">07</span><div><h2>The bank authorises; the monitor starts watching</h2><p>Authorising stores the first finance profile, locks the risk fields against the owner, and puts the business's cell on the monitor's watch list. The monitor only queues alerts; a separate worker sends them after consent and cooldown checks.</p></div></header>
+    <div class="stack">
+      <div class="panel">
+        <div class="panel-h"><span>Move the loan</span><span class="ep"><span class="verb w">PATCH</span>/loans/:id/status</span><span class="who bank">Bank</span></div>
+        <div class="panel-b">
+          <form id="f-status" data-call="PATCH /loans/:id/status" data-render="loan">
+            <div class="fields">
+              <label class="f"><span>Loan id</span><input class="code" type="text" name=":id" data-bind="loan" required></label>
+              <label class="f"><span>New status</span><select name="status"><option>authorised</option><option>active</option><option>closed</option><option>rejected</option></select></label>
+            </div>
+            <div class="actions"><button class="btn">Change status</button><span class="muted mono" style="font-size:12px">applied → authorised → active → closed</span></div>
+          </form>
+        </div>
+        <div class="out"></div>
+      </div>
+      <div class="flow">
+        <div><div class="meta"><span>Process</span><span class="cyan">● Monitor</span></div><h3>Watch active cells</h3><p>Checked more often when the forecast worsens.</p><div class="eps">npm run monitor</div></div>
+        <div><div class="meta"><span>Table</span><span class="cyan">● Outbox</span></div><h3>Queue an alert</h3><p>Hazard, severity, window and evidence, per audience.</p><div class="eps">enqueue()</div></div>
+        <div><div class="meta"><span>Process</span><span class="amber">● Worker</span></div><h3>Check, then send</h3><p>Dry run unless <code>ALERTS_MODE=live</code>.</p><div class="eps">npm run alerts:worker</div></div>
+        <div><div class="meta"><span>Job</span><span class="cyan">● Verify</span></div><h3>Label the outcome</h3><p>Against observed weather, for the ML model.</p><div class="eps">npm run monitor:verify</div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><span>Alert outbox</span><span class="ep"><span class="verb">GET</span>/alerts</span><span class="who bank">Bank</span></div>
+        <div class="panel-b">
+          <p class="help">Newest first, each with its send attempts and the message as rendered. It never shows who a message was sent to.</p>
+          <form id="f-alerts" data-call="GET /alerts" data-render="alerts">
+            <div class="fields">
+              <label class="f"><span>Status</span><select name="status"><option value="">any</option><option>pending</option><option>sending</option><option>sent</option><option>failed</option><option>dead</option><option>suppressed</option></select></label>
+              <label class="f"><span>Business id <em>optional</em></span><input class="code" type="text" name="business_id"></label>
+              <label class="f"><span>Limit <em>1–100</em></span><input class="code" type="number" name="limit" value="20"></label>
+            </div>
+            <div class="actions"><button class="btn ghost">Load alerts</button></div>
+          </form>
+        </div>
+        <div class="out"></div>
+      </div>
+    </div>
+    <details class="more"><summary>More: fill the outbox without real weather</summary>
+      <div class="panel"><div class="panel-b">
+        <ul class="plain">
+          <li><code>npm run monitor:simulate -- --location L1 --scenario heavy-rain</code><br>A scripted run of the monitor in its own database. Calls nothing outside this machine.</li>
+          <li><code>npm run alerts:test -- --seed</code><br>Creates the demo business and contacts, then queues one test alert for the worker.</li>
+        </ul>
+      </div></div>
+    </details>
+  </section>
+
+  <!-- ═══ 08 An event hits ══════════════════════════════════════════════ -->
+  <section class="step" id="s-event">
+    <header class="step-h"><span class="step-n">08</span><div><h2>An event hits; the advisor helps</h2><p>The advisor follows the loan through three modes: pre-loan advice, alert guidance, and a recovery plan after damage. Every number in an answer must match a tool result. It can only propose a repayment change; a bank officer decides. Talk to it in the chat panel.</p></div></header>
+    <div class="note" style="margin-bottom:16px">The advisor reads the same business and loan as the steps above, from the input service, and follows the same access rule. Until a business is created here, the chat uses <code>SME-0142</code>, one of four demo businesses from <code>api/data/smes.json</code> that stay available outside production.</div>
+    <div class="stack">
+      <div class="panel">
+        <div class="panel-h"><span>Raise a test alert</span><span class="ep"><span class="verb w">POST</span>/advisor/dev/fake-alert</span><span class="who dev">Dev only</span></div>
+        <div class="panel-b">
+          <p class="help">Stands in for the monitor: puts loans into alert mode, so the chat answers with preventive steps.</p>
+          <form id="f-fake-alert" data-call="POST /advisor/dev/fake-alert">
+            <div class="fields">
+              <label class="f"><span>Loan ids <em>comma separated</em></span><input class="code" type="text" name="loanIds" data-t="csv" data-bind="advLoan" value="LN-0142"></label>
+              <label class="f"><span>Hazard</span><input class="code" type="text" name="hazard" value="heavy_rain"></label>
+              <label class="f"><span>Severity</span><select name="severity"><option>watch</option><option selected>warning</option><option>severe</option></select></label>
+              <label class="f"><span>Starts in <em>hours</em></span><input class="code" type="number" step="any" name="startsInHours" data-t="num" value="18"></label>
+              <label class="f"><span>Lasts <em>hours</em></span><input class="code" type="number" step="any" name="durationHours" data-t="num" value="24"></label>
+            </div>
+            <div class="actions">
+              <button class="btn">Raise alert</button>
+              <button class="btn quiet" data-call="POST /advisor/dev/sweep-alerts" data-nobody>Sweep ended alerts</button>
+            </div>
+          </form>
+        </div>
+        <div class="out"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><span>Damage report</span><span class="ep"><span class="verb w">POST</span>/advisor/damage-report</span><span class="who">Signed in</span></div>
+        <div class="panel-b">
+          <p class="help">What the owner lost. The advisor recomputes the cash flow and proposes repayment options. Leave a field blank and it asks for it in chat.</p>
+          <form data-call="POST /advisor/damage-report" data-render="turn">
+            <div class="fields">
+              <label class="f"><span>Loan id</span><input class="code" type="text" name="loanId" data-bind="advLoan" required></label>
+              <label class="f"><span>Hazard</span><select name="hazard"><option value="">not given</option><option>river_flood</option><option selected>flash_flood</option><option>heat</option><option>drought</option><option>storm</option><option>cold_wave</option></select></label>
+              <label class="f"><span>Days closed</span><input class="code" type="number" name="daysClosed" data-t="num" value="9"></label>
+              <label class="f"><span>Stock loss <em>INR</em></span><input class="code" type="number" name="stockLossInr" data-t="num" value="60000"></label>
+              <label class="f"><span>Equipment damage <em>INR</em></span><input class="code" type="number" name="equipmentDamageInr" data-t="num" value="25000"></label>
+              <label class="f"><span>Expected reopen</span><input type="date" name="expectedReopenDate"></label>
+              <label class="f wide"><span>Insurance claim <em>JSON · optional</em></span><textarea class="code" name="insuranceClaim" data-t="json" rows="2"></textarea></label>
+              <label class="f wide"><span>Message <em>optional</em></span><input type="text" name="message" value="Water came into the shop on Tuesday night."></label>
+            </div>
+            <div class="actions"><button class="btn ghost">Submit report</button></div>
+          </form>
+        </div>
+        <div class="out"></div>
+      </div>
+      <div class="grid2">
+        <div class="panel">
+          <div class="panel-h"><span>Bank decision</span><span class="ep"><span class="verb w">POST</span>/advisor/proposals/:id/decision</span><span class="who bank">Bank</span></div>
+          <div class="panel-b">
+            <p class="help">Only an accepted proposal moves a loan into recovery. The officer comes from the session, never from the form.</p>
+            <form data-call="POST /advisor/proposals/:id/decision">
+              <div class="fields">
+                <label class="f wide"><span>Proposal id</span><input class="code" type="text" name=":id" data-bind="proposal" placeholder="appears when the advisor proposes a plan" required></label>
+                <label class="f"><span>Decision</span><select name="decision"><option>accept</option><option>reject</option></select></label>
+                <label class="f"><span>Note</span><input type="text" name="note"></label>
+              </div>
+              <div class="actions"><button class="btn">Record decision</button></div>
+            </form>
+          </div>
+          <div class="out"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-h"><span>Loan state</span><span class="ep"><span class="verb">GET</span>/advisor/loans/:loanId/state</span><span class="who">Signed in</span></div>
+          <div class="panel-b">
+            <p class="help">The state decides the advisor's mode.</p>
+            <form data-call="GET /advisor/loans/:loanId/state">
+              <div class="fields">
+                <label class="f"><span>Loan id</span><input class="code" type="text" name=":loanId" data-bind="advLoan" required></label>
+                <label class="f"><span>Note <em>for bank actions</em></span><input type="text" name="note"></label>
+              </div>
+              <div class="actions">
+                <button class="btn ghost" data-nobody>Read state</button>
+                <button class="btn quiet" data-call="POST /advisor/loans/:loanId/disburse">Disburse <span class="tag am">bank</span></button>
+                <button class="btn quiet" data-call="POST /advisor/loans/:loanId/close-recovery">Close recovery <span class="tag am">bank</span></button>
+              </div>
+            </form>
+          </div>
+          <div class="out"></div>
+        </div>
+      </div>
+    </div>
+    <details class="more"><summary>More: demo businesses, stored conversations, verify an alert</summary>
+      <div class="stack">
+        <div class="panel">
+          <div class="panel-h"><span>Demo businesses</span><span class="ep"><span class="verb">GET</span>/advisor/businesses</span><span class="who">Signed in</span></div>
+          <div class="panel-b"><form data-call="GET /advisor/businesses" data-render="advBusinesses"><div class="actions" style="margin-top:0"><button class="btn ghost">List businesses</button></div></form></div>
+          <div class="out"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-h"><span>History</span><span class="ep"><span class="verb">GET</span>/advisor/conversations/:businessId</span><span class="who">Signed in</span></div>
+          <div class="panel-b">
+            <form data-call="GET /advisor/conversations/:businessId" data-render="conversations">
+              <div class="fields"><label class="f wide"><span>Business id</span><input class="code" type="text" name=":businessId" data-bind="advBiz" required></label></div>
+              <div class="actions"><button class="btn ghost">Load conversations</button></div>
+            </form>
+          </div>
+          <div class="out"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-h"><span>Verify an alert</span><span class="ep"><span class="verb w">POST</span>/advisor/dev/verify-alert</span><span class="who dev">Dev only</span></div>
+          <div class="panel-b">
+            <form data-call="POST /advisor/dev/verify-alert">
+              <div class="fields">
+                <label class="f"><span>Alert id</span><input class="code" type="text" name="alertId" data-bind="alertId" placeholder="fake-…" required></label>
+                <label class="f"><span>Outcome</span><select name="label"><option>hit</option><option>miss</option></select></label>
+              </div>
+              <div class="actions"><button class="btn quiet">Verify alert</button></div>
+            </form>
+          </div>
+          <div class="out"></div>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ═══ 09 Under every step ═══════════════════════════════════════════ -->
+  <section class="step" id="s-platform">
+    <header class="step-h"><span class="step-n">09</span><div><h2>Under every step</h2><p>Mounted once in <code>createApp</code>, so every route gets them. The wire log at the bottom of the screen shows them at work on each request above.</p></div></header>
+    <div class="stack">
+      <div class="grid2">
+        <div class="panel">
+          <div class="panel-h"><span>Idempotent writes</span><span class="ep">Idempotency-Key</span></div>
+          <div class="panel-b">
+            <p class="help">Sends the same <code>POST /climate/profile</code> twice with one key, then reuses the key with a different body. Expect a replay, then <code>422 IDEMPOTENCY_KEY_REUSED</code>.</p>
+            <div class="actions" style="margin-top:0"><button class="btn ghost" type="button" id="idem-btn">Run the three requests</button></div>
+          </div>
+          <div class="out" id="idem-out"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-h"><span>Rate limits</span><span class="ep">RateLimit</span><span>Per client · 1 min</span></div>
+          <div class="tbl-wrap"><table>
+            <tr><th>Routes</th><th class="num">Per minute</th></tr>
+            <tr><td>Everything</td><td class="num">120</td></tr>
+            <tr><td><code>/climate/*</code> · <code>/businesses</code> <code>/loans</code> <code>/seed</code></td><td class="num">60</td></tr>
+            <tr><td><code>/finance/*</code> · <code>/advisor/*</code></td><td class="num">30</td></tr>
+            <tr><td><code>/auth/*</code></td><td class="num">20</td></tr>
+          </table></div>
+          <dl class="kv flush" id="rate-last" style="border-top:1px solid var(--rule)"></dl>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><span>One error shape</span><span class="ep">{ error: { code, message, step } }</span><span>Try one</span></div>
+        <div class="panel-b"><div class="presets" id="error-tries" style="margin-bottom:0"></div></div>
+        <div class="out" id="error-out"></div>
+      </div>
+      <div class="grid2">
+        <div class="panel">
+          <div class="panel-h"><span>Audit trail</span><span>audit_events</span></div>
+          <div class="panel-b">
+            <ul class="plain">
+              <li>One row for each write, each refusal (401 or 403) and each failed attempt to open a business.</li>
+              <li>Request bodies, tokens and financial values are never stored.</li>
+              <li>Append only: a database trigger refuses <code>UPDATE</code> and <code>DELETE</code>. No endpoint reads it; query the database with the <code>X-Request-Id</code> from the wire log.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-h"><span>Safety limits that stay fixed</span><span>By design</span></div>
+          <div class="panel-b">
+            <ul class="plain">
+              <li><b>Climate agent:</b> may raise a hazard's category, never lower it.</li>
+              <li><b>Finance:</b> good weather adds at most 3 points.</li>
+              <li><b>Alerts:</b> consent and cooldown are checked before anything is sent.</li>
+              <li><b>Advisor:</b> a verdict can be stricter than the numbers imply, never more lenient.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  </main>
+
+  <!-- The advisor, beside every step -->
+  <aside class="advisor" aria-label="Advisor chat">
+    <div class="panel-h"><span>Advisor</span><span class="ep"><span class="verb w">POST</span>/advisor/chat</span></div>
+    <details class="chat-ctx">
+      <summary><span id="chat-who">SME-0142 · LN-0142</span> · change</summary>
+      <div class="fields">
+        <label class="f"><span>Business</span><input class="code" type="text" id="chat-biz" data-bind="advBiz" value="SME-0142"></label>
+        <label class="f"><span>Loan <em>optional</em></span><input class="code" type="text" id="chat-loan" data-bind="advLoan" value="LN-0142"></label>
+        <label class="f wide"><span>Conversation id <em>blank starts a new one</em></span><input class="code" type="text" id="chat-conv" data-bind="conv"></label>
+      </div>
+    </details>
+    <div class="chat" id="chat-log" aria-live="polite"></div>
+    <div class="presets chat-prompts" id="chat-prompts"></div>
+    <form class="chat-form" id="chat-form">
+      <input type="text" id="chat-input" placeholder="Ask the advisor" aria-label="Message" maxlength="2000" required>
+      <button class="btn">Send</button>
+    </form>
+    <div class="out" id="chat-out"></div>
+  </aside>
+</div>
+
+<!-- Every request this page makes, newest first -->
+<div class="dock">
+  <button class="dock-h" id="wire-toggle" type="button" aria-expanded="false" aria-controls="wire-body">
+    <b>Wire log</b><span id="wire-count">0 requests</span><span id="wire-last">Nothing sent yet</span><span id="wire-caret">▲ open</span>
+  </button>
+  <div class="dock-b" id="wire-body" hidden>
+    <table>
+      <thead><tr><th>Time</th><th>Source</th><th>Method</th><th>Path</th><th>Status</th><th class="num">ms</th><th>RateLimit</th><th>Replayed</th><th>Idempotency-Key</th><th>X-Request-Id</th></tr></thead>
+      <tbody id="wire-rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
