@@ -54,7 +54,7 @@ All three must pass before you say a task is done. If one fails, say so and show
 
 - **Show a major change to existing code before making it.** If a fix or update rewrites behaviour that already works, describe the change and wait for the owner's approval. New files and small, local fixes do not need this.
 - **Every endpoint is rate limited and honours `Idempotency-Key`.** Both are mounted once in `createApp` (`src/app.ts`). Mount new routes below them, and add a stricter limit there if a request is expensive.
-- **Every endpoint needs a signed-in user unless it is meant to be public.** Mount new routes with `requireAuth` or `requireBank` from `src/middleware/auth.ts`; without one a route is open. Only `/health`, `/demo` and `/auth` are public.
+- **Every endpoint needs a signed-in user unless it is meant to be public.** Mount new routes with `requireAuth` or `requireBank` from `src/middleware/auth.ts`; without one a route is open. Only `/health` and `/auth` are public.
 - **Every write and every refusal is audited.** `auditTrail` in `src/middleware/audit.ts` records them for all routes. In a new handler, call `auditNote(res, { target })` to name the record it changes. Never put a request body, token or financial value in an event, and never update or delete `audit_events`.
 - **Do not commit or push unless asked.** Never commit `.env` files or `src/generated/`.
 - **Do not read out or copy secrets** from `api/.env`. `api/.env.example` lists every variable.

@@ -7,7 +7,7 @@ const ALLOWED_HEADERS = "Content-Type, Idempotency-Key";
 const EXPOSED_HEADERS = "Idempotency-Replayed, RateLimit, RateLimit-Policy, Retry-After, X-Request-Id";
 const PREFLIGHT_MAX_AGE_SECONDS = 600;
 
-// A page served by the API itself, like /demo
+// A page on the API's own origin
 function sameOrigin(req: Request, origin: string): boolean {
   try {
     return new URL(origin).host === req.get("Host");

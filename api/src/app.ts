@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import express, { type Express } from "express";
 import type { AdvisorAccess, EnqueueAlert } from "./controllers/advisor.controller.js";
 import type { AuthCookieOptions } from "./controllers/auth.controller.js";
@@ -31,9 +30,6 @@ import { EVALUATOR } from "./services/evaluator/config.js";
 import { FINANCE } from "./services/finance/index.js";
 import { inputRouter, type InputRouterOptions } from "./services/input/index.js";
 import type { InputService } from "./services/input/service.js";
-
-// api/public, whether this runs from src/ or dist/
-const DEMO_DIR = fileURLToPath(new URL("../public", import.meta.url));
 
 export interface AppDeps extends HealthDeps {
   // Sign in with Google and the sessions behind every protected route
@@ -104,9 +100,6 @@ export function createApp(deps: AppDeps): Express {
   // Also refuses writes from websites that are not ours (CSRF)
   app.use(cors(deps.auth.allowedOrigins ?? []));
   app.use(express.json({ limit: "10kb" }));
-
-  // Static MVP demo page; it calls the routes below from the same origin
-  app.use("/demo", express.static(DEMO_DIR));
 
   // The session is read before idempotency so that each user's keys are
   // kept apart. It does not reject; the routes below say who they need.

@@ -15,7 +15,6 @@ This README is the handover document for anyone, human or AI agent, picking up t
 | Finance service | `api/src/services/finance/` | Built. Baseline financial health score and a climate-adjusted score per business, from the input service's data and the climate profile. Rule-based; the ML scorer is a stub. Has its own `README.md`. |
 | Evaluator | `api/src/services/evaluator/` | Built. Checks the climate and finance answers for one business against each other and against their own rules, gives one combined rating with reasons, and stores each evaluation. The chat advisor reads climate and finance only through it. See [The evaluator](#the-evaluator). |
 | Chat advisor | `api/src/services/advisor/` | Built on the `chatbot-work` branch and merged. Mounted at `/advisor` for signed-in users, with the input service's ownership and sharing rule; bank decisions need a bank officer. Its `/advisor/dev/*` routes (fake alert, verify, sweep) are for bank officers only, exist only when `ADVISOR_ENABLE_DEV_ROUTES=true` and never in production. Runs an offline planner without an API key. Reads businesses, snapshots, loans and weather-impact profiles from the input service and scores from the finance service; the `api/data/smes.json` demo businesses stay behind them outside production. Advises owners after each alert the alert system sends. Its `NOTES.md` has the details. |
-| Demo page | `api/public/index.html`, `api/public/workflow.html`, `api/public/live.html`, `api/public/dashboard.html` | Built. Four static pages served by the API: the climate map at `/demo/`; at `/demo/workflow.html` a guide to the whole loan workflow, step by step and by role, with every endpoint linked; and at `/demo/live.html` a live run that drives one synthetic business (four personas to choose from) through all five stages with real API calls, showing each request, response, status and timing, the loan state and a few guardrail calls the API refuses. It writes real rows and needs a signed-in bank officer; step 10 uses `/advisor/dev/fake-alert`, so it needs `ADVISOR_ENABLE_DEV_ROUTES=true`. `/demo/dashboard.html` starts at Google sign-in and then takes a business the user types (or one of four presets) through input, analysis (classifier, live climate profile, finance score), the advisor chat, an evaluator that checks the chat's verdict, citations, tool calls and hazards against the data, and the bank's loan lifecycle; an inspector beside it shows every request and response. |
 | Web console | `web/` | Built. A static HTML, CSS and JavaScript page with no build step. It walks one loan through every unit on a single page and calls every endpoint; see [The web console](#the-web-console). Checked against the live API only as far as the public routes and the 401 answers; the signed-in flows have not been exercised from it yet. |
 | ML service | `ml/` | Dependencies declared only. No code, models, data or tests. |
 | Postgres | `docker-compose.yml` | Used by the API as the durable store. |
@@ -67,7 +66,7 @@ curl -X POST http://localhost:4000/climate/profile \
   -d '{"lat": 26.1445, "lon": 91.7362}'
 ```
 
-Or open the demo page at http://localhost:4000/demo/. Opened straight from disk (`api/public/index.html`) it cannot reach the API and shows captured sample responses instead.
+Or open the web console; see the next section.
 
 ### The web console
 
@@ -152,7 +151,6 @@ When the climate agent is on, an OpenAI model does two jobs on top of the rules:
 
 | Method | Path | Who | Purpose |
 | --- | --- | --- | --- |
-| `GET` | `/demo/` | anyone | MVP demo page (`api/public/index.html`) that calls the endpoints below. It has a Sign in with Google button |
 | `GET` | `/health` | anyone | Service, database and upstream status |
 | `GET` | `/auth/config` | anyone | `{ "google_client_id": ... }`, which a frontend needs to draw the sign-in button. `null` when sign-in is not configured |
 | `POST` | `/auth/google` | anyone | Sign in. Body: `{"credential": "<Google ID token>"}`. Sets the session cookie and returns `{ user }` |
@@ -196,7 +194,7 @@ With `AUTH_ROLES_ENFORCED=false` there is no split: every signed-in user is a ba
 
 | Role | Can do |
 | --- | --- |
-| Not signed in | `/health`, `/demo/`, `/auth/config`, `/auth/google`, `/auth/logout` |
+| Not signed in | `/health`, `/auth/config`, `/auth/google`, `/auth/logout` |
 | `owner` | `/climate/*`, and the businesses they created through `POST /businesses` |
 | `bank` | Everything an owner can, every business shared with the bank, `/alerts`, the bank-only input routes and `POST /seed/smes` |
 
@@ -208,9 +206,9 @@ An owner who asks for another owner's business gets 404 `BUSINESS_NOT_FOUND`, th
 
 **Requests from other websites.** Because the session is a cookie, the API checks the `Origin` header that browsers attach. Origins in `AUTH_ALLOWED_ORIGINS` get CORS headers with credentials allowed. A `POST`, `PUT`, `PATCH` or `DELETE` from any other origin is refused with 403 `ORIGIN_NOT_ALLOWED`. Setting it to `*` turns this check off so any local page can sign in; that also turns off the CSRF protection, so it is ignored in production. Requests with no `Origin` header (curl, other servers) and pages the API serves itself are not affected.
 
-**Setting it up.** In Google Cloud Console, create an OAuth client ID of type "Web application". Add each frontend origin, and `http://localhost:4000` for the demo page, to its authorised JavaScript origins. Put the client ID in `GOOGLE_CLIENT_ID`. Until it is set, `POST /auth/google` answers 503 `AUTH_NOT_CONFIGURED`.
+**Setting it up.** In Google Cloud Console, create an OAuth client ID of type "Web application". Add each frontend origin, such as `http://localhost:3000` for the web console, to its authorised JavaScript origins. Put the client ID in `GOOGLE_CLIENT_ID`. Until it is set, `POST /auth/google` answers 503 `AUTH_NOT_CONFIGURED`.
 
-To call a protected route with curl, sign in on the demo page and copy the `fusion_session` cookie from the browser's developer tools:
+To call a protected route with curl, sign in on the web console and copy the `fusion_session` cookie from the browser's developer tools:
 
 ```bash
 curl -X POST http://localhost:4000/climate/profile \
@@ -590,8 +588,6 @@ api/
 ├── prisma/migrations/            Eight migrations: climate_tool, idempotency_keys, alerts, climate_monitor, input_service, auth, finance_service, audit_events
 ├── data/monitor-locations.json   Locations for monitor:simulate, or the monitor with MONITOR_LOCATION_SOURCE=json
 ├── prisma.config.ts              Prisma 7 config; the datasource URL lives here
-├── public/index.html             Demo page, served at /demo/
-├── public/live.html              Live run of the whole workflow, served at /demo/live.html
 ├── vitest.config.ts              Points tests at a *_test database and Redis database 1; test files run one at a time
 ├── vitest.global-setup.ts        Applies migrations to the test database
 └── src/

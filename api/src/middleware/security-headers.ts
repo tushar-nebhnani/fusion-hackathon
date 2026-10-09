@@ -11,7 +11,6 @@ export function securityHeaders(options: { hsts?: boolean } = {}): RequestHandle
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
       "Referrer-Policy": "no-referrer",
-      // express.static sets its own, so /demo stays cacheable
       "Cache-Control": "no-store",
     });
     if (options.hsts) {
