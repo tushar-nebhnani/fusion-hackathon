@@ -1,6 +1,6 @@
-import type { RequestHandler } from "express";
+import type { RequestHandler, Response } from "express";
 import { z } from "zod";
-import { BadRequestError } from "../errors/app-error.js";
+import { AppError, BadRequestError } from "../errors/app-error.js";
 import { requireUser } from "../middleware/auth.js";
 import { buildFakeAlert, fakeAlertOptionsSchema } from "../services/advisor/dev/fakeAlert.js";
 import type { Advisor } from "../services/advisor/index.js";
@@ -40,13 +40,30 @@ function parse<T>(schema: z.ZodType<T>, value: unknown, what: string): T {
 
 const param = (value: unknown) => parse(id, value, "path parameter");
 
-export function advisorController(advisor: Advisor) {
+// Throws when the signed-in user may not see the business. The input
+// service's rule: owners see their own, the bank sees what was shared with it.
+export type AdvisorAccess = (businessId: string, actor: { role: "owner" | "bank"; id: string }) => Promise<void>;
+
+export function advisorController(advisor: Advisor, assertAccess: AdvisorAccess) {
+  const actorOf = (res: Response) => {
+    const user = requireUser(res);
+    return { role: user.role, id: user.id };
+  };
+  const checkLoan = async (res: Response, loanId: string) => {
+    await assertAccess(await advisor.businessOfLoan(loanId), actorOf(res));
+    return loanId;
+  };
+
   const chat: RequestHandler = async (req, res) => {
-    res.json(await advisor.handleChat(parse(chatBody, req.body, "body")));
+    const input = parse(chatBody, req.body, "body");
+    await assertAccess(input.businessId, actorOf(res));
+    res.json(await advisor.handleChat(input));
   };
 
   const damageReport: RequestHandler = async (req, res) => {
-    res.json(await advisor.handleDamageReport(parse(damageBody, req.body, "body")));
+    const input = parse(damageBody, req.body, "body");
+    await checkLoan(res, input.loanId);
+    res.json(await advisor.handleDamageReport(input));
   };
 
   const decide: RequestHandler = async (req, res) => {
@@ -57,26 +74,42 @@ export function advisorController(advisor: Advisor) {
   };
 
   const conversations: RequestHandler = async (req, res) => {
-    res.json(await advisor.getConversations(param(req.params.businessId)));
+    const businessId = param(req.params.businessId);
+    await assertAccess(businessId, actorOf(res));
+    res.json(await advisor.getConversations(businessId));
   };
 
   const loanState: RequestHandler = async (req, res) => {
-    res.json(await advisor.getLoanState(param(req.params.loanId)));
+    res.json(await advisor.getLoanState(await checkLoan(res, param(req.params.loanId))));
   };
 
   // Bank actions that move a loan through README §4's state machine
   const disburse: RequestHandler = async (req, res) => {
     const { note } = parse(noteBody, req.body, "body");
-    res.json(await advisor.markDisbursed(param(req.params.loanId), note));
+    res.json(await advisor.markDisbursed(await checkLoan(res, param(req.params.loanId)), note));
   };
 
   const closeRecovery: RequestHandler = async (req, res) => {
     const { note } = parse(noteBody, req.body, "body");
-    res.json(await advisor.closeRecovery(param(req.params.loanId), note));
+    res.json(await advisor.closeRecovery(await checkLoan(res, param(req.params.loanId)), note));
   };
 
-  const businesses: RequestHandler = (_req, res) => {
-    res.json({ businesses: advisor.listBusinesses() });
+  // Only the businesses this user may see
+  const businesses: RequestHandler = async (_req, res) => {
+    const actor = actorOf(res);
+    const all = await advisor.listBusinesses();
+    const allowed = await Promise.all(
+      all.map((business) =>
+        assertAccess(business.id, actor).then(
+          () => true,
+          (error: unknown) => {
+            if (error instanceof AppError && error.statusCode === 404) return false;
+            throw error;
+          },
+        ),
+      ),
+    );
+    res.json({ businesses: all.filter((_, i) => allowed[i]) });
   };
 
   // ── Dev only: mounted when ADVISOR_ENABLE_DEV_ROUTES is on ────────────────

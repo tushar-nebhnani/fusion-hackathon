@@ -4,6 +4,9 @@ export const CLIMATE = {
   grid: { historical: 0.1, climate: 0.1, flood: 0.05, forecast: 0.1 },
   timezone: "Asia/Kolkata",
   historyStart: "1995-01-01",
+  // A business location saved through the input service is warmed with a
+  // shorter history: one first screening uses less of Open-Meteo's allowance
+  warmHistoryYears: 15,
   era5DelayDays: 5,
   forecastDays: 7,
   forecastPastDays: 5,

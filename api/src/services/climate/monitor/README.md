@@ -26,7 +26,8 @@ The simulator is safe to run at any time. It uses synthetic weather, simulated t
 | `MONITOR_TICK_MINUTES` | `15` | How often the loop looks for due cells |
 | `MONITOR_CONCURRENCY` | `5` | Cells checked at once |
 | `MONITOR_AGENT_ENABLED` | `false` | Optional agent review. Also needs `OPENAI_API_KEY` |
-| `MONITOR_LOCATIONS_FILE` | `data/monitor-locations.json` | Watched locations, until the loans DB exists |
+| `MONITOR_LOCATION_SOURCE` | `input` | `input` watches the primary location of every business with an authorised or active loan (`adapters/inputLocationSource.ts`); `json` reads `MONITOR_LOCATIONS_FILE` |
+| `MONITOR_LOCATIONS_FILE` | `data/monitor-locations.json` | Watched locations when `MONITOR_LOCATION_SOURCE=json`, and for `monitor:simulate` |
 | `MONITOR_ALERT_SINK` | `outbox` | `console` prints alerts instead of queueing them |
 
 An invalid value falls back to its default; it never stops a process. Every other number (check intervals, rain classes, timeouts) is in the `monitor` section of `src/config/climate.ts`.
@@ -118,7 +119,7 @@ The monitor does not own the list of loans, the delivery of alerts or the log st
 
 | Port | Used today | To plug in the real unit |
 | --- | --- | --- |
-| `WatchedLocationSource` | `adapters/jsonLocationSource.ts`, reading `data/monitor-locations.json` | Write an adapter whose `list()` returns one `{ locationId, businessId, lat, lon }` per active loan, and pass it as `source` in `container.ts`. Run each row through `parseLocation()` so a bad coordinate is skipped, not fatal |
+| `WatchedLocationSource` | Done: `adapters/inputLocationSource.ts` reads the input service's `activeLocations` (one row per business, keyed by business id). `adapters/jsonLocationSource.ts` remains for `MONITOR_LOCATION_SOURCE=json` and `monitor:simulate` | — |
 | `AlertSink` | The alert system's own `enqueue()`. Already plugged in | Nothing to do. `MONITOR_ALERT_SINK=console` switches to `adapters/consoleAlertSink.ts` for a dry look |
 | `RunLogger` | `adapters/consoleRunLogger.ts` | Write an adapter with `info`, `warn` and `error`, and pass it as `logger` in `container.ts` |
 

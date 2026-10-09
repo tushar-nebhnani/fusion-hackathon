@@ -2,10 +2,10 @@ import { HAZARDS, type BusinessRecord, type Hazard, type WeatherImpactEntry } fr
 
 export type WeatherImpactView = WeatherImpactEntry | { effect: "unknown" };
 
-// The weather-impact classifier belongs to the input service, which does not
-// exist yet. Until it does, this reads the `weatherImpact` field of the
-// business profile, and a hazard with no entry is "unknown" (README §6). The
-// agent must then say the impact is unknown rather than assume one.
+// The `weatherImpact` field of the business record: the input service's
+// weather-impact classifier (inputDirectory.ts) or, for a demo business,
+// smes.json. A hazard with no entry is "unknown" (README §6). The agent must
+// then say the impact is unknown rather than assume one.
 export function getWeatherImpact(business: BusinessRecord) {
   const known = business.weatherImpact ?? {};
   const hazards = Object.fromEntries(
@@ -13,7 +13,9 @@ export function getWeatherImpact(business: BusinessRecord) {
   ) as Record<Hazard, WeatherImpactView>;
   return {
     source: business.weatherImpact
-      ? "business profile weatherImpact field (input-service classifier stub)"
+      ? business.origin === "input"
+        ? "input service: weather-impact classifier"
+        : "demo business: smes.json weatherImpact field"
       : "none: the classifier has not rated this business",
     hazards,
   };

@@ -1,4 +1,5 @@
 import { createApp } from "./app.js";
+import { CLIMATE } from "./config/climate.js";
 import { connectDb, disconnectDb, prisma } from "./config/db.js";
 import { env } from "./config/env.js";
 import { startClimateRefresh } from "./jobs/climate-refresh.js";
@@ -56,7 +57,6 @@ console.log(
 
 const climate = createClimateService({ prisma, openMeteo, cache: createRedisCache(redis), agent });
 const refresh = startClimateRefresh(climate);
-const advisor = createAdvisorFromEnv({ prisma, climate });
 
 const inputEnv = loadInputEnv();
 const classifier =
@@ -68,13 +68,17 @@ console.log(
     ? `Weather-impact classifier: ${classifier.model}`
     : "Weather-impact classifier: off (sector defaults)",
 );
-// The finance service is connected to the input service's triggers: an
+// Both of the input service's triggers are connected. A saved location warms
+// its climate cell on a shorter history (CLIMATE.warmHistoryYears); an
 // authorised loan and a new snapshot on a live loan each store a fresh
-// finance profile. The climate trigger is not connected, so it waits as a job.
+// finance profile.
 const input = createInputService({
   prisma,
   llm: classifier,
   ports: {
+    climate: {
+      warm: (point) => climate.getProfile(point, null, { historyYears: CLIMATE.warmHistoryYears }),
+    },
     finance: {
       firstProfile: ({ businessId }) =>
         finance.getFinanceProfile(businessId, { trigger: "first_profile" }),
@@ -86,6 +90,7 @@ const financeEnv = loadFinanceEnv();
 const scorer = chooseScorer(financeEnv);
 console.log(`Finance scorer: ${scorer.name}`);
 const finance = createFinanceService({ prisma, businesses: input, climate, scorer });
+const advisor = createAdvisorFromEnv({ prisma, climate, finance });
 const inputRetry = setInterval(() => {
   input.retryPending().catch((error: unknown) => {
     console.error("input: retry of pending work failed", error);
@@ -108,7 +113,16 @@ const app = createApp({
   },
   finance: { service: finance, assertAccess: (id, actor) => input.assertAccess(id, actor) },
   alerts: createAlertReader(prisma),
-  advisor: { service: advisor.advisor, devRoutes: advisor.config.enableDevRoutes },
+  advisor: {
+    service: advisor.advisor,
+    devRoutes: advisor.config.enableDevRoutes,
+    // The input service's ownership and sharing rule. The smes.json demo
+    // businesses (never in production) stay open to every signed-in user.
+    assertAccess: async (businessId, actor) => {
+      if (await advisor.isDemo(businessId)) return;
+      await input.assertAccess(businessId, actor);
+    },
+  },
   checkDb: connectDb,
   upstreamStatus: () => openMeteo.status(),
 });

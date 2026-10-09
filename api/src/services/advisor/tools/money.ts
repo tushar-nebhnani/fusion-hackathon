@@ -29,6 +29,21 @@ export function principalFor(payment: number, annualRatePct: number, months: num
   return (payment * (growth - 1)) / (r * growth);
 }
 
+// The annual rate at which `payment` repays `principal` over `months`, for a
+// loan entered with its EMI but no rate. 0 when the EMIs do not cover the
+// principal; capped at 60%, the most a loan record allows.
+export function annualRateFor(principal: number, payment: number, months: number): number {
+  if (payment * months <= principal) return 0;
+  let low = 0;
+  let high = 60;
+  for (let i = 0; i < 50; i += 1) {
+    const mid = (low + high) / 2;
+    if (emi(principal, mid, months) > payment) high = mid;
+    else low = mid;
+  }
+  return ratio(low);
+}
+
 // Balance left after `paid` regular payments of `payment`
 export function balanceAfter(
   principal: number,

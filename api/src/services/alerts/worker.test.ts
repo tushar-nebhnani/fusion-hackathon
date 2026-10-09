@@ -503,3 +503,127 @@ describe("alert reader", () => {
     expect((await reader.list({ limit: 1 })).alerts).toHaveLength(1);
   });
 });
+
+describe("businesses from the input service", () => {
+  const ID = "6f1c2a1e-0000-4000-8000-000000000001";
+  const event: AlertEvent = { ...EVENT, businessId: ID };
+
+  async function inputBusiness(
+    consent: { alerts: boolean },
+    owner: { email?: string; language?: string } = {
+      email: "lakshmi@example.com",
+    },
+    channels = ["email"],
+  ) {
+    await prisma.business.create({
+      data: {
+        id: ID,
+        name: "Lakshmi Tailors",
+        sector: "textiles",
+        profile: {},
+        operations: {},
+        contacts: {
+          owner: { name: "Lakshmi", phone: "+919876543210", ...owner },
+          alerts: { channels },
+        },
+        consent: { data_processing: true, share_with_bank: true, ...consent },
+        locations: {
+          create: {
+            isPrimary: true,
+            position: 0,
+            lat: 13.08,
+            lon: 80.27,
+            address: "T Nagar",
+            pincode: "600017",
+          },
+        },
+      },
+    });
+  }
+
+  beforeEach(async () => {
+    await prisma.$executeRaw`TRUNCATE TABLE businesses RESTART IDENTITY CASCADE`;
+  });
+
+  it("emails an owner who agreed to email alerts, in their language", async () => {
+    await inputBusiness(
+      { alerts: true },
+      { email: "lakshmi@example.com", language: "hi" },
+    );
+    const { email, enqueue, tick } = setup();
+    await enqueue(event);
+
+    await tick();
+
+    expect(email.sent.map((message) => message.to)).toEqual([
+      "lakshmi@example.com",
+      "risk@example.com",
+    ]);
+    expect(email.sent[1]?.subject).toContain("Lakshmi Tailors, Chennai");
+    expect(await row("owner")).toMatchObject({ status: "sent" });
+  });
+
+  it("does not email an owner who refused alerts; the bank is still told", async () => {
+    await inputBusiness({ alerts: false });
+    const { email, enqueue, tick } = setup();
+    await enqueue(event);
+
+    await tick();
+
+    expect(email.sent.map((message) => message.to)).toEqual([
+      "risk@example.com",
+    ]);
+    expect(await row("owner")).toMatchObject({
+      status: "suppressed",
+      lastError: "No contact with consent and an email address",
+    });
+  });
+
+  it("does not email an owner who chose SMS only", async () => {
+    await inputBusiness({ alerts: true }, { email: "lakshmi@example.com" }, [
+      "sms",
+    ]);
+    const { email, enqueue, tick } = setup();
+    await enqueue(event);
+
+    await tick();
+
+    expect(email.sent.map((message) => message.to)).toEqual([
+      "risk@example.com",
+    ]);
+  });
+
+  it("lets an opt-out in alert_contacts win over the input service's consent", async () => {
+    await inputBusiness({ alerts: true });
+    await prisma.alertContact.create({
+      data: {
+        businessId: ID,
+        audience: "owner",
+        email: "lakshmi@example.com",
+        consentAt: START,
+        optedOutAt: START,
+      },
+    });
+    const { email, enqueue, tick } = setup();
+    await enqueue(event);
+
+    await tick();
+
+    expect(email.sent.map((message) => message.to)).toEqual([
+      "risk@example.com",
+    ]);
+  });
+
+  it("names the business in the dashboard list", async () => {
+    await inputBusiness({ alerts: true });
+    const { enqueue } = setup();
+    await enqueue(event);
+
+    const { alerts } = await createAlertReader(prisma).list({ limit: 10 });
+
+    expect(alerts.map((alert) => alert.business_name)).toEqual([
+      "Lakshmi Tailors",
+      "Lakshmi Tailors",
+    ]);
+  });
+});

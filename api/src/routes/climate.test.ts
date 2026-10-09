@@ -3,7 +3,8 @@ import { createApp } from "../app.js";
 import { fakeAuth, signedIn } from "../services/auth/testing/fake-auth.js";
 import { connectDb, disconnectDb, prisma } from "../config/db.js";
 import type { ClimateAgent } from "../services/climate/agent.js";
-import { createClimateService } from "../services/climate/profile.service.js";
+import { createClimateService, historyStartFor } from "../services/climate/profile.service.js";
+import { CLIMATE } from "../config/climate.js";
 import { climateProfileSchema, type ClimateProfile } from "../services/climate/schema.js";
 import { fakeAgent } from "../services/climate/testing/fake-agent.js";
 import { fakeOpenMeteo, type FakeClimate } from "../services/climate/testing/fake-open-meteo.js";
@@ -1053,5 +1054,27 @@ describe("forceFreshForecast and getProfileWithForecast", () => {
       [null, "miss"],
       ["climate-monitor", "partial_hit"],
     ]);
+  });
+});
+
+describe("warm-up history", () => {
+  it("screens a new cell on the requested years of history only", async () => {
+    const { om, service } = setup();
+    const starts: string[] = [];
+    const archive = om.archive.bind(om);
+    const floodHistory = om.floodHistory.bind(om);
+    om.archive = (point, start, end) => (starts.push(start), archive(point, start, end));
+    om.floodHistory = (point, start, end) => (starts.push(start), floodHistory(point, start, end));
+
+    const profile = await service.getProfile(GUWAHATI, null, { historyYears: 15 });
+
+    expect(starts).toEqual(["2011-01-01", "2011-01-01"]);
+    expect(profile.hazards.length).toBeGreaterThan(0);
+  });
+
+  it("never reaches further back than the configured history start", () => {
+    expect(historyStartFor("2026-10-09", 15)).toBe("2011-01-01");
+    expect(historyStartFor("2026-10-09", 60)).toBe(CLIMATE.historyStart);
+    expect(historyStartFor("2026-10-09")).toBe(CLIMATE.historyStart);
   });
 });

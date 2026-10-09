@@ -14,6 +14,7 @@ describe("loadMonitorConfig", () => {
       tickMinutes: 15,
       concurrency: 5,
       agentEnabled: false,
+      locationSource: "input",
       locationsFile: "data/monitor-locations.json",
       alertSink: "outbox",
       intervalHours: { NORMAL: 6, WATCH: 3, WARNING: 1, SEVERE: 1 },
@@ -28,6 +29,7 @@ describe("loadMonitorConfig", () => {
       MONITOR_TICK_MINUTES: "5",
       MONITOR_CONCURRENCY: "2",
       MONITOR_AGENT_ENABLED: "true",
+      MONITOR_LOCATION_SOURCE: "json",
       MONITOR_LOCATIONS_FILE: "data/other.json",
       MONITOR_ALERT_SINK: "console",
     });
@@ -37,6 +39,7 @@ describe("loadMonitorConfig", () => {
       tickMinutes: 5,
       concurrency: 2,
       agentEnabled: true,
+      locationSource: "json",
       locationsFile: "data/other.json",
       alertSink: "console",
     });

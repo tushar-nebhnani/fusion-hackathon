@@ -30,7 +30,7 @@ async function main(): Promise<void> {
 
   logger.info(
     `${monitor.instanceId}: tick every ${config.tickMinutes} min, up to ${config.concurrency} cells at once, ` +
-      `locations from ${config.locationsFile}, alerts to ${config.alertSink}, ` +
+      `locations from ${config.locationSource === "json" ? config.locationsFile : "live loans"}, alerts to ${config.alertSink}, ` +
       `agent ${agentVersion ?? "off"}` +
       (config.enabled ? "" : " (MONITOR_ENABLED=false, idling)"),
   );
