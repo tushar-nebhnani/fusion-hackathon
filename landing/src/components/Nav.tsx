@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { CONSOLE_URL } from "../config";
 import { NAV_LINKS } from "../content";
 import { useActiveSection } from "../hooks/useActiveSection";
+import { follow } from "../shared/router";
 import { Logo } from "./Logo";
 
 const IDS = NAV_LINKS.map((link) => link.id);
@@ -44,7 +44,7 @@ export function Nav() {
         </nav>
 
         <div className="nav-end">
-          <a className="btn sm" href={CONSOLE_URL}>Open the console</a>
+          <a className="btn sm" href="/analysis" onClick={follow}>Check your business</a>
           <button className="menu-btn" type="button" aria-expanded={open} aria-controls="nav-menu" onClick={() => setOpen((v) => !v)}>
             <span className="sr">{open ? "Close menu" : "Open menu"}</span>
             <i aria-hidden="true" /><i aria-hidden="true" />
@@ -59,7 +59,8 @@ export function Nav() {
               <span>0{i + 1}</span>{link.label}
             </a>
           ))}
-          <a className="btn" href={CONSOLE_URL}>Open the console →</a>
+          <a className="btn ghost" href="/playground" onClick={follow}>Watch it work</a>
+          <a className="btn" href="/analysis" onClick={follow}>Check your business →</a>
         </div>
       </div>
     </header>

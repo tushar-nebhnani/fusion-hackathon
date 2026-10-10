@@ -1,4 +1,4 @@
-import { CONSOLE_URL } from "../config";
+import { follow } from "../shared/router";
 import { FACTS } from "../content";
 import { Film } from "./Film";
 import { Reveal } from "./Reveal";
@@ -17,8 +17,8 @@ export function Hero() {
           the weather hits.
         </p>
         <div className="cta">
-          <a className="btn" href={CONSOLE_URL}>Open the console →</a>
-          <a className="btn ghost" href="#how">See how it works</a>
+          <a className="btn" href="/playground" onClick={follow}>Watch it work →</a>
+          <a className="btn ghost" href="/analysis" onClick={follow}>Check your business</a>
         </div>
         <div className="facts">{FACTS.map((fact) => <span key={fact}>{fact}</span>)}</div>
         <Reveal className="film-wrap"><Film /></Reveal>

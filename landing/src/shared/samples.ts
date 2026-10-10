@@ -1,4 +1,8 @@
-"use strict";
+// @ts-nocheck -- copied from web/sample-data.js, which is plain JavaScript.
+// Keep the two in step: change the console's file, then copy it here again.
+
+// [pattern, answer or (body, path) => answer, note]
+export type Sample = [RegExp, unknown, string?];
 
 // Synthetic answers for the console's sample mode, loaded before app.js.
 //
@@ -11,7 +15,7 @@
 // SAMPLES is a list of [pattern, answer, note]. An answer is the body, or a
 // function of (body, path) that returns it; refuse() makes it an error.
 
-const { SAMPLES, HAND } = (() => {
+export const { SAMPLES, HAND } = ((): { SAMPLES: Sample[]; HAND: string } => {
   const HAND = "Synthetic: made up for this walk-through from the documented response shape, not computed by the API. Most values typed into the form do not change it.";
 
   const BIZ = "demo-sri-lakshmi-bakery", LOAN = "demo-loan-0001", NAME = "Sri Lakshmi Bakery";

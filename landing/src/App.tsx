@@ -9,8 +9,22 @@ import { Issues } from "./components/Issues";
 import { Nav } from "./components/Nav";
 import { Safeguards } from "./components/Safeguards";
 import { Status } from "./components/Status";
+import { SignInDialog } from "./components/app/SignIn";
+import { Analysis } from "./pages/Analysis";
+import { Playground } from "./pages/Playground";
+import { usePage } from "./shared/router";
 
+// The landing page, plus the two pages that use the API. The path picks one.
 export function App() {
+  const page = usePage();
+  if (page === "playground" || page === "analysis") {
+    return (
+      <div className="k-app">
+        {page === "playground" ? <Playground /> : <Analysis />}
+        <SignInDialog />
+      </div>
+    );
+  }
   return (
     <>
       <Nav />

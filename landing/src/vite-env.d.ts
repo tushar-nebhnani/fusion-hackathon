@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  readonly VITE_CONSOLE_URL?: string;
+  // Where the API runs; see .env.example
+  readonly VITE_API_URL?: string;
 }
