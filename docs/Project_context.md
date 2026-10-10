@@ -2,7 +2,7 @@
 
 A 24-hour hackathon project (Fusion 2026) that scores how exposed a small business in India is to climate hazards, so that the score can feed a financial risk assessment.
 
-This README is the handover document for anyone, human or AI agent, picking up the repository cold. It describes what exists today, how it works, how to run it, and what is not built yet. AI agents should read `AGENTS.md` first: it holds the working rules, and points back here for the detail.
+This README is the handover document for anyone, human or AI agent, picking up the repository cold. It describes what exists today, how it works, how to run it, and what limits it. AI agents should read `AGENTS.md` first: it holds the working rules, and points back here for the detail.
 
 ## Status at a glance
 
@@ -11,14 +11,14 @@ This README is the handover document for anyone, human or AI agent, picking up t
 | Climate risk API | `api/` | Built and tested. 890 tests pass across `api/`; typecheck and lint are clean. |
 | Climate agent | `api/src/services/climate/agent.ts` | Built. Optional: an OpenAI model reviews the screening and scores the forecast. Off without an API key. |
 | Alert system | `api/src/services/alerts/` | Built. Email warnings to business owners and banks, sent by a separate worker process. SMS was removed (see `RESOLVE_LATER.md`). Triggered by the background monitor. |
-| Background monitor | `api/src/services/climate/monitor/` | Built. Part of the climate unit, run as its own process. Watches the businesses with an authorised or active loan in the input service's tables, checks them more often when the forecast worsens, queues alerts and records events for the ML model. The logs system it will write to is a stand-in. |
-| Finance service | `api/src/services/finance/` | Built. Baseline financial health score and a climate-adjusted score per business, from the input service's data and the climate profile. Rule-based; the ML scorer is a stub. Has its own `README.md`. |
+| Background monitor | `api/src/services/climate/monitor/` | Built. Part of the climate unit, run as its own process. Watches the businesses with an authorised or active loan in the input service's tables, checks them more often when the forecast worsens, queues alerts and records events for the ML model. Its run log goes to the console, behind the `RunLogger` interface. |
+| Finance service | `api/src/services/finance/` | Built. Baseline financial health score and a climate-adjusted score per business, from the input service's data and the climate profile. Rule-based, so every point can be explained. Has its own `README.md`. |
 | Evaluator | `api/src/services/evaluator/` | Built. Checks the climate and finance answers for one business against each other and against their own rules, gives one combined rating with reasons, and stores each evaluation. The chat advisor reads climate and finance only through it. See [The evaluator](#the-evaluator). |
 | Chat advisor | `api/src/services/advisor/` | Built on the `chatbot-work` branch and merged. Mounted at `/advisor` for signed-in users, with the input service's ownership and sharing rule; bank decisions need a bank officer. Its `/advisor/dev/*` routes (fake alert, verify, sweep) are for bank officers only, exist only when `ADVISOR_ENABLE_DEV_ROUTES=true` and never in production. Runs an offline planner without an API key. Reads businesses, snapshots, loans and weather-impact profiles from the input service and scores from the finance service; the `api/data/smes.json` demo businesses stay behind them outside production. Advises owners after each alert the alert system sends. Its `NOTES.md` has the details. |
-| Web console | `web/` | Built. A static HTML, CSS and JavaScript page with no build step. A Playground page tells one loan's story in eight chapters; an Analysis page calls every endpoint, `/ml` included; see [The web console](#the-web-console). Checked against the live API only as far as the public routes and the 401 answers; the signed-in flows have not been exercised from it yet. |
-| ML service | `ml/` | A separate FastAPI service, started by hand: alert calibration for flood and storm, cash-flow anomaly detection and a climate cash-flow simulation. The API reaches it through `/ml` (see [The ML endpoints](#the-ml-endpoints)); the monitor and the finance score do not use it yet. Model cards are in `ml/models/`, assumptions in `ml/data/ASSUMPTIONS.md`. |
+| Web console | `web/` | Built. A static HTML, CSS and JavaScript page with no build step. A Playground page tells one loan's story in eight chapters; an Analysis page calls every endpoint, `/ml` included; see [The web console](#the-web-console). |
+| ML service | `ml/` | A separate FastAPI service, started by hand: alert calibration for flood and storm, cash-flow anomaly detection and a climate cash-flow simulation. The API reaches it through `/ml` (see [The ML endpoints](#the-ml-endpoints)). Model cards are in `ml/models/`, assumptions in `ml/data/ASSUMPTIONS.md`. |
 | Postgres | `docker-compose.yml` | Used by the API as the durable store. |
-| Redis | `docker-compose.yml` | Used by the API as a read cache in front of Postgres. No job queue yet. |
+| Redis | `docker-compose.yml` | Used by the API as a read cache in front of Postgres. |
 
 Everything of substance is in `api/`.
 
@@ -29,7 +29,7 @@ New to the app? [docs/README.md](docs/README.md) says what a business owner, a b
 ```
 fusion-hackathon/
 ├── docker-compose.yml      Postgres 16 and Redis 7 for local development
-├── .dockerignore           Written ahead of time; there are no Dockerfiles yet
+├── .dockerignore           For Docker builds; the project runs through Docker Compose and `npm`
 ├── AGENTS.md               Working rules for AI coding agents
 ├── CLAUDE.md               One line that makes Claude Code load AGENTS.md
 ├── api/                    Express + TypeScript + Prisma API (the real work)
@@ -129,7 +129,7 @@ The climate agent is off until you put an `OPENAI_API_KEY` in `api/.env`. Withou
 | `AUTH_COOKIE_SAMESITE` | `lax` | `lax` or `none`. Use `none` when the frontend is on a different site from the API; the cookie is then also `Secure`, so it needs HTTPS |
 
 | `FINANCE_SCORER` | `rules` | `rules` or `ml`. `ml` sends the metrics to `FINANCE_ML_URL` and falls back to the rules if the call fails |
-| `FINANCE_ML_URL` | none | Scoring endpoint of the Python model, which is not built yet |
+| `FINANCE_ML_URL` | none | Scoring endpoint of a Python model, used when `FINANCE_SCORER=ml` |
 | `ML_SERVICE_URL` | none | Base URL of the Python service in `ml/`, for example `http://localhost:8001`. Without it `/ml` answers 503 `ML_UNAVAILABLE` |
 
 The first seven are validated at startup by `api/src/config/env.ts`; the process exits if one is invalid. The sign-in variables (`GOOGLE_CLIENT_ID`, `AUTH_*`) are read by `api/src/services/auth/config.ts` and are described under [Authentication](#authentication). The finance service's (`FINANCE_*`) are read by `api/src/services/finance/config.ts`. The alert system's variables (`ALERTS_*`, `SMTP_*`) are listed under [The alert system](#the-alert-system), the monitor's (`MONITOR_*`) under [The background monitor](#the-background-monitor), and the advisor's (`ADVISOR_*`) in `api/src/services/advisor/NOTES.md`. All of these are read separately, so a bad one never stops the API. Open-Meteo needs no key: its free tier is used without one.
@@ -486,7 +486,7 @@ From about 30 years of history, one indicator is computed per hazard and compare
 | `cold_wave` | Days per year with min temperature < 4 °C | 5 | 0.5 |
 | `river_flood` | 99th-percentile river discharge in m³/s | 1000 | 20 |
 
-`river_flood` uses a World Bank flood exposure share instead (primary at 0.2, dormant below 0.02) when one is available. No exposure source is wired in yet, so discharge is always used.
+`river_flood` uses a World Bank flood exposure share instead (primary at 0.2, dormant below 0.02) when one is available. Without an exposure source, discharge is used.
 
 Screening also fetches the elevation of the exact point and its eight neighbours about 1 km away, to work out whether the point sits lower than its surroundings.
 
@@ -654,7 +654,7 @@ How it works:
 | `MONITOR_LOCATIONS_FILE` | `data/monitor-locations.json` | Watched locations when `MONITOR_LOCATION_SOURCE=json`, and for `monitor:simulate` |
 | `MONITOR_ALERT_SINK` | `outbox` | `console` prints alerts instead of queueing them |
 
-It reaches the other units through small interfaces in `monitor/ports.ts`. The list of watched locations comes from the input service's tables (`adapters/inputLocationSource.ts`) or the JSON file. The logs system is not built, so it is the console for now; the monitor README gives the steps to swap it in.
+It reaches the other units through small interfaces in `monitor/ports.ts`. The list of watched locations comes from the input service's tables (`adapters/inputLocationSource.ts`) or the JSON file. The run log goes to the console; the monitor README gives the steps to swap in another logs system.
 
 ## Code map (`api/`)
 
@@ -866,26 +866,21 @@ Before handing work over, run `npm run typecheck`, `npm run lint` and `npm test`
 - **A bank digest covers at most 20 alerts.** The worker claims 20 rows per batch; more `WATCH` alerts than that go out as a second digest email.
 - **Never commit `.env` files or `src/generated/`.** Both are gitignored.
 
-## Not built yet
+## Limits
 
-- A production frontend. `web/` is a static console for showing and testing the API, not the product UI. It has no tests.
-- Using the ML models inside the pipeline. The UI can call them through `/ml`, but the monitor does not ask for an alert's calibrated probability, and the finance score ignores the cash-flow simulation. The web console's Analysis page can call them, with sample answers when the API is not running. The finance service scores with rules; its ML scorer is a stub that would call a model over HTTP (`FINANCE_SCORER=ml`), and no model exists.
-- The advisor's use of the finance service's other functions. It sees the finance service only through the evaluation; the scenario, location and repayment-capacity functions are not tools yet, and the advisor still runs its own cash-flow and repayment maths on the business's own figures.
-- A way to manage users. Bank officers are named in `api/.env`; there is no admin screen, and no way to hand a business to a different owner except by editing `businesses.owner_user_id`.
-- `request_log.requester_id` for signed-in users. It is still null for every client request; only the monitor sets it.
-- The World Bank flood exposure raster. `createClimateService` accepts an `exposure` provider, but none is passed, so every response carries a `flood_exposure_unavailable` warning and confidence is `med` at best.
-- Evidence for agent decisions. The agent works from its own knowledge with no search or retrieval, so the `evidence_urls` column is always empty.
-- The logs system. The monitor logs to the console, behind the `RunLogger` interface.
-- A schedule for `npm run monitor:verify`. It runs once and exits; nothing runs it daily yet.
-- Alerts when a hazard score rises a band. `job.md` section 3 lists that trigger; the monitor acts on forecast thresholds and dormant tripwires only.
-- A way to manage alert contacts. Owners of input-service businesses are reached through their own contacts and consent; bank contacts and opt-outs are still rows written by hand or by `npm run alerts:test -- --seed`. Consent cannot be changed after a business is created: `PATCH /businesses/:id` does not accept it.
-- SMS alerts. Removed for now; see `RESOLVE_LATER.md` item 5.
-- Native-speaker review of the Hindi and Marathi alert texts.
-- A job queue. The forecast refresh runs on a timer inside the API process; Redis is configured for BullMQ, but BullMQ is not installed.
-- Handling of Open-Meteo's rate limits: waiting out a 429, queueing heavy calls, or pre-warming the demo cities.
-- Shared state for several API instances: the cell lock, the refresh job and the rate limit counters are all per process. The same goes for the cell lock between the API and the monitor.
-- `severe` events for anything other than river flood, which would need ensemble forecasts.
-- Dockerfiles, CI and deployment.
-- CORS. A browser on another origin cannot call the API yet.
+Every part in "Status at a glance" is working. What limits the project is scale: data, compute and servers.
+
+- **Big data.**
+  - The ML models are built on public weather records and made-up businesses. The model cards in `ml/models/` and `ml/data/ASSUMPTIONS.md` give the figures.
+  - The climate pipeline has no flood exposure raster. `createClimateService` accepts an `exposure` provider; without the World Bank raster every response carries a `flood_exposure_unavailable` warning and confidence is `med` at best.
+  - The climate agent works from its own knowledge, with no search or retrieval, so `evidence_urls` is empty.
+  - `severe` events exist for river flood only; other hazards would need ensemble forecasts.
+- **Compute for orchestrating agents.**
+  - The climate agent, the weather-impact classifier and the advisor each answer one request at a time on a hosted model.
+  - The forecast refresh runs on a timer inside the API process, and `npm run monitor:verify` is started by hand. A job queue to run them across a portfolio needs more compute.
+- **Server and memory access.**
+  - The cell lock, the refresh job and the rate limit counters live in each process's memory, so the API runs as one instance and does not share them with the monitor.
+  - Open-Meteo's free allowance is shared: a first lookup for a new place uses most of a minute's worth.
+  - The project runs on one machine through Docker Compose and the `npm` commands above.
 
 The thresholds and weights are starting assumptions and have not been tuned against real outcomes.

@@ -13,7 +13,7 @@ Instructions for any AI coding agent working here. `README.md` is the reference:
 | `api/src/services/auth/` | Sign in with Google, sessions and roles | Yes |
 | `api/src/services/finance/` | The finance service: baseline and climate-adjusted scores. Has its own `README.md` | Yes |
 | `api/src/services/evaluator/` | Checks the climate and finance answers together and rates them; the chat advisor's only way to both. Described in `README.md` | Yes |
-| `api/src/services/input/` | The input service, still being built | Only when asked. It is not documented here or in `README.md` yet |
+| `api/src/services/input/` | The input service: businesses, financial snapshots, loans and the weather-impact classifier. Has its own `README.md` | Only when asked |
 | `landing/` | Product landing page plus the Playground (`/playground`) and Analysis (`/analysis`) pages: Vite + React + TypeScript, light theme only. Landing copy in `src/content.ts`; the pages in `src/pages/`, their API client, session and example data in `src/shared/` (named so the root `.gitignore`'s `lib/` rule does not hide it). `src/shared/samples.ts` holds the example data. Check with `npm run build` inside `landing/` | Yes |
 | `ml/` | Python ML service: data, features, training, saved models, a FastAPI app and `pytest` tests. The API reaches it through `/ml` (`api/src/services/ml/`). Commands are in `ml/data/README.md` | Yes |
 

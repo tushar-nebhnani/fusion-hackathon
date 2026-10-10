@@ -21,7 +21,7 @@ Tushar designed and built the API and the services behind it.
 - **Sign-in and roles.** Sign in with Google, sessions, the business and bank-officer roles, and auth-protected routes.
 - **Finance service.** Baseline and climate-adjusted scores with an uplift cap.
 - **Evaluator service.** Checks the climate and finance answers together and rates them for the chat advisor.
-- **Input service.** Still being built.
+- **Input service.** Businesses, financial snapshots, loans, consent and the weather-impact classifier.
 - **ML endpoints.** Storm calibration, cash-flow simulation, models 5 and 6, and the `/ml` routes the API calls.
 - **Shared limits.** Rate limiting, `Idempotency-Key` support, app logs, and the per-user answer limit and guardrails on the advisor.
 - **Frontends.** The React landing page and the API wiring for the web console demo.

@@ -189,6 +189,7 @@ section { padding: 120px 0; border-top: 1px solid var(--rule); }
 .box li { padding-left: 20px; position: relative; }
 .box li::before { content: "→"; position: absolute; left: 0; color: var(--acc-t); }
 .tbl { overflow-x: auto; }
+.limits { margin-top: 24px; }
 .status { width: 100%; min-width: 620px; border-collapse: collapse; border: 1px solid var(--rule); background: var(--card); font-size: 16px; }
 .status th, .status td { text-align: left; padding: 14px 18px; border-bottom: 1px solid var(--rule); vertical-align: top; }
 .status th { font: 600 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); background: var(--bg2); }

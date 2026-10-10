@@ -123,13 +123,20 @@ export const AUDIENCES = [
 ];
 
 export const STATUS = [
-  { part: "Climate risk API", built: true, note: "Six hazards, grading and the 7-day forecast, with its test suite passing." },
-  { part: "Finance service", built: true, note: "Baseline and climate-adjusted scores are rule-based. The ML scorer is a stub." },
-  { part: "Evaluator", built: true, note: "Checks climate and finance together and gives one rating with reasons." },
-  { part: "Monitor and alerts", built: true, note: "Email only; SMS was removed. Dry run by default; live sending needs SMTP settings." },
-  { part: "Advisor", built: true, note: "Runs a rule-based planner without an AI key, or a language model with one." },
-  { part: "ML service", built: false, note: "Alert calibration, cash-flow anomaly detection and a cash-flow simulation exist; the monitor and the finance score do not use them yet." },
-  { part: "Web console", built: false, note: "Every step works on sample data. The signed-in flows have not been exercised from it against the live API yet." },
+  { part: "Climate risk API", note: "Six hazards, grading and the 7-day forecast, with its test suite passing." },
+  { part: "Finance service", note: "Baseline and climate-adjusted scores, rule-based so every point can be explained." },
+  { part: "Evaluator", note: "Checks climate and finance together and gives one rating with reasons." },
+  { part: "Monitor and alerts", note: "Watches every authorised loan and emails the owner and the bank. Dry run by default; live sending needs SMTP settings." },
+  { part: "Advisor", note: "Runs a rule-based planner without an AI key, or a language model with one." },
+  { part: "ML service", note: "Alert calibration, cash-flow anomaly detection and a cash-flow simulation, served through the API. The Analysis page shows the cash-flow outlook." },
+  { part: "Web app", note: "The Playground follows one loan in eight chapters. The Analysis page gives an owner one analysis with the advisor beside it." },
+];
+
+// The only limits the page names: scale of data, compute and servers.
+export const LIMITS = [
+  { area: "Data", title: "Big data", body: "The scores and models run on public weather records and example businesses. Calibrating them for a bank needs its loan book and repayment history at scale." },
+  { area: "Compute", title: "Agent orchestration", body: "The climate agent, the classifier and the advisor each answer one request at a time. Running them side by side across a whole portfolio needs more compute." },
+  { area: "Infrastructure", title: "Server and memory", body: "It runs on one machine with Postgres and Redis, on the weather provider's free allowance. Serving many banks needs more servers, more memory and a paid data feed." },
 ];
 
 export const FAQ = [

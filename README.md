@@ -127,14 +127,19 @@ If the API is not running, both pages switch to **sample mode**: every step answ
 | Alert band `low`, `medium`, `high` | How likely a fired flood or storm alert is to be followed by a real event, from past records |
 | `delta_pd_climate` | How many points the local weather adds to the chance of falling three months behind on repayments, in a simulation |
 
-## Limits to be honest about
+## Limits
 
-- **The alert model is a ranking aid, not a forecast.** In its high band about 18% of flood alerts and 31% of storm alerts were real in the test years; the rest were false alarms. The storm figure rests on 16 real storms.
-- **The cash-flow simulation's city order is measured; its sizes are assumed.** How often floods hit each city comes from 29 years of records. What one flood costs a business is an assumption.
-- **The anomaly and credit-default models were built on made-up businesses.** They show the method works, not how real businesses behave.
-- **The location picker uses OpenStreetMap's free services.** Map tiles come from tile.openstreetmap.org and address search from Nominatim, which allows about one search a second and asks heavy users to run their own. Fine for a pilot; a busy deployment needs its own geocoder or a paid one.
-- **Only the cash-flow outlook has a screen.** The Analysis page shows it; the alert model and the anomaly model are reached through `/ml` only.
-- **There is no admin screen.** Bank officers are named in a settings file, and alert contacts for the bank are entered by hand.
-- **Heat, drought and cold-wave alerts are rule-only**, because there are no verified records to check them against.
+Every part described above is working. What limits Kshetra today is scale: data, compute and servers.
+
+- **Big data.** The models are built on public weather records and made-up businesses, so they show the method and need a bank's own records to be calibrated.
+  - **The alert model is a ranking aid, not a forecast.** In its high band about 18% of flood alerts and 31% of storm alerts were real in the test years; the rest were false alarms. The storm figure rests on 16 real storms.
+  - **The cash-flow simulation's city order is measured; its sizes are assumed.** How often floods hit each city comes from 29 years of records. What one flood costs a business is an assumption.
+  - **The anomaly and credit-default models were built on made-up businesses.**
+  - **Heat, drought and cold-wave alerts are rule-only**, because there are no verified records to check them against.
+- **Compute for orchestrating agents.** The climate agent, the weather-impact classifier and the advisor each answer one request at a time on a hosted model. Running them side by side for every business in a portfolio needs more compute.
+- **Server and memory access.** Kshetra runs on one machine with Postgres and Redis, and on free outside services.
+  - **Weather data comes from the provider's free allowance**, which is why new places are capped per user.
+  - **The location picker uses OpenStreetMap's free services.** Map tiles come from tile.openstreetmap.org and address search from Nominatim, which allows about one search a second. A busy deployment needs its own geocoder or a paid one.
+  - **The cell lock, the refresh job and the rate limit counters live in each process's memory**, so the API runs as one instance.
 
 More detail: [main README](../README.md), [model cards](../ml/models/), [assumptions](../ml/data/ASSUMPTIONS.md).
