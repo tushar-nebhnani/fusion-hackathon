@@ -92,7 +92,35 @@ const MESSAGES: Record<string, string> = {
   ML_UNAVAILABLE: "This outlook isn't available right now. Please try again later.",
 };
 const BY_STATUS: Record<number, string> = { 401: "Please sign in first.", 403: "Only bank officers can do this.", 404: "We couldn't find that.", 429: "Too many tries in a short time. Please wait a minute and try again." };
-const fieldName = (path: string) => nice(path.split(".").filter((p) => !/^\d+$/.test(p)).at(-1) ?? path);
+// The form's own label for a field the API names by its path
+const FIELD_LABELS: Record<string, string> = {
+  "profile.name": "Business name", "profile.description": "What you do", "profile.year_started": "Year started", "profile.employees": "Employees",
+  "profile.sector": "Type of business", "locations.primary": "Shop location", "locations.primary.address": "Shop address", "locations.primary.pincode": "Pincode",
+  "operations.power_outage_hrs_month": "Power cuts a month", "operations.insurance_covers": "Insurance covers", suppliers: "Main supplier",
+  "contacts.owner.name": "Your name", "contacts.owner.phone": "Mobile", "contacts.owner.email": "Email", "contacts.bank_officer.email": "Your bank's email",
+  "consent.data_processing": "Consent", monthly_revenue: "Monthly sales", monthly_opex: "Monthly running costs", existing_emi_total: "Current EMIs",
+  outstanding_debt: "Loans still owed", cash_balance: "Cash and bank balance", payment_delays_12m: "Late payments", as_of: "Date",
+};
+const fieldName = (path: string) => FIELD_LABELS[path] ?? FIELD_LABELS[path.replace(/\.\d+(\.|$)/g, "$1")] ?? nice(path.split(".").filter((p) => !/^\d+$/.test(p)).at(-1) ?? path);
+
+// The API's validation messages are written for developers; say them plainly
+const PLAIN: [RegExp, string][] = [
+  [/^Too small: expected string to have >=(\d+) characters?/, "needs at least $1 characters"],
+  [/^Too big: expected string to have <=(\d+) characters?/, "can have at most $1 characters"],
+  [/^Too small: expected array to have >=(\d+) items?/, "needs at least $1 entries"],
+  [/^Too big: expected array to have <=(\d+) items?/, "can have at most $1 entries"],
+  [/^Too small: expected number to be >=?(-?[\d.]+)/, "must be at least $1"],
+  [/^Too big: expected number to be <=?(-?[\d.]+)/, "must be at most $1"],
+  [/^Invalid input: expected \w+, received undefined/, "is missing"],
+  [/^Invalid input: expected number/, "must be a number"],
+  [/^Invalid option/, "isn't one of the choices"],
+  [/^Invalid (email|string|input)/, "doesn't look right"],
+];
+export function plainProblem(message: unknown): string {
+  const text = fmt(message);
+  for (const [pattern, plain] of PLAIN) if (pattern.test(text)) return text.replace(pattern, plain).replace(/[.;].*$/, "");
+  return text;
+}
 
 export function Problem({ r }: { r: ApiResult }) {
   if (r.notSent) return <Note>This isn't available with example data. Switch to Live at the top to try it.</Note>;
@@ -103,7 +131,7 @@ export function Problem({ r }: { r: ApiResult }) {
   return (
     <Note err>
       {text}
-      {fields.length ? <ul className="k-list">{fields.map(([f, p]) => <li key={f}><b>{fieldName(f)}</b>: {fmt(p)}</li>)}</ul> : null}
+      {fields.length ? <ul className="k-list">{fields.map(([f, p]) => <li key={f}><b>{fieldName(f)}</b> {plainProblem(p)}</li>)}</ul> : null}
     </Note>
   );
 }

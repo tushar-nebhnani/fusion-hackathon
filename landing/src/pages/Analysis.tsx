@@ -82,11 +82,128 @@ const show = async (r: Promise<ApiResult>, view: (d: Json) => ReactNode) => { co
 
 // ── Step 1: your details ─────────────────────────────────────────────────────
 
+// The API's own rules, checked before anything is sent so the owner hears
+// about all of them at once, in plain words: [field name, what is wrong]
+type Bad = [string, string][];
+
+function checkBusiness(f: HTMLFormElement): Bad {
+  const bad: Bad = [];
+  const year = num(f, "year_started"), thisYear = new Date().getFullYear(), about = str(f, "description").length;
+  if (str(f, "name").length < 2) bad.push(["name", "Business name: enter your business's name."]);
+  if (year === undefined || !Number.isInteger(year) || year < 1950 || year > thisYear) bad.push(["year_started", `Year started: enter a year between 1950 and ${thisYear}.`]);
+  if (about < 30) bad.push(["description", `What you do: write a little more, at least 30 characters (you have ${about}).`]);
+  if (about > 500) bad.push(["description", `What you do: keep it under 500 characters (you have ${about}).`]);
+  if (num(f, "lat") === undefined || num(f, "lon") === undefined) bad.push(["lat", "Where you work: search for your shop or click the map to place it."]);
+  if (!str(f, "address")) bad.push(["address", "Shop address: enter your shop's address."]);
+  if (!/^[1-9]\d{5}$/.test(str(f, "pincode"))) bad.push(["pincode", "Pincode: enter the 6-digit pincode."]);
+  return bad;
+}
+
+function checkMoney(f: HTMLFormElement): Bad {
+  const bad: Bad = [];
+  const sales = str(f, "monthly_revenue").split(",");
+  if (sales.some((v) => v.trim() === "" || Number.isNaN(Number(v)) || Number(v) < 0)) bad.push(["sales-0", "Monthly sales: fill in every month shown (0 for a month with no sales)."]);
+  else if (!sales.some((v) => Number(v) > 0)) bad.push(["sales-0", "Monthly sales: at least one month must be above zero."]);
+  if (num(f, "monthly_opex") === undefined) bad.push(["monthly_opex", "Monthly running costs: enter an amount (0 if none)."]);
+  if (num(f, "cash_balance") === undefined) bad.push(["cash_balance", "Cash and bank balance: enter an amount (0 if none)."]);
+  if (!str(f, "owner_name")) bad.push(["owner_name", "Your name: enter your name."]);
+  if (!/^\+91\d{10}$/.test(str(f, "owner_phone").replace(/[\s-]/g, ""))) bad.push(["owner_phone", "Mobile: enter +91 followed by your 10-digit number."]);
+  if (!/^\S+@\S+\.\S+$/.test(str(f, "bank_email"))) bad.push(["bank_email", "Your bank's email: enter your branch's or loan officer's email address."]);
+  if (!ticked(f, "consent_data")) bad.push(["consent_data", "Consent: tick \"I agree to Kshetra using these details\" so we can save them."]);
+  return bad;
+}
+
+const Problems = ({ bad }: { bad: Bad }) => (
+  <Note err>Please fix {bad.length === 1 ? "this" : `these ${bad.length} things`} first:<ul className="k-list">{bad.map(([name, message]) => <li key={name + message}>{message}</li>)}</ul></Note>
+);
+
+// What the insurance covers, picked from a menu. The form reads the two hidden
+// inputs: has_insurance ("yes" or "") and insurance_covers (comma separated).
+const COVERS: [string, string][] = [["flood", "Flood"], ["fire", "Fire"], ["storm", "Storm"], ["crop", "Crop"], ["stock", "Stock"]];
+
+function InsuranceMenu() {
+  const [covers, setCovers] = useState<string[]>([]);
+  const [other, setOther] = useState(false);
+  const menu = useRef<HTMLDetailsElement>(null);
+  const insured = covers.length > 0 || other;
+  const picked = [...COVERS.filter(([k]) => covers.includes(k)).map(([, text]) => text), ...(other ? ["Other cover"] : [])];
+
+  // Like any dropdown, it closes on a click elsewhere or Escape
+  useEffect(() => {
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !menu.current?.contains(e.target as Node)) menu.current?.removeAttribute("open");
+    };
+    document.addEventListener("click", close);
+    document.addEventListener("keydown", close);
+    return () => { document.removeEventListener("click", close); document.removeEventListener("keydown", close); };
+  }, []);
+
+  const toggle = (key: string) => setCovers((c) => (c.includes(key) ? c.filter((k) => k !== key) : [...c, key]));
+  return (
+    <div className="k-field">
+      <span>Insurance</span>
+      <details className="k-dropdown" ref={menu}>
+        <summary>{insured ? picked.join(", ") : "No insurance"}</summary>
+        <div className="k-menu">
+          <label className="k-check"><input type="radio" checked={!insured} onChange={() => { setCovers([]); setOther(false); }} />No insurance</label>
+          {COVERS.map(([key, text]) => <label className="k-check" key={key}><input type="checkbox" checked={covers.includes(key)} onChange={() => toggle(key)} />{text}</label>)}
+          <label className="k-check"><input type="checkbox" checked={other} onChange={() => setOther((v) => !v)} />Other cover</label>
+        </div>
+      </details>
+      <input type="hidden" name="has_insurance" value={insured ? "yes" : ""} />
+      <input type="hidden" name="insurance_covers" value={covers.join(",")} />
+    </div>
+  );
+}
+
+// Monthly sales, one box per month, oldest first. The newest box is the last
+// month that has ended, so the figures are for whole months. The form reads
+// two hidden inputs: monthly_revenue (comma separated) and as_of.
+const MIN_MONTHS = 6, MAX_MONTHS = 12;
+
+function lastMonths(count: number): { label: string; asOf: string }[] {
+  const [year, month] = today().split("-").map(Number) as [number, number];
+  return Array.from({ length: count }, (_, i) => {
+    // Day 0 of a month is the last day of the month before it
+    const end = new Date(Date.UTC(year, month - 1 - (count - 1 - i), 0));
+    return { label: end.toLocaleDateString("en-IN", { month: "short", year: "numeric", timeZone: "UTC" }), asOf: end.toISOString().slice(0, 10) };
+  });
+}
+
+function MonthlySales() {
+  // Newest last; an earlier month is added at the front
+  const [values, setValues] = useState<string[]>(Array(MIN_MONTHS).fill(""));
+  const months = lastMonths(values.length);
+  const set = (i: number, v: string) => setValues((all) => all.map((x, j) => (j === i ? v : x)));
+  return (
+    <div className="k-field wide">
+      <span>Monthly sales<em>₹ for each month, {MIN_MONTHS} to {MAX_MONTHS} months</em></span>
+      <div className="k-months">
+        {months.map((m, i) => (
+          <label key={m.asOf}><small>{m.label}</small><input id={`sales-${i}`} name={`sales-${i}`} type="number" min="0" step="any" inputMode="numeric" placeholder="₹" value={values[i]} onChange={(e) => set(i, e.target.value)} /></label>
+        ))}
+      </div>
+      <div className="k-actions k-months-actions">
+        <button className="btn sm ghost" type="button" disabled={values.length >= MAX_MONTHS} onClick={() => setValues((all) => ["", ...all])}>Add an earlier month</button>
+        <button className="btn sm ghost" type="button" disabled={values.length <= MIN_MONTHS} onClick={() => setValues((all) => all.slice(1))}>Remove the earliest</button>
+        <button className="btn sm ghost" type="button" disabled={!values.some(Boolean)} title="Copies the first amount you entered into the empty months"
+          onClick={() => setValues((all) => { const first = all.find(Boolean) ?? ""; return all.map((v) => v || first); })}>Fill the empty months</button>
+      </div>
+      <input type="hidden" name="monthly_revenue" value={values.join(",")} />
+      <input type="hidden" name="as_of" value={months.at(-1)?.asOf ?? today()} />
+    </div>
+  );
+}
+
+// Two pages: the business, then its money and contact. Both stay in the form,
+// so going back loses nothing and one submit sends everything.
 function DetailsForm({ onSaved }: { onSaved: (id: string) => void }) {
+  const form = useRef<HTMLFormElement>(null);
   const address = useRef<HTMLInputElement | null>(null);
   const pincode = useRef<HTMLInputElement | null>(null);
   // What the owner typed is theirs; only what the map filled in may be replaced
   const typed = useRef({ address: false, pincode: false });
+  const [page, setPage] = useState<1 | 2>(1);
   const [out, setOut] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
 
@@ -95,22 +212,39 @@ function DetailsForm({ onSaved }: { onSaved: (id: string) => void }) {
     if (pincode.current && pin && !typed.current.pincode) pincode.current.value = pin;
   }, []);
 
+  const go = (to: 1 | 2) => { setPage(to); setOut(null); form.current?.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  const refuse = (f: HTMLFormElement, bad: Bad) => { setOut(<Problems bad={bad} />); (f.elements.namedItem(bad[0]![0]) as HTMLElement | null)?.focus(); };
+
+  function next() {
+    const f = form.current;
+    if (!f) return;
+    const bad = checkBusiness(f);
+    if (bad.length) refuse(f, bad);
+    else go(2);
+  }
+
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = e.currentTarget;
+    // Enter on the first page moves on; it does not send half a form
+    if (page === 1) { next(); return; }
+    const first = checkBusiness(f);
+    if (first.length) { setPage(1); refuse(f, first); return; }
+    const bad = checkMoney(f);
+    if (bad.length) { refuse(f, bad); return; }
     setBusy(true);
     setOut(<p className="muted">Saving your details…</p>);
     try {
       const lat = num(f, "lat"), lon = num(f, "lon");
-      const covers = ticked(f, "has_insurance") ? str(f, "insurance_covers").split(/[,\s]+/).filter(Boolean).map((c) => c.toLowerCase()) : [];
+      const insured = str(f, "has_insurance") === "yes", covers = str(f, "insurance_covers").split(",").filter(Boolean);
       const created = await api("POST", "/businesses", {
         profile: { name: str(f, "name"), sector: str(f, "sector"), description: str(f, "description"), year_started: num(f, "year_started"), employees: num(f, "employees") },
         locations: { primary: { lat, lon, address: str(f, "address"), pincode: str(f, "pincode"), premises: opt(f, "premises"), floor: opt(f, "floor") }, additional_locations: [] },
-        operations: { power_outage_hrs_month: num(f, "power_outage_hrs_month") ?? 0, has_backup_power: ticked(f, "has_backup_power"), has_insurance: ticked(f, "has_insurance"), insurance_covers: covers.length ? covers : undefined },
+        operations: { power_outage_hrs_month: num(f, "power_outage_hrs_month") ?? 0, has_backup_power: str(f, "has_backup_power") === "yes", has_insurance: insured, insurance_covers: insured && covers.length ? covers : undefined },
         // One supplier, taken to be near the shop: enough for a first analysis
         suppliers: [{ name: str(f, "supplier") || "Main supplier", lat, lon, share: 1 }],
         contacts: {
-          owner: { name: str(f, "owner_name"), phone: str(f, "owner_phone"), email: opt(f, "owner_email") },
+          owner: { name: str(f, "owner_name"), phone: str(f, "owner_phone").replace(/[\s-]/g, ""), email: opt(f, "owner_email") },
           bank_officer: { name: "Loan officer", email: str(f, "bank_email") },
           alerts: { channels: opt(f, "owner_email") ? ["email"] : ["sms"] },
         },
@@ -119,7 +253,7 @@ function DetailsForm({ onSaved }: { onSaved: (id: string) => void }) {
       if (!created.ok) { setOut(<Problem r={created} />); return; }
       const id: string = created.data.id;
       const saved = await api("POST", `/businesses/${enc(id)}/snapshots`, {
-        as_of: today(), monthly_revenue: nums(f, "monthly_revenue"), monthly_opex: num(f, "monthly_opex"), existing_emi_total: num(f, "existing_emi_total"),
+        as_of: str(f, "as_of"), monthly_revenue: nums(f, "monthly_revenue"), monthly_opex: num(f, "monthly_opex"), existing_emi_total: num(f, "existing_emi_total"),
         outstanding_debt: num(f, "outstanding_debt"), cash_balance: num(f, "cash_balance"), payment_delays_12m: num(f, "payment_delays_12m"),
       });
       if (!saved.ok) { setOut(<><Note><b>Your business is saved, </b>but your monthly figures were not:</Note><Problem r={saved} /></>); return; }
@@ -133,50 +267,65 @@ function DetailsForm({ onSaved }: { onSaved: (id: string) => void }) {
   return (
     <section className="k-card">
       <h2 className="k-step"><span>1</span>Your details</h2>
-      <form onSubmit={submit}>
-        <div className="k-sub">About your business</div>
-        <div className="k-fields">
-          <Field name="name" label="Business name" placeholder="Sri Lakshmi Bakery" />
-          <Field name="sector" label="Type of business" options={SECTORS.map((s) => [s, sectorName(s)])} value="food_beverage" />
-          <Field name="year_started" label="Year started" type="number" placeholder="2015" />
-          <Field name="employees" label="Employees" hint="optional" type="number" />
-          <Field name="description" label="What you do" area placeholder="What you sell or do, who your customers are, and whether you work indoors or outdoors." />
+      <ol className="k-pages" aria-label="Progress">
+        <li className={page === 1 ? "on" : "done"}><b>1</b>Your business</li>
+        <li className={page === 2 ? "on" : ""}><b>2</b>Your money and contact</li>
+      </ol>
+      <form ref={form} onSubmit={submit} noValidate>
+        <div hidden={page !== 1}>
+          <div className="k-sub">About your business</div>
+          <div className="k-fields">
+            <Field name="name" label="Business name" placeholder="Sri Lakshmi Bakery" />
+            <Field name="sector" label="Type of business" options={SECTORS.map((s) => [s, sectorName(s)])} value="food_beverage" />
+            <Field name="year_started" label="Year started" type="number" placeholder="2015" />
+            <Field name="employees" label="Employees" hint="optional" type="number" />
+            <Field name="description" label="What you do" hint="at least 30 characters" area placeholder="What you sell or do, who your customers are, and whether you work indoors or outdoors." />
+          </div>
+          <div className="k-sub">Where you work</div>
+          <div className="k-fields">
+            <MapPicker onAddress={fill} />
+            <label className="k-field wide"><span>Shop address</span><input ref={address} name="address" onInput={() => { typed.current.address = true; }} autoComplete="off" /></label>
+            <label className="k-field"><span>Pincode<em>6 digits</em></span><input ref={pincode} name="pincode" onInput={() => { typed.current.pincode = true; }} autoComplete="off" /></label>
+            <Field name="premises" label="Premises" options={[["", "Not saying"], ["owned", "Owned"], ["rented", "Rented"]]} />
+            <Field name="floor" label="Floor" options={[["", "Not saying"], ["basement", "Basement"], ["ground", "Ground floor"], ["upper", "Upper floor"]]} />
+          </div>
+          <div className="k-sub">How you run</div>
+          <div className="k-fields">
+            <InsuranceMenu />
+            <Field name="has_backup_power" label="Backup power" options={[["", "No"], ["yes", "Yes"]]} />
+            <Field name="power_outage_hrs_month" label="Power cuts a month" hint="hours" type="number" value={10} />
+            <Field name="supplier" label="Main supplier" hint="optional" />
+          </div>
+          <div className="k-actions"><button className="btn" type="button" onClick={next}>Next: your money →</button></div>
         </div>
-        <div className="k-sub">Where you work</div>
-        <div className="k-fields">
-          <MapPicker onAddress={fill} />
-          <label className="k-field wide"><span>Shop address</span><input ref={address} name="address" onInput={() => { typed.current.address = true; }} autoComplete="off" /></label>
-          <label className="k-field"><span>Pincode</span><input ref={pincode} name="pincode" onInput={() => { typed.current.pincode = true; }} autoComplete="off" /></label>
-          <Field name="premises" label="Premises" options={[["", "Not saying"], ["owned", "Owned"], ["rented", "Rented"]]} />
-          <Field name="floor" label="Floor" options={[["", "Not saying"], ["basement", "Basement"], ["ground", "Ground floor"], ["upper", "Upper floor"]]} />
-          <Field name="power_outage_hrs_month" label="Power cuts a month" hint="hours" type="number" value={10} />
-          <Check name="has_backup_power" label="We have backup power" />
-          <Check name="has_insurance" label="We have insurance" />
-          <Field name="insurance_covers" label="Insurance covers" hint="if insured" placeholder="flood, stock" />
-          <Field name="supplier" label="Main supplier" hint="optional" />
+
+        <div hidden={page !== 2}>
+          <div className="k-sub">Your money</div>
+          <div className="k-fields">
+            <MonthlySales />
+            <Field name="monthly_opex" label="Monthly running costs" hint="₹, without loan repayments" type="number" />
+            <Field name="existing_emi_total" label="Current EMIs" hint="₹ a month" type="number" value={0} />
+            <Field name="outstanding_debt" label="Loans still owed" hint="₹" type="number" value={0} />
+            <Field name="cash_balance" label="Cash and bank balance" hint="₹" type="number" />
+            <Field name="payment_delays_12m" label="Late payments" hint="last 12 months" type="number" value={0} />
+          </div>
+          <div className="k-sub">Contact</div>
+          <div className="k-fields">
+            <Field name="owner_name" label="Your name" />
+            <Field name="owner_phone" label="Mobile" hint="+91 and 10 digits" placeholder="+919876543210" />
+            <Field name="owner_email" label="Email" hint="optional" type="email" />
+            <Field name="bank_email" label="Your bank's email" hint="your branch or loan officer" type="email" />
+          </div>
+          <div className="k-consents">
+            <Check name="consent_data" label="I agree to Kshetra using these details" on />
+            <Check name="consent_share" label="Share my details with my bank" on />
+            <Check name="consent_alerts" label="Send me weather alerts" on />
+          </div>
+          <div className="k-actions">
+            <button className="btn ghost" type="button" disabled={busy} onClick={() => go(1)}>← Back</button>
+            <button className="btn" disabled={busy}>Get my analysis</button>
+          </div>
         </div>
-        <div className="k-sub">Your money</div>
-        <div className="k-fields">
-          <Field name="monthly_revenue" label="Monthly sales" hint="last 6 to 12 months, oldest first, in ₹" wide placeholder="410000, 395000, 420000, 450000, 470000, 430000" />
-          <Field name="monthly_opex" label="Monthly running costs" hint="₹, without loan repayments" type="number" />
-          <Field name="existing_emi_total" label="Current EMIs" hint="₹ a month" type="number" value={0} />
-          <Field name="outstanding_debt" label="Loans still owed" hint="₹" type="number" value={0} />
-          <Field name="cash_balance" label="Cash and bank balance" hint="₹" type="number" />
-          <Field name="payment_delays_12m" label="Late payments" hint="last 12 months" type="number" value={0} />
-        </div>
-        <div className="k-sub">Contact</div>
-        <div className="k-fields">
-          <Field name="owner_name" label="Your name" />
-          <Field name="owner_phone" label="Mobile" placeholder="+919876543210" />
-          <Field name="owner_email" label="Email" hint="optional" type="email" />
-          <Field name="bank_email" label="Your bank's email" hint="your branch or loan officer" type="email" />
-        </div>
-        <div className="k-consents">
-          <Check name="consent_data" label="I agree to Kshetra using these details" on />
-          <Check name="consent_share" label="Share my details with my bank" on />
-          <Check name="consent_alerts" label="Send me weather alerts" on />
-        </div>
-        <div className="k-actions"><button className="btn" disabled={busy}>Get my analysis</button></div>
       </form>
       {out ? <div className="k-out">{out}</div> : null}
     </section>
@@ -409,7 +558,7 @@ export function Analysis() {
           {bank && shared ? (
             <section className="k-card k-pick">
               <label className="k-field"><span>Business</span>
-                <select defaultValue="" onChange={(e) => { if (e.target.value) void showAnalysis(e.target.value); }}>
+                <select value={shared.some((b) => b.id === current?.id) ? current!.id : ""} onChange={(e) => { if (e.target.value) void showAnalysis(e.target.value); }}>
                   <option value="">{shared.length ? "Choose a business" : "No businesses shared with you yet"}</option>
                   {shared.map((b) => <option key={b.id} value={b.id}>{[b.name, b.city].filter(Boolean).join(" · ")}</option>)}
                 </select>

@@ -12,7 +12,7 @@
 .k-app h1 { font-weight: 900; font-size: clamp(30px, 4vw, 44px); letter-spacing: -.03em; line-height: 1.1; }
 
 /* ── Bar, banner, account ─────────────────────────────────────────────── */
-.k-chip { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border: 1px solid var(--rule); background: var(--card); color: var(--text); font: 600 13px var(--mono); text-transform: uppercase; letter-spacing: .04em; cursor: pointer; }
+.k-chip { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border: 1px solid var(--rule); background: transparent; color: var(--text); font: 600 12px var(--mono); text-transform: uppercase; letter-spacing: .04em; cursor: pointer; }
 .k-chip:hover { border-color: var(--text); }
 .k-chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
 .k-chip i.am { background: var(--acc); }
@@ -100,6 +100,28 @@
 .k-app button.btn { cursor: pointer; }
 .k-step { display: flex; align-items: center; gap: 12px; font-weight: 900; font-size: 26px; letter-spacing: -.02em; margin-bottom: 8px; }
 .k-step span { display: inline-grid; place-items: center; width: 34px; height: 34px; background: var(--acc); color: var(--acc-on); font: 600 16px var(--mono); }
+
+/* The two pages of the details form */
+.k-pages { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0 4px; }
+.k-pages li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--rule); border-bottom-width: 3px; color: var(--muted); font-weight: 700; font-size: 15px; }
+.k-pages li b { display: inline-grid; place-items: center; width: 24px; height: 24px; border: 1px solid currentColor; font: 600 13px var(--mono); }
+.k-pages li.on { color: var(--text); border-bottom-color: var(--acc); }
+.k-pages li.done { color: var(--ok); border-bottom-color: var(--ok); }
+
+/* A dropdown that holds tick boxes */
+.k-dropdown { position: relative; }
+.k-dropdown > summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 9px 12px; border: 1px solid var(--rule); background: var(--card); cursor: pointer; font-size: 16px; }
+.k-dropdown > summary::-webkit-details-marker { display: none; }
+.k-dropdown > summary::after { content: "▾"; color: var(--muted); }
+.k-dropdown[open] > summary { border-color: var(--cy); }
+.k-menu { position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 4px); display: grid; padding: 6px 12px; background: var(--card); border: 1px solid var(--rule); box-shadow: 0 10px 24px rgb(28 26 22 / .12); }
+.k-menu .k-check { min-height: 38px; cursor: pointer; }
+
+/* One box per month */
+.k-months { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.k-months label { display: grid; gap: 4px; }
+.k-months small { font: 600 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.k-months-actions { margin-top: 10px; }
 
 /* ── Map ──────────────────────────────────────────────────────────────── */
 .k-map-picker { display: grid; gap: 10px; }
@@ -191,6 +213,34 @@
 .k-actions-list li { counter-increment: step; position: relative; padding: 10px 12px 10px 46px; border: 1px solid var(--rule); }
 .k-actions-list li::before { content: counter(step); position: absolute; left: 12px; top: 10px; width: 24px; height: 24px; display: grid; place-items: center; background: var(--acc); color: var(--acc-on); font: 600 13px var(--mono); }
 .k-actions-list p { font-size: 14px; color: var(--body); }
+/* The terminal is dark whatever the page's theme: it is a picture of a terminal */
+.k-term { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; background: #14130f; color: #d8d3c6; border-top: 1px solid #2c2a23; font: 400 13px/1.6 var(--mono); box-shadow: 0 -8px 24px rgb(28 26 22 / .18); }
+/* Room under the page so the docked terminal never covers the last of it */
+.k-pg.term-open { padding-bottom: 300px; }
+.k-pg.term-shut { padding-bottom: 60px; }
+.k-term header { display: flex; align-items: center; gap: 12px; padding: 8px 20px; background: #1f1d18; border-bottom: 1px solid #2c2a23; color: #8f897a; font-size: 12px; }
+.k-term header b { color: #d8d3c6; font-weight: 600; margin-right: auto; }
+.k-term header button { background: none; border: 1px solid #3a372e; color: #8f897a; font: inherit; padding: 2px 10px; cursor: pointer; }
+.k-term header button:hover { color: #d8d3c6; border-color: #8f897a; }
+.k-term-dots { display: inline-flex; gap: 6px; }
+.k-term-dots i { width: 10px; height: 10px; border-radius: 50%; background: #3a372e; }
+.k-term-screen[hidden] { display: none; }
+.k-term-screen { height: 230px; overflow-y: auto; padding: 12px 20px; display: grid; gap: 12px; align-content: start; overflow-wrap: anywhere; }
+.k-term-note { color: #8f897a; }
+.k-term-call { display: grid; gap: 2px; }
+.k-term-prompt { color: #7fc28a; }
+.k-term-call b { color: #f0b354; font-weight: 600; }
+.k-term-url { color: #7fbfd8; }
+.k-term-body { color: #8f897a; white-space: pre-wrap; }
+.k-term-status.good { color: #7fc28a; }
+.k-term-status.bad { color: #f08a6b; }
+.k-term-status.wait { color: #8f897a; }
+.k-term-cursor { display: inline-block; width: 7px; height: 14px; margin-left: 4px; vertical-align: -2px; background: #d8d3c6; animation: k-blink 1s steps(2) infinite; }
+@keyframes k-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .k-term-cursor { animation: none; } }
+.k-term pre { font: inherit; color: #b9b3a4; white-space: pre-wrap; margin: 0; }
+.k-term details summary { cursor: pointer; color: #8f897a; }
+.k-term details summary:hover { color: #d8d3c6; }
 @media (max-width: 960px) {
   .k-pg-body { grid-template-columns: minmax(0, 1fr); }
   .k-rail { position: static; display: flex; overflow-x: auto; }

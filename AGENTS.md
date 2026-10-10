@@ -14,8 +14,7 @@ Instructions for any AI coding agent working here. `README.md` is the reference:
 | `api/src/services/finance/` | The finance service: baseline and climate-adjusted scores. Has its own `README.md` | Yes |
 | `api/src/services/evaluator/` | Checks the climate and finance answers together and rates them; the chat advisor's only way to both. Described in `README.md` | Yes |
 | `api/src/services/input/` | The input service, still being built | Only when asked. It is not documented here or in `README.md` yet |
-| `web/` | Static console, two pages: the Playground (`index.html`, `playground.js`) and Analysis (`analysis.html`, `analysis.js`), sharing `core.js`, `styles.css` and `sample-data.js` (sample mode's synthetic answers). No build step, no tests | Yes |
-| `landing/` | Product landing page plus the Playground (`/playground`) and Analysis (`/analysis`) pages: Vite + React + TypeScript, light theme only. Landing copy in `src/content.ts`; the pages in `src/pages/`, their API client, session and example data in `src/shared/` (named so the root `.gitignore`'s `lib/` rule does not hide it). `src/shared/samples.ts` is a copy of `web/sample-data.js`: change both. Check with `npm run build` inside `landing/` | Yes |
+| `landing/` | Product landing page plus the Playground (`/playground`) and Analysis (`/analysis`) pages: Vite + React + TypeScript, light theme only. Landing copy in `src/content.ts`; the pages in `src/pages/`, their API client, session and example data in `src/shared/` (named so the root `.gitignore`'s `lib/` rule does not hide it). `src/shared/samples.ts` holds the example data. Check with `npm run build` inside `landing/` | Yes |
 | `ml/` | Python ML service: data, features, training, saved models, a FastAPI app and `pytest` tests. The API reaches it through `/ml` (`api/src/services/ml/`). Commands are in `ml/data/README.md` | Yes |
 
 Four processes exist, each started by hand inside `api/`: the API (`npm run dev`), the alert worker (`npm run alerts:worker`), the monitor (`npm run monitor`) and the verification job (`npm run monitor:verify`). None starts another.
@@ -64,7 +63,7 @@ All three must pass before you say a task is done. If one fails, say so and show
 
 ## Sharing `main`
 
-Several people and their agents commit to `main`. Most past conflicts were in `README.md`, `api/src/app.ts`, `web/core.js` and `web/index.html`.
+Several people and their agents commit to `main`. Most past conflicts were in `README.md` and `api/src/app.ts`.
 
 - **Start from the latest `main`.** Run `git pull --rebase --autostash` before you begin and again before you commit.
 - **Rebase unpushed commits; do not merge `origin/main` into `main`.** A merge commit is only for work that is already pushed.

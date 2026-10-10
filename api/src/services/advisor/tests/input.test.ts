@@ -149,6 +149,15 @@ describe("input directory", () => {
         insurance: "insured for flood, stock",
         road_power_dependency: "about 12 hours of power cuts a month, has backup power",
         revenue_pattern: "seasonal, busiest in Mar, Apr, May",
+        water_dependency: "medium",
+        premises: "rented, ground floor",
+        years_in_business: "started in 2015",
+        staff: "4 employees",
+        products: "ice cream, cold drinks",
+        sales_channel: "walk in",
+        suppliers: "2 suppliers: Amul Depot (60%, critical), Pune Packaging (40%)",
+        cash_and_debt:
+          "cash and bank balance ₹90,000; loans still owed ₹2,40,000; 1 late payment in the last 12 months; customers pay in about 15 days",
       },
     });
     // Six months ending in September; the rest are the average

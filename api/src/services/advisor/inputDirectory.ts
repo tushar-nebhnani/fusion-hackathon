@@ -52,6 +52,7 @@ const include = {
   snapshots: { orderBy: [...SCORING_SNAPSHOT_ORDER], take: 1 },
   loans: { where: { status: { in: Object.keys(ACTIVE_LOAN_STATES) } }, orderBy: { createdAt: "asc" } },
   impactProfiles: { where: { status: { not: "pending" } }, orderBy: { version: "desc" }, take: 1 },
+  suppliers: { orderBy: { position: "asc" } },
 } satisfies Prisma.BusinessInclude;
 
 type Row = Prisma.BusinessGetPayload<{ include: typeof include }>;
@@ -94,7 +95,14 @@ export function weatherImpactFrom(
   return impact;
 }
 
-function formFacts(operations: Partial<Operations>): Record<string, string> {
+const rupees = (value: number) => `₹${Math.round(value).toLocaleString("en-IN")}`;
+
+// Everything the owner entered on the form that the advisor has no field for,
+// as plain sentences. They are the owner's claims, like any form fact.
+function formFacts(row: Row, raw: Financials): Record<string, string> {
+  const operations = row.operations as Partial<Operations>;
+  const profile = row.profile as Partial<Profile>;
+  const location = row.locations[0];
   const facts: Record<string, string> = {};
   if (operations.has_insurance !== undefined) {
     const covers = operations.insurance_covers ?? [];
@@ -111,6 +119,29 @@ function formFacts(operations: Partial<Operations>): Record<string, string> {
   if (seasonal.length > 0) {
     facts.revenue_pattern = `seasonal, busiest in ${seasonal.map((month) => MONTHS[month - 1]).join(", ")}`;
   }
+  if (operations.water_dependency) facts.water_dependency = operations.water_dependency;
+
+  const premises = [location?.premises, location?.floor ? `${location.floor} floor` : null].filter(Boolean);
+  if (premises.length > 0) facts.premises = premises.join(", ");
+  if (profile.year_started !== undefined) facts.years_in_business = `started in ${profile.year_started}`;
+  if (profile.employees !== undefined) facts.staff = `${profile.employees} employee${profile.employees === 1 ? "" : "s"}`;
+  if (profile.products?.length) facts.products = profile.products.join(", ");
+  if (profile.sales_channel) facts.sales_channel = profile.sales_channel.replace(/_/g, " ");
+
+  if (row.suppliers.length > 0) {
+    const named = row.suppliers.map(
+      (supplier) => `${supplier.name} (${Math.round(supplier.share * 100)}%${supplier.critical ? ", critical" : ""})`,
+    );
+    facts.suppliers = `${row.suppliers.length} supplier${row.suppliers.length === 1 ? "" : "s"}: ${named.join(", ")}`;
+  }
+
+  const money = [
+    `cash and bank balance ${rupees(raw.cash_balance)}`,
+    `loans still owed ${rupees(raw.outstanding_debt)}`,
+    `${raw.payment_delays_12m} late payment${raw.payment_delays_12m === 1 ? "" : "s"} in the last 12 months`,
+  ];
+  if (raw.receivables_days !== undefined) money.push(`customers pay in about ${raw.receivables_days} days`);
+  facts.cash_and_debt = money.join("; ");
   return facts;
 }
 
@@ -163,7 +194,7 @@ export function toBusinessRecord(row: Row): BusinessRecord {
       otherDebtMonthly: raw.existing_emi_total,
     },
     loans: row.loans.map(loanRecord),
-    formFacts: formFacts(row.operations as Partial<Operations>),
+    formFacts: formFacts(row, raw),
     ...(conditions ? { weatherImpact: weatherImpactFrom(conditions) } : {}),
     origin: "input",
   };

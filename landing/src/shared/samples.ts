@@ -1,5 +1,4 @@
-// @ts-nocheck -- copied from web/sample-data.js, which is plain JavaScript.
-// Keep the two in step: change the console's file, then copy it here again.
+// @ts-nocheck -- written as plain JavaScript for the old static console and kept that way.
 
 // [pattern, answer or (body, path) => answer, note]
 export type Sample = [RegExp, unknown, string?];

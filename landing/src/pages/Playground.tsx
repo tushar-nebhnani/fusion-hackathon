@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AppNav } from "../components/app/AppNav";
 import { openSignin } from "../components/app/SignIn";
-import { Bubble, Field, Kv, Note, Problem, SubHead, Tag } from "../components/app/ui";
+import { Terminal, type TermLine } from "../components/app/Terminal";
+import { Bubble, Field, Note, Problem, SubHead, Tag } from "../components/app/ui";
 import { AdvisorAnswer, AlertsView, ClimateView, FinanceView, ImpactView } from "../components/app/views";
-import { api, type ApiResult, type Json, type Source } from "../shared/api";
+import { api, setTracer, type ApiResult, type Json, type Source } from "../shared/api";
 import { daysAhead, fmt, hazardName, inr, nice, pct, sectorName } from "../shared/format";
 import { getSession, useSession } from "../shared/session";
 
@@ -238,6 +239,20 @@ export function Playground() {
   const [playing, setPlaying] = useState(false);
   const [status, setStatus] = useState<ReactNode>(null);
   const story = useRef<Story>(fresh());
+  // Every request the story makes, for the terminal under the chapter
+  const [term, setTerm] = useState<TermLine[]>([]);
+  const [termOpen, setTermOpen] = useState(true);
+  const say = (text: string) => setTerm((all) => [...all, { kind: "note", id: `${all.length}-${text}`, text }]);
+  useEffect(() => {
+    setTracer((e) => {
+      // The session's own checks are not part of the story
+      if (e.path.startsWith("/auth") || e.path.startsWith("/health")) return;
+      setTerm((all) => (e.phase === "start"
+        ? [...all.slice(-150), { kind: "call", id: e.id, method: e.method, path: e.path, body: e.body, source: e.source }]
+        : all.map((line) => (line.kind === "call" && line.id === e.id ? { ...line, result: e.result } : line))));
+    });
+    return () => setTracer(null);
+  }, []);
   // Each play gets a number; a play whose number is no longer current stops
   const run = useRef(0);
 
@@ -248,6 +263,7 @@ export function Playground() {
     const c = CHAPTERS[i]!;
     setAt(i);
     setBusy(true);
+    say(`Chapter ${i + 1}: ${c.title}`);
     const calls: ApiResult[] = [];
     const call: Call = async (method, path, body) => {
       const r = await api(method, path, body, { source: src });
@@ -279,6 +295,7 @@ export function Playground() {
     setSource(src);
     setResults({});
     setErrors({});
+    setTerm([{ kind: "note", id: `play-${mine}`, text: src === "sample" ? "Playing the story on example data: nothing is sent to the API" : "Playing the story against the live API" }]);
     setPlaying(true);
     for (let i = 0; i < CHAPTERS.length; i++) {
       if (run.current !== mine) return;
@@ -295,6 +312,7 @@ export function Playground() {
     // The bank's decision closes the story
     const p = story.current.proposal;
     if (p?.status === "pending_bank") {
+      say("The bank accepts the plan");
       const r = await api("POST", `/advisor/proposals/${enc(p.id)}/decision`, { decision: "accept", note: "Approved from the Playground" }, { source: src });
       if (run.current !== mine) return;
       if (r.ok) {
@@ -330,7 +348,7 @@ export function Playground() {
   return (
     <>
       <AppNav page="playground" />
-      <div className="wrap k-pg">
+      <div className={`wrap k-pg ${termOpen ? "term-open" : "term-shut"}`}>
         <header className="k-intro">
           <h1>One loan, start to finish</h1>
           <p>Follow Sri Lakshmi Bakery from its loan application through a flood and its recovery. The story plays by itself on example data; nothing is saved and no email is sent.</p>
@@ -386,7 +404,6 @@ export function Playground() {
             <details className="k-more k-bts"><summary>Behind the scenes</summary>
               <p className="muted small">Done by the {c.service.toLowerCase()}. This chapter sends:</p>
               <ul className="k-list">{c.sends.map(([m, p, d]) => <li key={m + p}><code>{m} {p}</code><br />{d}</li>)}</ul>
-              {done?.calls.length ? <Kv pairs={done.calls.map((r, i) => [`${i + 1}. ${r.method} ${r.path.split("?")[0]}`, r.network ? "no answer" : `${r.status}${r.source === "sample" ? " (example)" : ""}`])} /> : null}
             </details>
 
             <footer className="k-ch-nav">
@@ -396,6 +413,8 @@ export function Playground() {
           </article>
         </div>
       </div>
+      {/* Docked to the bottom of the screen, so the calls stay in view on every chapter */}
+      <Terminal lines={term} open={termOpen} onToggle={() => setTermOpen((v) => !v)} onClear={() => setTerm([])} />
     </>
   );
 }

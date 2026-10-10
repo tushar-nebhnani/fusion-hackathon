@@ -16,6 +16,9 @@ export interface ApiResult {
   status: number;
   data: Json;
   source: Source;
+  // What was sent, and how long the answer took
+  body?: unknown;
+  ms: number;
   // No answer at all: the API is down or refused this page's origin
   network?: boolean;
   // Example mode has no stored answer for this request
@@ -28,11 +31,26 @@ export const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:4000")
 let defaultSource: Source = "live";
 export const setDefaultSource = (source: Source) => { defaultSource = source; };
 
+// A page can watch calls as they start and finish (the Playground's terminal does)
+export interface CallEvent { id: number; phase: "start" | "end"; method: string; path: string; body?: unknown; source: Source; result?: ApiResult }
+let tracer: ((event: CallEvent) => void) | null = null;
+export const setTracer = (fn: ((event: CallEvent) => void) | null) => { tracer = fn; };
+let calls = 0;
+
 const newKey = () => crypto.randomUUID?.() ?? `k-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 
 export async function api(method: string, path: string, body?: unknown, options: { source?: Source } = {}): Promise<ApiResult> {
   const source = options.source ?? defaultSource;
-  const result: ApiResult = { method, path, ok: false, status: 0, data: null, source };
+  const id = ++calls, started = performance.now();
+  tracer?.({ id, phase: "start", method, path, body, source });
+  const result = await send(method, path, body, source);
+  result.ms = Math.round(performance.now() - started);
+  tracer?.({ id, phase: "end", method, path, body, source, result });
+  return result;
+}
+
+async function send(method: string, path: string, body: unknown, source: Source): Promise<ApiResult> {
+  const result: ApiResult = { method, path, ok: false, status: 0, data: null, source, body, ms: 0 };
 
   if (source === "sample") {
     const hit = SAMPLES.find(([pattern]) => pattern.test(`${method} ${path}`));

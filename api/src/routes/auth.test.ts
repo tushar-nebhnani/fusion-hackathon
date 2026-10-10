@@ -100,7 +100,8 @@ describe("POST /auth/google", () => {
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("SameSite=Lax");
     expect(cookie).toContain("Path=/");
-    expect(cookie).toContain("Expires=Fri, 16 Oct 2026 06:00:00 GMT");
+    // AUTH.sessionTtlMs (8 hours) after the test clock
+    expect(cookie).toContain("Expires=Fri, 09 Oct 2026 14:00:00 GMT");
     expect(cookie).not.toContain("Secure");
     // The token goes out in the cookie only
     expect(JSON.stringify(res.body)).not.toContain(sessionOf(res).split("=")[1]);
