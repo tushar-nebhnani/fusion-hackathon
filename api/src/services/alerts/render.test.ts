@@ -27,7 +27,7 @@ describe("alert rendering", () => {
   it("tells the owner what is coming, when, and what to do", () => {
     const email = render();
 
-    expect(email.subject).toBe("ClimaCredit alert: Flood risk near Sri Ganesh Bakery, 12–14 Oct");
+    expect(email.subject).toBe("Kshetra alert: Flood risk near Sri Ganesh Bakery, 12–14 Oct");
     expect(email.html).toBe(false);
     expect(email.body).toContain("A Flood risk is forecast near Sri Ganesh Bakery, Chennai, on 12–14 Oct.");
     expect(email.body).toContain("- Move stock, machines and records to a higher shelf or floor");
@@ -48,7 +48,7 @@ describe("alert rendering", () => {
     const hindi = render({ language: "hi" });
     const marathi = render({ language: "mr" });
 
-    expect(hindi.subject).toBe("ClimaCredit चेतावनी: Sri Ganesh Bakery के पास बाढ़ का खतरा, 12–14 Oct");
+    expect(hindi.subject).toBe("Kshetra चेतावनी: Sri Ganesh Bakery के पास बाढ़ का खतरा, 12–14 Oct");
     expect(hindi.body).toContain("सामान व कागज़ात ऊँचाई पर रखें।");
     expect(marathi.subject).toContain("पूर धोका");
     expect(marathi.body).toContain("माल व कागदपत्रे उंचावर ठेवा.");
@@ -83,7 +83,7 @@ describe("alert rendering", () => {
     const owner = render({ event: heat });
     const bank = render({ audience: "bank", event: heat });
 
-    expect(owner.subject).toBe("ClimaCredit alert: Heatwave risk near Sri Ganesh Bakery, 12–14 Oct");
+    expect(owner.subject).toBe("Kshetra alert: Heatwave risk near Sri Ganesh Bakery, 12–14 Oct");
     expect(owner.body).toContain("- Check refrigeration and power backup");
     expect(bank.body).not.toContain("Check refrigeration");
   });

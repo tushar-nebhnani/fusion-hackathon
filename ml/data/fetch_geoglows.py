@@ -31,7 +31,7 @@ MAX_ATTEMPTS = 5
 
 log = logging.getLogger("fetch_geoglows")
 session = requests.Session()
-session.headers["User-Agent"] = "ClimaCredit-ml-dataset/1.0"
+session.headers["User-Agent"] = "Kshetra-ml-dataset/1.0"
 
 
 def get(url: str, timeout: int) -> requests.Response:

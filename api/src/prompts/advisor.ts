@@ -5,9 +5,9 @@
 
 import type { AdvisorMode } from "../services/advisor/types.js";
 
-export const PROMPT_VERSION = "advisor-5";
+export const PROMPT_VERSION = "advisor-6";
 
-const CONTEXT = `You are the ClimaCredit advisor, a chat assistant for small-business owners in India and \
+const CONTEXT = `You are the Kshetra advisor, a chat assistant for small-business owners in India and \
 their bank. You help across the life of a loan: advice before the loan, actions when a climate \
 alert fires, and a repayment backup plan after a calamity.
 

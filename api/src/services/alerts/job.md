@@ -1,11 +1,11 @@
-# ClimaCredit — Alert System
+# Kshetra — Alert System
 
 Sends early warnings to **banks** and **business owners** when a sudden climate change is detected near a business, with **preventive guidelines** for each side.
 
 - **Stack:** Node.js + TypeScript. Python is used only for the ML models, and the alert system has no Python in it.
 - **Channels:** Email and SMS. WhatsApp is out of scope.
 
-Design rule #1: **the alert system must never slow down, block or crash any other part of ClimaCredit.** If alerts are broken, the API, scoring, the climate tool and the dashboard keep working.
+Design rule #1: **the alert system must never slow down, block or crash any other part of Kshetra.** If alerts are broken, the API, scoring, the climate tool and the dashboard keep working.
 
 > **Status:** Alerts are triggered automatically by code, never by hand. The trigger is the **background monitor**, which detects a sudden change and calls `enqueue()`. **The background monitor is not built yet.** Until it exists, fire test alerts with the CLI (§11). Section 3 is the contract the monitor must follow.
 
@@ -175,7 +175,7 @@ Templates live in `src/alerts/templates/`, one per `channel × audience × langu
 **SMS → owner (WARNING, en):**
 
 ```
-ClimaCredit alert: {hazardLabel} risk near {businessName} on {window}. Move stock & records higher, protect documents, back up data. Your bank may contact you with support. Follow local authority advice.
+Kshetra alert: {hazardLabel} risk near {businessName} on {window}. Move stock & records higher, protect documents, back up data. Your bank may contact you with support. Follow local authority advice.
 ```
 
 **Email → bank (subject):**

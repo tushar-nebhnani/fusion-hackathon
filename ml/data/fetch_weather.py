@@ -285,7 +285,7 @@ class NoData(Exception):
 
 
 session = requests.Session()
-session.headers["User-Agent"] = "ClimaCredit-ml-dataset/1.0"
+session.headers["User-Agent"] = "Kshetra-ml-dataset/1.0"
 
 
 def get_json(api: str, params: dict, throttle: Throttle | None, weight: float) -> dict:

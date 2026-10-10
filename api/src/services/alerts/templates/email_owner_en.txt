@@ -1,4 +1,4 @@
-Subject: ClimaCredit alert: {hazardLabel} risk near {businessName}, {window}
+Subject: Kshetra alert: {hazardLabel} risk near {businessName}, {window}
 
 Hello,
 

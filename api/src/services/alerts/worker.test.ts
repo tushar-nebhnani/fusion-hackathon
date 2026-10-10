@@ -104,7 +104,7 @@ describe("alert worker", () => {
     expect(email.sent).toMatchObject([
       {
         to: "owner@example.com",
-        subject: "ClimaCredit alert: Flood risk near Sri Ganesh Bakery, 12–14 Oct",
+        subject: "Kshetra alert: Flood risk near Sri Ganesh Bakery, 12–14 Oct",
         html: false,
       },
       {
@@ -481,7 +481,7 @@ describe("alert reader", () => {
         {
           provider: "smtp",
           result: "sent",
-          subject: "ClimaCredit alert: Flood risk near Sri Ganesh Bakery, 12–14 Oct",
+          subject: "Kshetra alert: Flood risk near Sri Ganesh Bakery, 12–14 Oct",
           sent_at: "2026-10-09T11:30:00+05:30",
         },
       ],

@@ -78,7 +78,7 @@ describe("loan state machine", () => {
 describe("fitSms", () => {
   it("keeps the reply prompt and stays within 160 characters", () => {
     const sms = fitSms(
-      "ClimaCredit WARNING: flood from Fri 9 Oct, 11:30 pm IST.",
+      "Kshetra WARNING: flood from Fri 9 Oct, 11:30 pm IST.",
       "x ".repeat(200),
       "Reply or open chat.",
     );

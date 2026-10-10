@@ -1,12 +1,12 @@
-# ClimaCredit: who does what, and how to use it
+# Kshetra: who does what, and how to use it
 
-ClimaCredit helps a bank lend to small businesses in India with the weather taken into account. It scores how exposed a business's location is to six hazards (river flood, flash flood, heat, drought, storm, cold wave), combines that with the business's finances, watches the weather while a loan is live, and warns both the owner and the bank when something dangerous is coming.
+Kshetra helps a bank lend to small businesses in India with the weather taken into account. It scores how exposed a business's location is to six hazards (river flood, flash flood, heat, drought, storm, cold wave), combines that with the business's finances, watches the weather while a loan is live, and warns both the owner and the bank when something dangerous is coming.
 
 This guide is for the people who use the app. Setup details, every endpoint and every setting are in the [main README](../README.md).
 
 ## The people
 
-| Persona | Their job in ClimaCredit | Signs in as |
+| Persona | Their job in Kshetra | Signs in as |
 | --- | --- | --- |
 | **Business owner** | Describes the business, keeps its financial figures current, reads warnings and acts on them | Any Google account |
 | **Bank officer** | Records and authorises loans, checks the figures, reads the risk scores and alerts, decides on repayment changes | A Google account listed in `AUTH_BANK_EMAILS` or `AUTH_BANK_DOMAINS` |

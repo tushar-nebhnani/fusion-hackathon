@@ -1,6 +1,6 @@
-# ClimaCredit — Input Service
+# Kshetra — Input Service
 
-The entry point for all data in ClimaCredit. A business owner (or a bank officer on their behalf) enters the business's details through a form, which posts to this service's API. The service validates the input, derives the ratios the scoring units need, and stores everything in versioned form.
+The entry point for all data in Kshetra. A business owner (or a bank officer on their behalf) enters the business's details through a form, which posts to this service's API. The service validates the input, derives the ratios the scoring units need, and stores everything in versioned form.
 
 - **No file uploads (CSV / statements) in the MVP.** Everything is entered by hand.
 - **The `smes.json` seed** uses the same API and validation path, marked `source: synthetic`.

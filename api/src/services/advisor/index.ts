@@ -572,7 +572,7 @@ export function createAdvisor(deps: AdvisorDeps) {
         finish: async (result, calls) => {
           const { actions, bankSummary } = result.structured as { actions: AlertActions; bankSummary: string };
           const smsText = fitSms(
-            `ClimaCredit ${event.severity.toUpperCase()}: ${label} from ${istLabel(event.windowStart)}.`,
+            `Kshetra ${event.severity.toUpperCase()}: ${label} from ${istLabel(event.windowStart)}.`,
             `${(actions[0]?.action ?? "Protect stock and records").replace(/\.$/, "")}.`,
             "Reply or open chat.",
           );
@@ -583,7 +583,7 @@ export function createAdvisor(deps: AdvisorDeps) {
             "",
             ...actions.map((a) => `${a.rank}. ${a.action}\n   By: ${istLabel(a.deadline)}\n   Why: ${a.why}`),
             "",
-            "Reply to this email or open the ClimaCredit chat to ask a follow-up question.",
+            "Reply to this email or open the Kshetra chat to ask a follow-up question.",
           ].join("\n");
           const bankBody = [
             `${business.name} (${business.id}), loan ${loanId}`,
@@ -612,10 +612,10 @@ export function createAdvisor(deps: AdvisorDeps) {
           };
           const deliveries: DeliveryStatus[] = [
             await send("sms", contacts.ownerPhone, smsText),
-            await send("email", contacts.ownerEmail, emailBody, `[ClimaCredit] ${label} ${event.severity}: actions for ${business.name}`),
+            await send("email", contacts.ownerEmail, emailBody, `[Kshetra] ${label} ${event.severity}: actions for ${business.name}`),
           ];
           for (const to of contacts.bankEmails) {
-            deliveries.push(await send("email", to, bankBody, `[ClimaCredit] ${business.name}: ${label} ${event.severity}`));
+            deliveries.push(await send("email", to, bankBody, `[Kshetra] ${business.name}: ${label} ${event.severity}`));
           }
           result.structured = { loanId, actions, smsText, emailBody, bankSummary, deliveries };
         },

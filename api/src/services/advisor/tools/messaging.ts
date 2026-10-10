@@ -85,7 +85,7 @@ export function createMessenger(sender: Sender): Messenger {
         };
       }
       try {
-        const result = await sender.send({ to, subject: subject ?? "ClimaCredit advisor", body, html: false });
+        const result = await sender.send({ to, subject: subject ?? "Kshetra advisor", body, html: false });
         return {
           channel,
           to: mask(to),

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **System** | Kshetra / ClimaCredit: an API that scores small businesses' climate and credit risk for a bank, a background weather monitor, an email alert worker, a chat advisor, a React web app (`landing/`) and a Python ML service |
+| **System** | Kshetra: an API that scores small businesses' climate and credit risk for a bank, a background weather monitor, an email alert worker, a chat advisor, a React web app (`landing/`) and a Python ML service |
 | **Audit date** | 10 October 2026 |
 | **Code reviewed** | `main` at `c80d084`, plus the fixes described here (not yet committed) |
 | **Earlier review** | 9 October 2026, findings F-01 to F-15 in [`security-checklist.md`](security-checklist.md) |

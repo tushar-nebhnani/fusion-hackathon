@@ -1,4 +1,4 @@
-Subject: ClimaCredit चेतावनी: {businessName} के पास {hazardLabel} का खतरा, {window}
+Subject: Kshetra चेतावनी: {businessName} के पास {hazardLabel} का खतरा, {window}
 
 नमस्ते,
 

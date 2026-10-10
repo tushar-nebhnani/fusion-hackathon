@@ -1,4 +1,4 @@
-Subject: ClimaCredit इशारा: {businessName} जवळ {hazardLabel} धोका, {window}
+Subject: Kshetra इशारा: {businessName} जवळ {hazardLabel} धोका, {window}
 
 नमस्कार,
 

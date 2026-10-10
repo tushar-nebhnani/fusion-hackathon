@@ -30,7 +30,6 @@ New to the app? [docs/README.md](docs/README.md) says what a business owner, a b
 fusion-hackathon/
 ├── docker-compose.yml      Postgres 16 and Redis 7 for local development
 ├── .dockerignore           Written ahead of time; there are no Dockerfiles yet
-├── .claude/settings.json   Enables the ECC plugin for Claude Code
 ├── AGENTS.md               Working rules for AI coding agents
 ├── CLAUDE.md               One line that makes Claude Code load AGENTS.md
 ├── api/                    Express + TypeScript + Prisma API (the real work)

@@ -556,7 +556,7 @@ export const { SAMPLES, HAND } = ((): { SAMPLES: Sample[]; HAND: string } => {
       event, alertId: event.alertId, hazard: "flash_flood",
       results: [{
         loanId: LOAN, status: "advised", loanState, conversationId: advised.conversationId, reply: advice.reply, actions: advice.actions,
-        smsText: `ClimaCredit ${severity.toUpperCase()}: heavy rain soon. ${advice.actions[0].action} Reply or open chat.`,
+        smsText: `Kshetra ${severity.toUpperCase()}: heavy rain soon. ${advice.actions[0].action} Reply or open chat.`,
         emailBody: `Dear Lakshmi Narayanan,\n\n${advice.reply}`, bankSummary: advice.bankSummary,
         deliveries: [{ channel: "email", to: null, status: "sent", provider: "dry_run" }], citations: advised.citations, warnings: [],
       }],

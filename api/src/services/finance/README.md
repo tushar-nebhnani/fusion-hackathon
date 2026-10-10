@@ -1,4 +1,4 @@
-# ClimaCredit — Finance Service
+# Kshetra — Finance Service
 
 Takes a business that was entered through the form and produces its **finance profile**: a baseline financial health score, and a **climate-adjusted** score that stress-tests the business against the hazards the climate unit reports for its location.
 

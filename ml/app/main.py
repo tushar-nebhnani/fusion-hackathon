@@ -37,7 +37,7 @@ DATA = Path(__file__).resolve().parents[1] / "data"
 MAX_CELL_DISTANCE_KM = 150
 IMD_HEAVY_MM = 64.5
 
-app = FastAPI(title="ClimaCredit ML", version="0.1.0")
+app = FastAPI(title="Kshetra ML", version="0.1.0")
 _models: dict[str, dict] = {}
 
 

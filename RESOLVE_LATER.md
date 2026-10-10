@@ -77,7 +77,7 @@ worker, leases, cooldown, retries, bank digest, `GET /alerts`) is unchanged.
 - `senders/smsTwilio.ts`: a `Sender` with `provider: "twilio"` that called
   `client.messages.create({ to, from, body })` and returned the message `sid`. The `twilio`
   package and the `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` settings.
-- `templates/sms_owner_en.txt`, `_hi.txt`, `_mr.txt`. The English one was: "ClimaCredit alert:
+- `templates/sms_owner_en.txt`, `_hi.txt`, `_mr.txt`. The English one was: "Kshetra alert:
   {hazardLabel} risk near {businessName} on {window}. {steps} Your bank may contact you with
   support. Follow local authority advice. Reply STOP to opt out."
 - Routing: the owner's first alert was an SMS, and an email was queued as a fallback when the
