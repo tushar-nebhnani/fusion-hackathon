@@ -460,7 +460,8 @@ function parseDamage(text: string, today: string): Record<string, unknown> {
   const days = /closed (?:for )?(\d{1,3}) days?|(\d{1,3}) days? closed/.exec(lower);
   if (days) damage.daysClosed = Number(days[1] ?? days[2]);
   const amountNear = (pattern: RegExp) => {
-    for (const clause of text.split(/[,;]|\band\b|\.\s/i)) {
+    // A comma between digits groups them (₹1,20,000), so it does not end a clause
+    for (const clause of text.split(/;|,(?!\d)|\band\b|\.\s/i)) {
       if (!pattern.test(clause.toLowerCase())) continue;
       const amount = numbersIn(clause).find((n) => !n.percent);
       if (amount) return amount.value;

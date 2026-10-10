@@ -1,5 +1,7 @@
 # Fusion Hackathon: Climate-Adjusted Financial Risk Score
 
+> **Archived copy of an earlier README.** It still describes the removed `web/` console on `http://localhost:3000`. For what runs today, read the root `README.md`: the frontend is `landing/` on `http://localhost:5173`, which is also the default `AUTH_ALLOWED_ORIGINS`.
+
 A 24-hour hackathon project (Fusion 2026) that scores how exposed a small business in India is to climate hazards, so that the score can feed a financial risk assessment.
 
 This README is the handover document for anyone, human or AI agent, picking up the repository cold. It describes what exists today, how it works, how to run it, and what limits it. AI agents should read `AGENTS.md` first: it holds the working rules, and points back here for the detail.

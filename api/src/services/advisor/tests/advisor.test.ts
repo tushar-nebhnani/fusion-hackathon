@@ -207,6 +207,33 @@ describe("Mode 3: recovery planner", () => {
     expect(kinds).toEqual(["moratorium", "tenure_extension", "step_down_up", "insurance_bridge"]);
   });
 
+  it("reads rupee amounts written with digit grouping", async () => {
+    const { advisor } = createTestAdvisor();
+    await advisor.markDisbursed("LN-0101");
+
+    const intake = await advisor.handleDamageReport({
+      loanId: "LN-0101",
+      message: "Shop closed 6 days, ₹1,20,000 stock lost, equipment repair ₹15,000.",
+    });
+    expect((await advisor.getLoanState("LN-0101")).damage).toMatchObject({
+      daysClosed: 6,
+      stockLossInr: 120_000,
+      equipmentDamageInr: 15_000,
+    });
+
+    const plan = await advisor.handleChat({
+      businessId: "SME-0101",
+      conversationId: intake.conversationId,
+      message: "Reopened on 2026-10-09. Insurance claim of ₹30,000 filed, expected by 2026-12-15.",
+    });
+    expect((await advisor.getLoanState("LN-0101")).damage?.insuranceClaim).toEqual({
+      status: "filed",
+      expectedAmountInr: 30_000,
+      expectedDate: "2026-12-15",
+    });
+    expect((plan.proposal?.options as { kind: string }[]).map((o) => o.kind)).toContain("insurance_bridge");
+  });
+
   it("refuses a damage report on a loan that is not disbursed", async () => {
     const { advisor } = createTestAdvisor();
     await expect(advisor.handleDamageReport({ loanId: "LN-0203", daysClosed: 2 })).rejects.toBeInstanceOf(
