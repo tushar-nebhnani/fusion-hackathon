@@ -365,7 +365,7 @@ describe("loadAuthEnv", () => {
       bankEmails: [],
       bankDomains: [],
       rolesEnforced: true,
-      allowedOrigins: ["http://localhost:3000"],
+      allowedOrigins: ["http://localhost:5173"],
       cookieSameSite: "lax",
       cookieSecure: false,
     });

@@ -45,7 +45,7 @@ const schema = z.object({
   // Anything but an explicit "false" keeps the roles on, and production
   // keeps them on whatever this says
   AUTH_ROLES_ENFORCED: z.enum(["true", "false"]).catch("true"),
-  AUTH_ALLOWED_ORIGINS: z.string().catch("http://localhost:3000"),
+  AUTH_ALLOWED_ORIGINS: z.string().catch("http://localhost:5173"),
   AUTH_COOKIE_SAMESITE: z.enum(["lax", "none"]).catch("lax"),
   NODE_ENV: z.string().catch("development"),
 });
