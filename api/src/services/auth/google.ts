@@ -9,6 +9,9 @@ export interface GoogleIdentity {
   emailVerified: boolean;
   name: string | null;
   picture: string | null;
+  // The Google Workspace domain that manages the account (the `hd` claim);
+  // null for a consumer account, even one made with a work address
+  hostedDomain?: string | null;
 }
 
 export interface GoogleVerifier {
@@ -44,6 +47,7 @@ export function createGoogleVerifier(clientId: string): GoogleVerifier {
         emailVerified: payload.email_verified === true,
         name: payload.name ?? null,
         picture: payload.picture ?? null,
+        hostedDomain: payload.hd?.toLowerCase() ?? null,
       };
     },
   };

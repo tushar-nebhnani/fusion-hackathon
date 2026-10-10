@@ -19,6 +19,8 @@ import {
   invalidStatusTransition,
   loanNotFound,
   lockedByLoan,
+  ownerOnly,
+  sharingLockedByLoan,
   snapshotNotFound,
   type FieldErrors,
 } from "./errors.js";
@@ -33,6 +35,7 @@ import {
   replaceSuppliersSchema,
   type Sector,
 } from "./schemas/index.js";
+import { consentChangeSchema } from "./schemas/consent.js";
 import * as store from "./store.js";
 import { runJobs, type InputPorts } from "./triggers.js";
 import {
@@ -60,6 +63,9 @@ export type Scoring = "ok" | "pending";
 
 export interface BusinessDetail extends store.BusinessView {
   latest_snapshot: store.SnapshotView | null;
+  // What scores are built from: the newest verified snapshot, or the newest
+  // one while none is verified (store.scoringSnapshot)
+  scoring_snapshot: store.SnapshotView | null;
   loans: store.LoanView[];
   impact_profile: store.ImpactProfileView | null;
   scoring: Scoring;
@@ -99,6 +105,10 @@ export interface InputService {
   patchBusiness(id: string, body: unknown, actor: Actor): Promise<BusinessDetail>;
   replaceLocations(id: string, body: unknown, actor: Actor): Promise<BusinessDetail>;
   replaceSuppliers(id: string, body: unknown, actor: Actor): Promise<BusinessDetail>;
+  // The owner who created the business changes share_with_bank and alerts.
+  // Withdrawing sharing hides the business from the bank at once, but not
+  // while a loan is authorised or active (CONSENT_LOCKED_BY_LOAN).
+  changeConsent(id: string, body: unknown, actor: Actor): Promise<BusinessDetail>;
   createSnapshot(id: string, body: unknown): Promise<{ snapshot: store.SnapshotView; scoring: Scoring }>;
   listSnapshots(id: string): Promise<store.SnapshotView[]>;
   verifySnapshot(id: string, version: string, actor: Actor): Promise<store.SnapshotView>;
@@ -241,14 +251,16 @@ export function createInputService(deps: InputServiceDeps): InputService {
 
   async function detail(id: string, scoring?: Scoring): Promise<BusinessDetail> {
     const business = await required(prisma, id);
-    const [snapshot, loans, profile] = await Promise.all([
+    const [snapshot, scored, loans, profile] = await Promise.all([
       store.latestSnapshot(prisma, id),
+      store.scoringSnapshot(prisma, id),
       store.listLoans(prisma, id),
       store.latestProfile(prisma, id),
     ]);
     return {
       ...business,
       latest_snapshot: snapshot,
+      scoring_snapshot: scored,
       loans,
       impact_profile: profile ? store.impactProfileView(profile) : null,
       scoring: scoring ?? (await scoringOf(id)),
@@ -377,6 +389,28 @@ export function createInputService(deps: InputServiceDeps): InputService {
       return detail(id, await runTriggers(id));
     },
 
+    async changeConsent(id, body, actor) {
+      const change = parseBody(consentChangeSchema, body);
+      await prisma.$transaction(async (tx) => {
+        const business = await lockAndLoad(tx, id);
+        const owner = await store.businessOwner(tx, id);
+        if (actor.role !== "owner" || !actor.id || owner?.ownerUserId !== actor.id) throw ownerOnly();
+        if (change.share_with_bank === false && (await store.hasMonitoredLoan(tx, id))) {
+          throw sharingLockedByLoan();
+        }
+        await store.updateBusiness(tx, id, {
+          consent: {
+            ...business.consent,
+            ...change,
+            // When the owner last gave or changed their consent, and under which wording
+            timestamp: now().toISOString(),
+            version: INPUT.consentVersion,
+          },
+        });
+      });
+      return detail(id);
+    },
+
     async createSnapshot(id, body) {
       const raw = parseBody(financialsSchema, body);
       const at = now();
@@ -393,7 +427,9 @@ export function createInputService(deps: InputServiceDeps): InputService {
           proposedLoanEmi: await store.proposedLoanEmi(tx, id),
         });
         const saved = await store.insertSnapshot(tx, id, raw, derived);
-        if (await store.hasMonitoredLoan(tx, id)) {
+        // Rescored only while nothing is verified; after that, on verification
+        const scored = await store.scoringSnapshot(tx, id);
+        if (scored?.version === saved.version && (await store.hasMonitoredLoan(tx, id))) {
           await store.dropPendingJobs(tx, id, "finance_recompute");
           await store.addJob(tx, id, "finance_recompute", { snapshot_version: saved.version });
         }
@@ -410,11 +446,22 @@ export function createInputService(deps: InputServiceDeps): InputService {
     async verifySnapshot(id, version, actor) {
       const verifiedBy = requireBank(actor);
       await required(prisma, id);
-      const snapshot = /^[1-9]\d{0,8}$/.test(version)
-        ? await store.verifySnapshot(prisma, id, Number(version), verifiedBy, now())
-        : null;
-      if (!snapshot) throw snapshotNotFound(id, version);
-      return snapshot;
+      if (!/^[1-9]\d{0,8}$/.test(version)) throw snapshotNotFound(id, version);
+      const result = await prisma.$transaction(async (tx) => {
+        await lockAndLoad(tx, id);
+        const verified = await store.verifySnapshot(tx, id, Number(version), verifiedBy, now());
+        if (!verified) return null;
+        // Newly verified and now what scores are built from: rescore a live loan
+        const scored = await store.scoringSnapshot(tx, id);
+        if (verified.changed && scored?.version === verified.snapshot.version && (await store.hasMonitoredLoan(tx, id))) {
+          await store.dropPendingJobs(tx, id, "finance_recompute");
+          await store.addJob(tx, id, "finance_recompute", { snapshot_version: verified.snapshot.version });
+        }
+        return verified;
+      });
+      if (!result) throw snapshotNotFound(id, version);
+      if (result.changed) await runTriggers(id);
+      return result.snapshot;
     },
 
     async createLoan(id, body, actor) {

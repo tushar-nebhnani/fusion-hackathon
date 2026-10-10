@@ -273,7 +273,8 @@ export function createFinanceService(deps: FinanceServiceDeps): FinanceService {
 
   async function loadSubject(businessId: string, trace: Trace) {
     const business = await stage(trace, "load_business", () => deps.businesses.getBusiness(businessId));
-    const snapshot = business.latest_snapshot;
+    // The newest verified snapshot; an unverified one only while none is
+    const snapshot = business.scoring_snapshot;
     if (!snapshot) throw noFinancials(businessId);
 
     const warnings: string[] = [];

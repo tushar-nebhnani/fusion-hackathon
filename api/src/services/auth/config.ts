@@ -1,12 +1,13 @@
 import "dotenv/config";
 import { z } from "zod";
 
-const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
 
 export const AUTH = {
   cookieName: "fusion_session",
-  // A session ends this long after sign-in; it is not extended by use
-  sessionTtlMs: 7 * DAY_MS,
+  // A session ends this long after sign-in, about a working day; it is not
+  // extended by use
+  sessionTtlMs: 8 * HOUR_MS,
   // Requests per minute per client on /auth
   rateLimit: 20,
   // Bytes of randomness in a session token

@@ -800,6 +800,9 @@ model User {
   email       String
   name        String?
   pictureUrl  String?  @map("picture_url")
+  // Google Workspace domain (the `hd` claim) at the last sign-in; null for a
+  // consumer account. AUTH_BANK_DOMAINS trusts a domain only through this.
+  hostedDomain String? @map("hosted_domain")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   lastLoginAt DateTime @default(now()) @map("last_login_at") @db.Timestamptz
 
@@ -815,6 +818,9 @@ model Session {
   userId    String   @map("user_id")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   expiresAt DateTime @map("expires_at") @db.Timestamptz
+  // The role the user had at sign-in, "owner" or "bank". When it no longer
+  // matches, all the user's sessions end. Null for sessions older than the column.
+  role      String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -845,6 +851,10 @@ model AuditEvent {
   status     Int
   // Error code of a request that did not succeed
   reason     String?
+  // The hash chain (services/audit/chain.ts): the previous event's hash, and
+  // this event's, an HMAC under AUDIT_HMAC_KEY. Null on events from before it.
+  prevHash   String?  @unique @map("prev_hash")
+  hash       String?
 
   @@index([occurredAt])
   @@index([actorId, occurredAt])

@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
-import { fakeAuth, signedIn } from "../services/auth/testing/fake-auth.js";
+import { OWNER, fakeAuth, signedIn } from "../services/auth/testing/fake-auth.js";
 import { connectDb, disconnectDb, prisma } from "../config/db.js";
 import type { ClimateAgent } from "../services/climate/agent.js";
 import { createClimateService, historyStartFor } from "../services/climate/profile.service.js";
@@ -1051,9 +1051,34 @@ describe("forceFreshForecast and getProfileWithForecast", () => {
 
     const rows = await prisma.requestLog.findMany({ orderBy: { id: "asc" } });
     expect(rows.map((row) => [row.requesterId, row.cacheResult])).toEqual([
-      [null, "miss"],
+      [OWNER.id, "miss"],
       ["climate-monitor", "partial_hit"],
     ]);
+  });
+});
+
+describe("new places per user", () => {
+  it("lets one user screen a few new places, then answers 429 without calling upstream", async () => {
+    const { profile, om } = setup();
+    const places = [
+      { lat: 26.1445, lon: 91.7362 },
+      { lat: 19.076, lon: 72.8777 },
+      { lat: 28.6139, lon: 77.209 },
+      { lat: 13.0827, lon: 80.2707 },
+    ];
+    for (const place of places.slice(0, 3)) expect((await profile(place)).res.status).toBe(200);
+    const downloads = () => om.calls.filter((api) => api === "archive" || api === "flood_history").length;
+    const before = downloads();
+
+    const fourth = await profile(places[3]);
+    // A place already screened still answers
+    const known = await profile(places[0]);
+
+    expect(fourth.res.status).toBe(429);
+    expect(fourth.res.body).toMatchObject({ error: { code: "NEW_PLACE_LIMIT" } });
+    // The decades of history are what cost the shared allowance
+    expect(downloads()).toBe(before);
+    expect(known.res.status).toBe(200);
   });
 });
 

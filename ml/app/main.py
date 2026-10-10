@@ -13,6 +13,10 @@ the model can never silence a warning.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+import logging
 import math
 from datetime import date as Date
 from pathlib import Path
@@ -37,10 +41,26 @@ app = FastAPI(title="ClimaCredit ML", version="0.1.0")
 _models: dict[str, dict] = {}
 
 
+def pinned(path: Path) -> bool:
+    """joblib.load unpickles, which runs code, so only a file whose SHA-256 is
+    committed in models/checksums.json (written by the training script) is
+    loaded. Anything else is treated as missing: the alert goes out unscored."""
+    try:
+        sums = json.loads((MODELS / "checksums.json").read_text())
+    except (OSError, ValueError):
+        return False
+    expected = sums.get(path.name)
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    return isinstance(expected, str) and hmac.compare_digest(expected, actual)
+
+
 def model(hazard: str) -> dict | None:
     if hazard not in _models:
         path = MODELS / ("cashflow_anomaly.joblib" if hazard == "anomaly" else f"alert_calibration_{hazard}.joblib")
         if not path.exists():
+            return None
+        if not pinned(path):
+            logging.getLogger("ml").error("refusing %s: its SHA-256 is not the one in checksums.json", path.name)
             return None
         _models[hazard] = joblib.load(path)
     return _models[hazard]

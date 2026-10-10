@@ -64,8 +64,7 @@ What to keep in mind:
 
 1. **Start the database and cache:** `docker compose up -d` from the repository root.
 2. **Start the API:** `npm run dev` inside `api/`. It listens on port 4000.
-3. **Serve the web console:** `python3 -m http.server 3000 --directory web`, then open http://localhost:3000 for the Playground, or http://localhost:3000/analysis.html for the owner's analysis.
-   **Or run the React app**, which has the same two pages next to the landing page: `npm run dev` inside `landing/`, then open http://localhost:5173 (landing page), http://localhost:5173/playground or http://localhost:5173/analysis. `VITE_API_URL` in `landing/.env` says where the API is (default `http://localhost:4000`). Add `http://localhost:5173` to `AUTH_ALLOWED_ORIGINS` in `api/.env` and to the Google OAuth client's Authorized JavaScript origins, or sign-in is refused. A host serving the built site must answer `/playground` and `/analysis` with `index.html`.
+3. **Run the web app**, the landing page with the Playground and the owner's Analysis page: `npm run dev` inside `landing/`, then open http://localhost:5173 (landing page), http://localhost:5173/playground or http://localhost:5173/analysis. `VITE_API_URL` in `landing/.env` says where the API is (default `http://localhost:4000`). Add `http://localhost:5173` to `AUTH_ALLOWED_ORIGINS` in `api/.env` and to the Google OAuth client's Authorized JavaScript origins, or sign-in is refused. A host serving the built site must answer `/playground` and `/analysis` with `index.html`.
 4. **Name the bank officers** in `api/.env` (`AUTH_BANK_EMAILS`, `AUTH_BANK_DOMAINS`) and restart the API.
 5. **Start the background jobs** when you want live watching and warnings: `npm run monitor`, `npm run alerts:worker` and `npm run monitor:verify`, each in its own terminal inside `api/`.
 6. **Start the ML service** if the models are wanted: `uvicorn app.main:app --port 8001` inside `ml/`, with `ML_SERVICE_URL=http://localhost:8001` in `api/.env`.
@@ -74,6 +73,19 @@ Two switches to know before a demo:
 
 - **Emails are not really sent by default.** `ALERTS_MODE=dry_run` logs and stores each message. Set it to `live` only with SMTP details filled in.
 - **`npm run monitor` is real.** It calls the weather provider and queues alerts. Use `npm run monitor:simulate -- --location L1 --scenario heavy-rain` to rehearse.
+
+### Security settings
+
+The full audit, with every risk, control and a manual test plan, is [Security/SECURITY-AUDIT.md](Security/SECURITY-AUDIT.md). What an operator needs to know:
+
+- **`AUDIT_HMAC_KEY`** (32+ random characters, e.g. `openssl rand -hex 32`) signs the audit trail's hash chain. Keep it off the database host. `npm run audit:verify` inside `api/` checks the whole chain and names the first broken event.
+- **Bank officers by domain** (`AUTH_BANK_DOMAINS`) count only for accounts that domain's Google Workspace manages. Otherwise list them one by one in `AUTH_BANK_EMAILS`.
+- **Sessions last 8 hours.** Taking someone off the bank lists ends all their sessions at their next request.
+- **Scores use bank-verified numbers.** Once a bank officer verifies a financial snapshot, an owner's later, unverified figures are kept and shown but move no score until the bank verifies them.
+- **Owners can withdraw sharing** with `PATCH /businesses/:id/consent`, except while a loan is authorised or active.
+- **New places are capped**: one user can start at most 3 climate lookups for never-screened places per 10 minutes (429 `NEW_PLACE_LIMIT`), because each uses most of the weather provider's shared free allowance.
+- **Postgres and Redis listen on `127.0.0.1` only** in Docker Compose, because their passwords are defaults.
+- **ML models are pinned**: the ML service loads a model only if its SHA-256 matches `ml/models/checksums.json`. After retraining, commit the model and that file together (`python training/checksums.py` re-pins all).
 
 ## What runs by itself
 

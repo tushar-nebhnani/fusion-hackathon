@@ -30,6 +30,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 ML = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ML / "features"))
 import build_pd as G  # noqa: E402
+from checksums import pin  # noqa: E402
 
 MODELS = ML / "models"
 MODEL_VERSION = "pd-phase2-0.1.0"
@@ -129,6 +130,7 @@ def main() -> None:
     for m in G.MULTIPLIERS:
         artifact, metrics, p = train_one(base, m, split)
         joblib.dump(artifact, MODELS / f"pd_phase2_m{int(m * 10)}.joblib", compress=3)
+        pin(MODELS / f"pd_phase2_m{int(m * 10)}.joblib")
         results.append(metrics)
         preds[m] = p
     report = {

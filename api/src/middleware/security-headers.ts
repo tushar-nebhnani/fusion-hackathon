@@ -12,6 +12,9 @@ export function securityHeaders(options: { hsts?: boolean } = {}): RequestHandle
       "X-Frame-Options": "DENY",
       "Referrer-Policy": "no-referrer",
       "Cache-Control": "no-store",
+      // The API serves JSON only, so a browser that renders an answer as a
+      // page may load and run nothing from it
+      "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
     });
     if (options.hsts) {
       res.set("Strict-Transport-Security", `max-age=${String(YEAR_SECONDS)}; includeSubDomains`);

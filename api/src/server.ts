@@ -10,6 +10,7 @@ import { createAdvisorFromEnv } from "./services/advisor/bootstrap.js";
 import { loadAlertsConfig } from "./services/alerts/config.js";
 import { createEnqueue } from "./services/alerts/enqueue.js";
 import { createAlertReader } from "./services/alerts/reader.js";
+import { loadAuditKey } from "./services/audit/chain.js";
 import { createPrismaAuditRecorder } from "./services/audit/recorder.js";
 import { loadAuthEnv } from "./services/auth/config.js";
 import { createGoogleVerifier } from "./services/auth/google.js";
@@ -58,6 +59,10 @@ logger.info(
     ? "Sign in with Google: on"
     : "Sign in with Google: off (set GOOGLE_CLIENT_ID; protected routes answer 401 until then)",
 );
+
+const auditKey = loadAuditKey();
+if (auditKey) logger.info("Audit trail: hash chain signed with AUDIT_HMAC_KEY");
+else logger.warn("Audit trail: AUDIT_HMAC_KEY not set (32+ characters); the hash chain is unsigned");
 
 if (!authEnv.rolesEnforced) {
   logger.warn("Roles: off (AUTH_ROLES_ENFORCED=false). Every signed-in user has bank access");
@@ -140,7 +145,7 @@ const app = createApp({
     cookie: { sameSite: authEnv.cookieSameSite, secure: authEnv.cookieSecure },
   },
   idempotency: idempotencyStore,
-  audit: createPrismaAuditRecorder(prisma, logger),
+  audit: createPrismaAuditRecorder(prisma, logger, auditKey),
   logger,
   rateLimitStore,
   trustProxy: env.TRUST_PROXY,

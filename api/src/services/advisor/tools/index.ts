@@ -179,7 +179,12 @@ export const TOOLS: ToolDefinition<unknown>[] = [
     schema: z.object({ alertId: z.string().optional() }),
     modes: ["alert"],
     async run({ alertId }: { alertId?: string }, ctx, deps) {
-      const id = alertId ?? ctx.alertId;
+      // The model's argument is steered by chat text, so it may only name
+      // this conversation's own alert, never another business's
+      if (alertId !== undefined && alertId !== ctx.alertId) {
+        throw new Error(`Alert ${alertId} is not the alert behind this conversation`);
+      }
+      const id = ctx.alertId;
       const event = id ? await deps.repo.getAlertEvent(id) : null;
       if (!event) throw new Error(`Alert ${id ?? "(none)"} was not found`);
       const start = Date.parse(event.windowStart);

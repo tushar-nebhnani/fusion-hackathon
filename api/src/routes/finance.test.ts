@@ -339,6 +339,18 @@ describe("GET /finance/business/:id/profile", () => {
     expect(await prisma.financeRequestLog.findFirst()).toMatchObject({ ok: false, errorCode: "NO_FINANCIALS" });
   });
 
+  it("scores the bank-verified snapshot, not the owner's newer unverified one", async () => {
+    const { onboard, snapshot, send, profile } = setup();
+    const id = await onboard();
+    expect((await send("post", `/businesses/${id}/snapshots/1/verify`, undefined, BANK)).status).toBe(200);
+    await snapshot(id);
+
+    const { body } = await profile(id);
+
+    expect(body.inputs).toMatchObject({ snapshot_version: 1, snapshot_verified: true });
+    expect(body.warnings.join(" ")).not.toContain("snapshot_unverified");
+  });
+
   it("is closed to strangers and to anyone not signed in", async () => {
     const { app, onboard } = setup();
     const id = await onboard();

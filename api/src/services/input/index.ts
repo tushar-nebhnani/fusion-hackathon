@@ -98,6 +98,10 @@ export function inputRouter(service: InputService, options: InputRouterOptions =
     res.json(await service.replaceLocations(param(req, "id"), req.body, actorOf(res)));
   });
 
+  router.patch("/businesses/:id/consent", async (req, res) => {
+    res.json(await service.changeConsent(param(req, "id"), req.body, actorOf(res)));
+  });
+
   router.put("/businesses/:id/suppliers", async (req, res) => {
     res.json(await service.replaceSuppliers(param(req, "id"), req.body, actorOf(res)));
   });

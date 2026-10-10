@@ -23,6 +23,7 @@ ML = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ML / "features"))
 import anomaly as F  # noqa: E402
 import build_monthly as G  # noqa: E402
+from checksums import pin  # noqa: E402
 
 MODELS = ML / "models"
 MODEL_VERSION = "cashflow-anomaly-0.1.0"
@@ -125,6 +126,8 @@ def main() -> None:
     joblib.dump({"method": method, "model": forest if better else None, "threshold": threshold,
                  "features": F.ANOMALY_FEATURES, "model_version": MODEL_VERSION},
                 MODELS / "cashflow_anomaly.joblib", compress=3)
+    # The service loads it only with a matching hash (checksums.py)
+    pin(MODELS / "cashflow_anomaly.joblib")
     (MODELS / "cashflow_anomaly_metrics.json").write_text(json.dumps(results, indent=2) + "\n")
     print(json.dumps(results, indent=2))
 

@@ -255,6 +255,7 @@ describe("app", () => {
         "x-frame-options": "DENY",
         "referrer-policy": "no-referrer",
         "cache-control": "no-store",
+        "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
       });
       expect(res.headers).not.toHaveProperty("strict-transport-security");
     }

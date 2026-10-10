@@ -201,11 +201,12 @@ export async function lockBusiness(tx: Prisma.TransactionClient, id: string): Pr
 export async function updateBusiness(
   db: Db,
   id: string,
-  groups: { profile?: Profile; operations?: Operations; contacts?: Contacts },
+  groups: { profile?: Profile; operations?: Operations; contacts?: Contacts; consent?: Consent },
 ): Promise<void> {
   await db.business.update({
     where: { id },
     data: {
+      ...(groups.consent && { consent: json(groups.consent) }),
       ...(groups.profile && {
         name: groups.profile.name,
         sector: groups.profile.sector,
@@ -313,23 +314,37 @@ export async function latestSnapshot(db: Db, businessId: string): Promise<Snapsh
   return row ? snapshotView(row) : null;
 }
 
-// Verifying marks the snapshot; the numbers in it stay as entered
+// What scores are built from: the newest snapshot the bank verified, and
+// only while none is verified, the newest one. Once the bank has checked a
+// set of numbers, an owner's later, unchecked ones cannot move a score.
+export const SCORING_SNAPSHOT_ORDER = [{ verifiedByBank: "desc" }, { version: "desc" }] as const;
+
+export async function scoringSnapshot(db: Db, businessId: string): Promise<SnapshotView | null> {
+  const row = await db.financialSnapshot.findFirst({
+    where: { businessId },
+    orderBy: [...SCORING_SNAPSHOT_ORDER],
+  });
+  return row ? snapshotView(row) : null;
+}
+
+// Verifying marks the snapshot; the numbers in it stay as entered.
+// `changed` is false when it was verified already.
 export async function verifySnapshot(
   db: Db,
   businessId: string,
   version: number,
   verifiedBy: string,
   at: Date,
-): Promise<SnapshotView | null> {
+): Promise<{ snapshot: SnapshotView; changed: boolean } | null> {
   const key = { businessId_version: { businessId, version } };
   const existing = await db.financialSnapshot.findUnique({ where: key });
   if (!existing) return null;
-  if (existing.verifiedByBank) return snapshotView(existing);
+  if (existing.verifiedByBank) return { snapshot: snapshotView(existing), changed: false };
   const row = await db.financialSnapshot.update({
     where: key,
     data: { verifiedByBank: true, verifiedBy, verifiedAt: at },
   });
-  return snapshotView(row);
+  return { snapshot: snapshotView(row), changed: true };
 }
 
 // ---- Loans ----

@@ -7,6 +7,10 @@ export const CLIMATE = {
   // A business location saved through the input service is warmed with a
   // shorter history: one first screening uses less of Open-Meteo's allowance
   warmHistoryYears: 15,
+  // Places with no screening yet that one signed-in user may ask for. Each
+  // downloads decades of history and uses most of Open-Meteo's free
+  // per-minute allowance, which every user shares. Counted per process.
+  newPlaceLookups: { perUser: 3, windowMs: 10 * 60_000 },
   era5DelayDays: 5,
   forecastDays: 7,
   forecastPastDays: 5,

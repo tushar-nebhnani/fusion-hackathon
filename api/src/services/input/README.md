@@ -414,7 +414,8 @@ Each classifier output is recorded alongside actual monthly revenue and disrupti
      ├─ new business or location changed → climate entry function (warms cell cache)
      ├─ loan → authorised                → finance service (first profile);
      │                                     cell becomes active for the monitor
-     └─ new snapshot on an authorised / active loan → finance service (recompute; version miss)
+     └─ on an authorised / active loan → finance service (recompute): when the bank verifies a
+        newer snapshot, or when a new snapshot arrives while none is verified yet
      │
      ▼
  [7] Log request (input_request_log)
@@ -437,6 +438,7 @@ Saves to one business are serialised with a row lock, so two submissions at once
 | `PATCH` | `/businesses/:id` | Update profile / operations / contacts | owner of it, bank. With a live loan, profile and operations: bank only |
 | `PUT` | `/businesses/:id/locations` | Replace locations (triggers climate) | owner of it, bank. With a live loan: bank only |
 | `PUT` | `/businesses/:id/suppliers` | Replace supplier list | owner of it, bank. With a live loan: bank only |
+| `PATCH` | `/businesses/:id/consent` | Change `share_with_bank` and/or `alerts`. Withdrawing sharing hides the business from the bank at once | the owner who created it. With a live loan, sharing cannot be withdrawn (409 `CONSENT_LOCKED_BY_LOAN`) |
 | `POST` | `/businesses/:id/snapshots` | New financial snapshot (E) | owner of it, bank |
 | `GET` | `/businesses/:id/snapshots` | Snapshot history, newest first | owner of it, bank |
 | `POST` | `/businesses/:id/snapshots/:v/verify` | Bank marks verified | bank |
@@ -455,9 +457,9 @@ Saves to one business are serialised with a row lock, so two submissions at once
 - Each write and each refused request leaves a row in `audit_events` with the user id, the route and the business, snapshot or loan it was about (main `README.md`, "Authentication").
 - `verified_by` and `overridden_by` hold the bank officer's user id.
 
-`PATCH /businesses/:id` takes any of `profile`, `operations`, `contacts`. Fields of `profile` and `operations` are merged one by one into what is stored. Inside `contacts`, each of `owner`, `bank_officer` and `alerts` is replaced whole. The cross-field checks run on the merged result. Consent cannot be changed through it.
+`PATCH /businesses/:id` takes any of `profile`, `operations`, `contacts`. Fields of `profile` and `operations` are merged one by one into what is stored. Inside `contacts`, each of `owner`, `bank_officer` and `alerts` is replaced whole. The cross-field checks run on the merged result. Consent cannot be changed through it; use `PATCH /businesses/:id/consent`.
 
-Responses: the business routes return the whole business (the six groups, `latest_snapshot`, `loans`, `impact_profile`, `scoring`). Snapshot and loan routes return `{ snapshot, scoring }` and `{ loan, scoring }`.
+Responses: the business routes return the whole business (the six groups, `latest_snapshot`, `scoring_snapshot`, `loans`, `impact_profile`, `scoring`). `scoring_snapshot` is what every score is built from: the newest snapshot the bank verified, or, only while none is verified, the newest one. Snapshot and loan routes return `{ snapshot, scoring }` and `{ loan, scoring }`.
 
 ### Headers
 
@@ -489,6 +491,7 @@ Errors go through the API's one error handler, so they have the same envelope as
 | `INVALID_STATUS_TRANSITION` | 409 | `details` has `from`, `to` and the `allowed` next statuses |
 | `BUSINESS_NOT_FOUND` | 404 | Also for a business that belongs to another owner, or that is not shared with the bank |
 | `LOCKED_BY_LOAN` | 403 | An owner changing profile, operations, locations or suppliers while a loan is authorised or active |
+| `CONSENT_LOCKED_BY_LOAN` | 409 | An owner withdrawing sharing with the bank while a loan is authorised or active |
 | `LOAN_NOT_FOUND` | 404 | |
 | `SNAPSHOT_NOT_FOUND` | 404 | |
 | `SEED_FILE_NOT_FOUND` | 404 | |

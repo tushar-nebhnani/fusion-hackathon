@@ -23,7 +23,9 @@ const ASHA: GoogleIdentity = {
 };
 const IDENTITIES: Record<string, GoogleIdentity> = {
   "asha-token": ASHA,
-  "officer-token": { ...ASHA, sub: "g-2", email: "Ravi@Bank.Example", name: "Ravi" },
+  "officer-token": { ...ASHA, sub: "g-2", email: "Ravi@Bank.Example", name: "Ravi", hostedDomain: "bank.example" },
+  // A consumer Google account made with a work address: no hosted domain
+  "former-token": { ...ASHA, sub: "g-5", email: "old@bank.example", name: "Former", hostedDomain: null },
   "listed-token": { ...ASHA, sub: "g-3", email: "meera@example.org", name: "Meera" },
   "unverified-token": { ...ASHA, sub: "g-4", email: "ceo@bank.example", emailVerified: false },
 };
@@ -139,6 +141,14 @@ describe("POST /auth/google", () => {
 
     expect(byDomain.body).toMatchObject({ user: { role: "bank", email: "Ravi@Bank.Example" } });
     expect(byEmail.body).toMatchObject({ user: { role: "bank" } });
+  });
+
+  it("trusts a bank domain only for accounts that domain's Google Workspace manages", async () => {
+    const { signIn } = setup();
+
+    const res = await signIn("former-token");
+
+    expect(res.body).toMatchObject({ user: { email: "old@bank.example", role: "owner" } });
   });
 
   it("makes everyone a bank officer while roles are switched off", async () => {
@@ -257,7 +267,8 @@ describe("sessions", () => {
     expect(codeOf(unknown)).toBe("UNAUTHORIZED");
   });
 
-  it("end after seven days", async () => {
+  it("end after eight hours", async () => {
+    expect(AUTH.sessionTtlMs).toBe(8 * 3_600_000);
     const { app, signIn } = setup();
     const cookie = sessionOf(await signIn("asha-token"));
     const me = () => request(app).get("/auth/me").set("Cookie", cookie);
@@ -296,6 +307,32 @@ describe("sessions", () => {
 
     expect(await service.purgeExpired()).toBe(1);
     expect(await prisma.session.count()).toBe(1);
+  });
+
+  it("all end when the user's role changes, so a removed officer loses bank access at once", async () => {
+    const first = setup();
+    const cookie = sessionOf(await first.signIn("listed-token"));
+    await first.signIn("listed-token");
+    expect((await request(first.app).get("/auth/me").set("Cookie", cookie)).body).toMatchObject({
+      user: { role: "bank" },
+    });
+
+    // The same database after meera@example.org is taken off the allowlist
+    const service = createAuthService({ prisma, bankEmails: [], now: () => clock });
+    const after = await service.authenticate(cookie.split("=")[1] ?? "");
+
+    expect(after).toBeNull();
+    expect(await prisma.session.count()).toBe(0);
+  });
+
+  it("issued for another role end when the user signs in again", async () => {
+    const { signIn } = setup();
+    await signIn("asha-token");
+    await prisma.session.updateMany({ data: { role: "bank" } });
+
+    await signIn("asha-token");
+
+    expect(await prisma.session.findMany({ select: { role: true } })).toEqual([{ role: "owner" }]);
   });
 });
 

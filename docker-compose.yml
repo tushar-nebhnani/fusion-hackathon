@@ -8,8 +8,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-fusion}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fusion}
       POSTGRES_DB: ${POSTGRES_DB:-fusion}
+    # This machine only: the password above is a well-known default
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -34,8 +35,9 @@ services:
         "--maxmemory-policy",
         "noeviction",
       ]
+    # This machine only: Redis runs without a password
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:

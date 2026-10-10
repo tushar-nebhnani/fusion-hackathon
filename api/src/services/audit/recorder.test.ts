@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { disconnectDb, prisma } from "../../config/db.js";
 import { createPrismaAuditRecorder, type AuditEvent } from "./recorder.js";
+import { verifyAuditTrail } from "./verify.js";
 
 // Integration tests against the real test database
 const EVENT: AuditEvent = {
@@ -62,7 +63,7 @@ describe("prisma audit recorder", () => {
   it("reports a write that failed without throwing or printing the event", async () => {
     const logger = { error: vi.fn() };
     const broken = {
-      auditEvent: { create: () => Promise.reject(new Error("connection refused for user-owner")) },
+      $transaction: () => Promise.reject(new Error("connection refused for user-owner")),
     } as unknown as typeof prisma;
     const recorder = createPrismaAuditRecorder(broken, logger);
 
@@ -71,5 +72,45 @@ describe("prisma audit recorder", () => {
 
     expect(logger.error).toHaveBeenCalledOnce();
     expect(JSON.stringify(logger.error.mock.calls)).not.toContain("user-owner");
+  });
+
+  it("never throws at the caller, even when the client is unusable", async () => {
+    const logger = { error: vi.fn() };
+    const recorder = createPrismaAuditRecorder({} as typeof prisma, logger);
+
+    expect(() => recorder.record(EVENT)).not.toThrow();
+    await recorder.idle();
+    expect(logger.error).toHaveBeenCalledOnce();
+  });
+});
+
+describe("audit hash chain in the database", () => {
+  const KEY = "k".repeat(32);
+
+  it("chains every event, also when written at the same time, and verifies", async () => {
+    const recorder = createPrismaAuditRecorder(prisma, console, KEY);
+
+    for (let n = 0; n < 20; n += 1) recorder.record({ ...EVENT, requestId: `req-${String(n)}` });
+    await recorder.idle();
+
+    const rows = await prisma.auditEvent.findMany({ orderBy: { id: "asc" } });
+    expect(rows).toHaveLength(20);
+    expect(rows[0]?.prevHash).toBe("genesis");
+    expect(await verifyAuditTrail(prisma, KEY)).toEqual({ checked: 20, firstBreak: null });
+  });
+
+  it("shows where a row was changed behind the trigger's back", async () => {
+    const recorder = createPrismaAuditRecorder(prisma, console, KEY);
+    for (let n = 0; n < 3; n += 1) recorder.record({ ...EVENT, requestId: `req-${String(n)}` });
+    await recorder.idle();
+
+    // What someone who owns the table could do: lift the trigger, edit, put it back
+    await prisma.$transaction([
+      prisma.$executeRaw`ALTER TABLE audit_events DISABLE TRIGGER audit_events_no_change`,
+      prisma.$executeRaw`UPDATE audit_events SET outcome = 'success' WHERE id = 2`,
+      prisma.$executeRaw`ALTER TABLE audit_events ENABLE TRIGGER audit_events_no_change`,
+    ]);
+
+    expect(await verifyAuditTrail(prisma, KEY)).toEqual({ checked: 1, firstBreak: { id: 2, reason: "wrong_hash" } });
   });
 });

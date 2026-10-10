@@ -28,6 +28,7 @@ from sklearn.preprocessing import StandardScaler  # noqa: E402
 ML = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ML / "features"))
 import alerts as A  # noqa: E402
+from checksums import pin  # noqa: E402
 
 MODELS = ML / "models"
 FIG = ML / "eda" / "figures"
@@ -150,11 +151,14 @@ def evaluate(name: str, eps: pd.DataFrame, features: list[str], cells: dict) -> 
 
     out["leave_one_region_out"] = loro(eps, features, kind)
     reliability(name, y, p_test, b_test)
+    saved = MODELS / f"alert_calibration_{name}.joblib"
     joblib.dump({
         "model": model, "platt": cal, "features": features, "bands": {"low": t_low, "high": t_high},
         "baseline_rates": rates, "model_version": MODEL_VERSION, "hazard": name, "cells": cells,
-    }, MODELS / f"alert_calibration_{name}.joblib", compress=3)
+    }, saved, compress=3)
+    pin(saved)
     return out
+
 
 
 def loro(eps: pd.DataFrame, features: list[str], kind: str) -> dict:

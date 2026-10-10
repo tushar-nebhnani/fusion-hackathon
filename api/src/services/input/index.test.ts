@@ -416,6 +416,51 @@ describe("GET /businesses/:id", () => {
     expect(await prisma.loan.count()).toBe(0);
   });
 
+  it("lets the owner withdraw sharing, which hides the business from the bank at once", async () => {
+    const { app, create, send } = setup();
+    const { id } = await create();
+    const path = `/businesses/${id}`;
+    expect((await signedIn(app, BANK_USER).get(path)).status).toBe(200);
+
+    const res = await send("patch", `${path}/consent`, { share_with_bank: false });
+
+    expect(res.status).toBe(200);
+    expect((res.body as BusinessDetail).consent).toMatchObject({
+      data_processing: true,
+      share_with_bank: false,
+      timestamp: NOW.toISOString(),
+      version: INPUT.consentVersion,
+    });
+    expect((await signedIn(app, BANK_USER).get(path)).status).toBe(404);
+    // And can give it again
+    expect((await send("patch", `${path}/consent`, { share_with_bank: true })).status).toBe(200);
+    expect((await signedIn(app, BANK_USER).get(path)).status).toBe(200);
+  });
+
+  it("keeps consent to its owner and refuses to withdraw sharing under a live loan", async () => {
+    const { create, send } = setup();
+    const { id } = await create();
+    const path = `/businesses/${id}/consent`;
+    const loan = (await send("post", `/businesses/${id}/loans`, loanBody(), BANK)).body as { loan: LoanView };
+    await send("patch", `/loans/${loan.loan.id}/status`, { status: "authorised" }, BANK);
+
+    const bank = await send("patch", path, { share_with_bank: false }, BANK);
+    const stranger = await send("patch", path, { share_with_bank: false }, STRANGER);
+    const locked = await send("patch", path, { share_with_bank: false });
+    const alertsOff = await send("patch", path, { alerts: false });
+    const empty = await send("patch", path, {});
+    const processing = await send("patch", path, { data_processing: false });
+
+    expect(bank.status).toBe(403);
+    expect(stranger.status).toBe(404);
+    expect(locked.status).toBe(409);
+    expect(errorOf(locked).code).toBe("CONSENT_LOCKED_BY_LOAN");
+    expect(alertsOff.status).toBe(200);
+    expect((alertsOff.body as BusinessDetail).consent).toMatchObject({ share_with_bank: true, alerts: false });
+    expect(empty.status).toBe(422);
+    expect(processing.status).toBe(422);
+  });
+
   it("records the owner, and leaves a bank-created business to the bank", async () => {
     const { app, create, send } = setup();
     const mine = await create();
@@ -888,6 +933,48 @@ describe("loans", () => {
     expect(calls.at(-1)).toEqual({ port: "finance.recompute", input: { businessId: id, snapshotVersion: 2 } });
     // An active loan is already inside existing_emi_total
     expect((res.body as { snapshot: SnapshotView }).snapshot.derived.proposed_loan_emi).toBe(0);
+  });
+
+  it("scores from the verified snapshot: an owner's later, unverified numbers do not rescore", async () => {
+    const { ports, calls } = fakePorts();
+    const { create, send, service } = setup({ ports });
+    const { id } = await create();
+    await send("post", `/businesses/${id}/snapshots`, financialsBody());
+    await send("post", `/businesses/${id}/snapshots/1/verify`, undefined, BANK);
+    const loan = loanOf(await send("post", `/businesses/${id}/loans`, loanBody(), BANK));
+    await send("patch", `/loans/${loan.id}/status`, { status: "authorised" }, BANK);
+    await send("patch", `/loans/${loan.id}/status`, { status: "active" }, BANK);
+    const before = calls.length;
+
+    const res = await send("post", `/businesses/${id}/snapshots`, financialsBody());
+    const business = await service.getBusiness(id);
+
+    expect(res.status).toBe(201);
+    expect(calls.slice(before).map((call) => call.port)).not.toContain("finance.recompute");
+    expect(business.latest_snapshot).toMatchObject({ version: 2, verified_by_bank: false });
+    expect(business.scoring_snapshot).toMatchObject({ version: 1, verified_by_bank: true });
+  });
+
+  it("rescores a live loan when the bank verifies newer numbers, once", async () => {
+    const { ports, calls } = fakePorts();
+    const { create, send, service } = setup({ ports });
+    const { id } = await create();
+    await send("post", `/businesses/${id}/snapshots`, financialsBody());
+    await send("post", `/businesses/${id}/snapshots/1/verify`, undefined, BANK);
+    const loan = loanOf(await send("post", `/businesses/${id}/loans`, loanBody(), BANK));
+    await send("patch", `/loans/${loan.id}/status`, { status: "authorised" }, BANK);
+    await send("patch", `/loans/${loan.id}/status`, { status: "active" }, BANK);
+    await send("post", `/businesses/${id}/snapshots`, financialsBody());
+    const before = calls.length;
+
+    await send("post", `/businesses/${id}/snapshots/2/verify`, undefined, BANK);
+    await send("post", `/businesses/${id}/snapshots/2/verify`, undefined, BANK);
+    const business = await service.getBusiness(id);
+
+    expect(calls.slice(before)).toEqual([
+      { port: "finance.recompute", input: { businessId: id, snapshotVersion: 2 } },
+    ]);
+    expect(business.scoring_snapshot).toMatchObject({ version: 2, verified_by_bank: true });
   });
 
   it("lists the locations with an authorised or active loan as active cells", async () => {

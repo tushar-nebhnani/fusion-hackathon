@@ -247,7 +247,7 @@ export function createAdvisor(deps: AdvisorDeps) {
       generalQuestionsOnActiveLoan: turn.state?.state === "ACTIVE",
       questionRoundsSoFar,
       alertId,
-      businessFacts: facts.facts.map(({ key, value, source }) => ({ key, value, source })),
+      businessFacts: facts.facts.map(({ key, value, source, standing }) => ({ key, value, source, standing })),
     };
     const runner = createToolRunner(
       deps,

@@ -7,6 +7,7 @@ import type { Contacts } from "../input/schemas/contacts.js";
 import type { Consent } from "../input/schemas/consent.js";
 import type { Operations } from "../input/schemas/operations.js";
 import type { Profile } from "../input/schemas/profile.js";
+import { SCORING_SNAPSHOT_ORDER } from "../input/store.js";
 import type { BusinessDirectory } from "./directory.js";
 import { annualRateFor } from "./tools/money.js";
 import {
@@ -22,7 +23,8 @@ import {
 // the advisor never writes a business, a snapshot or a loan.
 //
 // How the input service's fields become the advisor's (NOTES.md):
-// - Revenue: the latest snapshot's 6-12 months, the last one being the month
+// - Revenue: the scored snapshot's 6-12 months (the newest the bank
+//   verified, or the newest while none is), the last one being the month
 //   of `as_of`. A calendar month not given gets the average of those given.
 // - Costs: the snapshot has one `monthly_opex` and no variable share, so it is
 //   all fixed cost and variableCostShare is 0. A lost sale then saves nothing,
@@ -46,7 +48,8 @@ const istDate = (date: Date) => new Date(date.getTime() + IST_OFFSET_MS).toISOSt
 
 const include = {
   locations: { where: { isPrimary: true }, take: 1 },
-  snapshots: { orderBy: { version: "desc" }, take: 1 },
+  // The snapshot scores use: the newest verified, or the newest while none is
+  snapshots: { orderBy: [...SCORING_SNAPSHOT_ORDER], take: 1 },
   loans: { where: { status: { in: Object.keys(ACTIVE_LOAN_STATES) } }, orderBy: { createdAt: "asc" } },
   impactProfiles: { where: { status: { not: "pending" } }, orderBy: { version: "desc" }, take: 1 },
 } satisfies Prisma.BusinessInclude;

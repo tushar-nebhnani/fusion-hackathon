@@ -60,7 +60,8 @@ export function createEvaluatorService(deps: EvaluatorDeps): EvaluatorService {
       const business = await deps.businesses.getBusiness(businessId);
       return {
         point: { lat: business.locations.primary.lat, lon: business.locations.primary.lon },
-        latestSnapshotVersion: business.latest_snapshot?.version ?? null,
+        // The one scores are built from, not an unverified newer one
+        latestSnapshotVersion: business.scoring_snapshot?.version ?? null,
       };
     } catch (error) {
       if (notFound(error)) return null;

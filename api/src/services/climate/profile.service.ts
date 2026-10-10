@@ -33,6 +33,7 @@ import {
   structuralScore,
   type DataQuality,
 } from "./scoring.js";
+import { createNewPlaceGate, type NewPlaceGate } from "./new-place-gate.js";
 import { screenRiver, screenWeather } from "./screening.js";
 import {
   computeProjectionDeltas,
@@ -80,6 +81,9 @@ export interface ClimateServiceDeps {
   exposure?: ExposureProvider;
   now?: () => Date;
   logger?: Pick<Console, "error" | "warn">;
+  // Per-user allowance of places that need their history downloaded;
+  // CLIMATE.newPlaceLookups by default
+  newPlaces?: NewPlaceGate;
 }
 
 export interface ProfileOptions {
@@ -189,6 +193,8 @@ export function createClimateService(
   const now = deps.now ?? (() => new Date());
   const logger = deps.logger ?? console;
   const exposure: ExposureProvider = deps.exposure ?? (() => Promise.resolve(null));
+  const newPlaces =
+    deps.newPlaces ?? createNewPlaceGate({ ...CLIMATE.newPlaceLookups, now: () => now().getTime() });
 
   const agent = deps.agent;
   // Set after a failed agent call, so a broken key does not slow every request
@@ -244,6 +250,21 @@ export function createClimateService(
     };
     let upstreamCalls = 0;
     let miss = false;
+    // Decided once per request: the weather and river downloads run side by
+    // side, and a refusal must stop both
+    let newPlaceRefusal: Error | null = null;
+    let newPlaceChecked = false;
+    const takeNewPlace = () => {
+      if (!newPlaceChecked) {
+        newPlaceChecked = true;
+        try {
+          newPlaces.take(requesterId);
+        } catch (error) {
+          newPlaceRefusal = error instanceof Error ? error : new Error(String(error));
+        }
+      }
+      if (newPlaceRefusal) throw newPlaceRefusal;
+    };
     const historyStart = historyStartFor(today, options.historyYears);
 
     const call = <T>(request: () => Promise<T>): Promise<T> => {
@@ -503,6 +524,7 @@ export function createClimateService(
         return profiles;
       }
       miss = true;
+      takeNewPlace();
 
       let archive: UpstreamResult | null = null;
       try {
@@ -568,6 +590,7 @@ export function createClimateService(
         return (await reviewCached(cells.flood.id, cached))[0] ?? cachedProfile;
       }
       miss = true;
+      takeNewPlace();
 
       let history: UpstreamResult | null = null;
       try {

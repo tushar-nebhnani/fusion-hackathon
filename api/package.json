@@ -18,7 +18,8 @@
     "alerts:test": "tsx src/services/alerts/cli.ts",
     "monitor": "tsx src/services/climate/monitor/index.ts",
     "monitor:verify": "tsx src/services/climate/monitor/verifyJob.ts",
-    "monitor:simulate": "tsx src/services/climate/monitor/simulate.ts"
+    "monitor:simulate": "tsx src/services/climate/monitor/simulate.ts",
+    "audit:verify": "tsx src/services/audit/verify.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",

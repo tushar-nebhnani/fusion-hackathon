@@ -26,7 +26,7 @@ npm test
 Entry function: `getFinanceProfile(businessId, options)` in `service.ts`.
 
 ```
- load business        input service: latest snapshot, loans, impact profile
+ load business        input service: scoring snapshot (newest verified), loans, impact profile
      │                no snapshot ──▶ 409 NO_FINANCIALS
      ▼
  compute metrics      §3
@@ -51,8 +51,8 @@ Entry function: `getFinanceProfile(businessId, options)` in `service.ts`.
 
 | Finance input | Read from |
 |---|---|
-| Monthly revenue (6–12 months) | `latest_snapshot.raw.monthly_revenue` |
-| Monthly expenses | `latest_snapshot.raw.monthly_opex` (one average, excluding repayments) |
+| Monthly revenue (6–12 months) | `scoring_snapshot.raw.monthly_revenue`: the newest snapshot the bank verified, or the newest while none is |
+| Monthly expenses | `scoring_snapshot.raw.monthly_opex` (one average, excluding repayments) |
 | Existing EMI, outstanding debt, cash, missed payments | `existing_emi_total`, `outstanding_debt`, `cash_balance`, `payment_delays_12m` of the snapshot |
 | Requested loan | Loans in status `applied` or `authorised`: their `emi` and `amount`. An `active` loan is already inside the owner's `existing_emi_total` |
 | Business age | Current year (India time) − `profile.year_started` |
@@ -334,7 +334,7 @@ Rate limit: 30 requests a minute per client on `/finance`, on top of the API-wid
 | Input event | What happens |
 |---|---|
 | A loan becomes `authorised` | `getFinanceProfile` runs; the row is stored with `trigger: "first_profile"` |
-| A new snapshot on a business with an `authorised` or `active` loan | The same, with `trigger: "recompute"` |
+| On a business with an `authorised` or `active` loan, the bank verifies a newer snapshot (or a new one arrives while none is verified) | The same, with `trigger: "recompute"`. An owner's unverified snapshot after a verified one does not rescore |
 
 A profile asked for over the API has `trigger: "request"`. The input service waits up to 15 seconds for a trigger and retries a failed one every 5 minutes.
 

@@ -55,3 +55,18 @@ export function lockedByLoan(what: string): AppError {
 export function bankOnly(): AppError {
   return new AppError("Only a bank officer can do this", 403, "FORBIDDEN");
 }
+
+export function ownerOnly(): AppError {
+  return new AppError("Only the business's owner can change its consent", 403, "FORBIDDEN");
+}
+
+// The bank needs the business's details to service a live loan
+export function sharingLockedByLoan(): AppError {
+  return new AppError(
+    "Sharing with the bank cannot be withdrawn while a loan is authorised or active; ask the bank to close the loan first",
+    409,
+    "CONSENT_LOCKED_BY_LOAN",
+    undefined,
+    "consent",
+  );
+}
